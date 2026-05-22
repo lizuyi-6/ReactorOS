@@ -1,0 +1,1486 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReactorOS - 反应釜智能上位机</title>
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="%23F7F8FA"/><path d="M9 6h14v5l5 7v3a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-3l5-7z" fill="%23FFFFFF" stroke="%231D4ED8"/><path d="M9 12h14M7 19h18" stroke="%231C2033" stroke-width="1.5"/></svg>'>
+  <style>
+    :root {
+      --bg: #F7F8FA;
+      --surface: #FFFFFF;
+      --border: #DDE1E8;
+      --border-dark: #B8BFC9;
+      --text-primary: #1C2033;
+      --text-muted: #6B7385;
+      --text-dim: #A0A8B5;
+      --accent: #1D4ED8;
+      --accent-light: #EFF4FF;
+      --success: #166534;
+      --success-bg: #F0FDF4;
+      --warning: #92400E;
+      --warning-bg: #FFFBEB;
+      --danger: #991B1B;
+      --danger-bg: #FEF2F2;
+      --font-body: "Inter", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      --font-mono: "DM Mono", "Cascadia Mono", "Consolas", monospace;
+      --radius-card: 8px;
+      --radius-control: 4px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      font-size: 13px;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      height: 48px;
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(420px, auto) minmax(260px, 1fr);
+      gap: 16px;
+      align-items: center;
+      padding: 0 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand,
+    .status-group,
+    .top-right {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .brand {
+      gap: 12px;
+    }
+
+    .logo {
+      font-weight: 500;
+      font-size: 15px;
+      color: var(--text-primary);
+    }
+
+    .divider {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      flex: 0 0 auto;
+    }
+
+    .batch-label {
+      color: var(--text-muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .status-group {
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .top-right {
+      justify-content: flex-end;
+      gap: 12px;
+      color: var(--text-muted);
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: var(--radius-control);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      white-space: nowrap;
+      font-size: 12px;
+    }
+
+    .pill.success {
+      color: var(--success);
+      background: var(--success-bg);
+      border-color: #BBF7D0;
+    }
+
+    .pill.warning {
+      color: var(--warning);
+      background: var(--warning-bg);
+      border-color: #FDE68A;
+    }
+
+    .pill.danger {
+      color: var(--danger);
+      background: var(--danger-bg);
+      border-color: #FECACA;
+    }
+
+    .pill.accent {
+      color: var(--accent);
+      background: var(--accent-light);
+      border-color: #BFDBFE;
+    }
+
+    .status-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+      flex: 0 0 auto;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-weight: 500;
+    }
+
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 16px 24px 24px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr) 300px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .column {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .section-title {
+      margin: 0 0 10px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-card);
+    }
+
+    .panel-pad {
+      padding: 16px;
+    }
+
+    .sensor-list {
+      background: var(--surface);
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .sensor-row {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 13px 12px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .sensor-row:last-child {
+      border-bottom: 0;
+    }
+
+    .sensor-icon {
+      width: 16px;
+      height: 16px;
+      color: var(--text-muted);
+      display: grid;
+      place-items: center;
+    }
+
+    .sensor-main {
+      min-width: 0;
+    }
+
+    .sensor-name {
+      color: var(--text-primary);
+      font-size: 13px;
+      margin-bottom: 5px;
+    }
+
+    .sensor-sub {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sensor-value-wrap {
+      display: grid;
+      justify-items: end;
+      gap: 5px;
+      min-width: 88px;
+    }
+
+    .sensor-value {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text-primary);
+      line-height: 1;
+      opacity: 1;
+      transition: opacity 0.3s ease, color 0.3s ease;
+    }
+
+    .sensor-value.fade {
+      opacity: 0.35;
+    }
+
+    .sensor-value.danger {
+      color: var(--danger);
+    }
+
+    .unit {
+      margin-left: 4px;
+      color: var(--text-muted);
+      font-family: var(--font-body);
+      font-size: 11px;
+      font-weight: 400;
+    }
+
+    .mini-chart {
+      width: 60px;
+      height: 24px;
+      display: block;
+    }
+
+    .chart-panel {
+      padding: 16px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .chart-legend {
+      display: grid;
+      gap: 5px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .legend-item {
+      display: grid;
+      grid-template-columns: 28px auto;
+      gap: 6px;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .legend-line {
+      width: 28px;
+      height: 0;
+      border-top: 1.5px solid var(--line);
+    }
+
+    .legend-line.dash {
+      border-top-style: dashed;
+    }
+
+    .legend-line.dot {
+      border-top-style: dotted;
+    }
+
+    .main-chart {
+      width: 100%;
+      height: 220px;
+      display: block;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+
+    .parameter-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      min-height: 30px;
+      border-radius: 5px;
+      border: 1px solid var(--accent);
+      background: var(--surface);
+      color: var(--accent);
+      padding: 5px 10px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.18s ease, border-color 0.18s ease;
+    }
+
+    .btn:hover {
+      background: var(--accent-light);
+    }
+
+    .btn.danger {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .btn.danger:hover {
+      background: var(--danger-bg);
+    }
+
+    .btn.full {
+      width: 100%;
+      min-height: 34px;
+    }
+
+    .btn[disabled] {
+      color: var(--text-dim);
+      border-color: var(--border);
+      background: var(--bg);
+      cursor: default;
+    }
+
+    .ops-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 0 14px;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 0.5px solid var(--border);
+    }
+
+    .inline-note {
+      grid-column: 1 / -1;
+      color: var(--text-muted);
+      font-size: 11px;
+      min-height: 14px;
+    }
+
+    .param-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 16px;
+    }
+
+    .param {
+      display: grid;
+      gap: 8px;
+    }
+
+    .label {
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .control-field {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-control);
+      background: var(--surface);
+      color: var(--text-primary);
+      padding: 0 9px;
+      outline: none;
+      font-family: var(--font-mono);
+      font-size: 14px;
+    }
+
+    .control-field:focus {
+      border-color: var(--accent);
+    }
+
+    select.control-field {
+      font-family: var(--font-body);
+      color: var(--text-primary);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 14px;
+      background: transparent;
+      margin: 0;
+    }
+
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 2px;
+      background: var(--border-dark);
+      border-radius: 99px;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      margin-top: -5px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      background: var(--surface);
+    }
+
+    input[type="range"]::-moz-range-track {
+      height: 2px;
+      background: var(--border-dark);
+      border-radius: 99px;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      background: var(--surface);
+    }
+
+    .ai-box {
+      background: var(--accent-light);
+      border: 1px solid #BFDBFE;
+      border-radius: 6px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .progress-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .progress {
+      height: 4px;
+      border-radius: 99px;
+      background: var(--border);
+      overflow: hidden;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      width: 87%;
+      background: var(--accent);
+      border-radius: inherit;
+    }
+
+    .muted {
+      color: var(--text-muted);
+    }
+
+    .dim {
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+
+    .rec-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .rec-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: baseline;
+      min-height: 30px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .rec-row:last-of-type {
+      border-bottom: 0;
+    }
+
+    .rec-name {
+      color: var(--text-muted);
+    }
+
+    .rec-value {
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .rec-value.success {
+      color: var(--success);
+    }
+
+    .rec-compare {
+      color: var(--text-muted);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .history-table th {
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 0 0 7px;
+    }
+
+    .history-table td {
+      border-top: 0.5px solid var(--border);
+      padding: 8px 0;
+      color: var(--text-primary);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .history-table tr.best td {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .event-log {
+      height: 120px;
+      overflow-y: auto;
+      display: grid;
+      align-content: start;
+      gap: 6px;
+      padding-right: 4px;
+    }
+
+    .log-row {
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr);
+      gap: 8px;
+      align-items: baseline;
+    }
+
+    .log-time {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .log-text {
+      color: var(--text-primary);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 1023px) {
+      .topbar {
+        position: static;
+        height: auto;
+        min-height: 48px;
+        grid-template-columns: 1fr;
+        padding: 10px 16px;
+      }
+
+      .status-group,
+      .top-right {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .shell {
+        padding: 16px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .ops-grid,
+      .result-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .param-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .sensor-row {
+        grid-template-columns: 18px minmax(0, 1fr);
+      }
+
+      .sensor-value-wrap {
+        grid-column: 2;
+        justify-items: start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">ReactorOS</div>
+      <div class="divider"></div>
+      <div id="batchLabel" class="batch-label">Batch --</div>
+    </div>
+    <div class="status-group">
+      <div id="systemPill" class="pill success"><span class="status-dot"></span><span id="systemText">系统运行中</span></div>
+      <div id="sensorPill" class="pill warning"><span class="status-dot"></span><span id="sensorText">等待数据</span></div>
+      <div id="aiPill" class="pill accent"><span class="status-dot"></span><span id="aiText">AI 引擎就绪</span></div>
+    </div>
+    <div class="top-right">
+      <span id="runClock" class="mono">01:24:37</span>
+      <span class="divider"></span>
+      <span id="wallClock">--:--:--</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <div class="layout">
+      <aside class="column">
+        <section>
+          <h2 class="section-title">Sensors</h2>
+          <div id="sensorList" class="sensor-list"></div>
+        </section>
+      </aside>
+
+      <section class="column">
+        <section class="panel chart-panel">
+          <div class="chart-header">
+            <h2 class="section-title">Temperature Trend</h2>
+            <div class="chart-legend">
+              <div class="legend-item"><span class="legend-line" style="--line:#1D4ED8"></span><span>实测温度</span></div>
+              <div class="legend-item"><span class="legend-line dash" style="--line:#6B7385"></span><span>目标温度</span></div>
+              <div class="legend-item"><span class="legend-line dot" style="--line:#D97706"></span><span>AI 推荐曲线</span></div>
+            </div>
+          </div>
+          <canvas id="temperatureChart" class="main-chart" width="860" height="220"></canvas>
+        </section>
+
+        <section class="panel panel-pad">
+          <div class="parameter-head">
+            <h2 class="section-title" style="margin:0">Parameters</h2>
+            <div class="button-row">
+              <button id="startBtn" class="btn" type="button" hidden>启动反应</button>
+              <button id="stopBtn" class="btn danger" type="button">停止</button>
+            </div>
+          </div>
+          <div class="ops-grid">
+            <button id="autoBtn" class="btn" type="button">自动控制：关闭</button>
+            <button id="estopBtn" class="btn danger" type="button">急停</button>
+            <button id="resetEstopBtn" class="btn" type="button">复位急停</button>
+          </div>
+          <div class="param-grid">
+            <div class="param">
+              <label class="label" for="targetTempInput">目标温度</label>
+              <input id="targetTempInput" class="control-field" type="number" min="50" max="280" value="175">
+              <input id="targetTempRange" type="range" min="50" max="280" value="175">
+            </div>
+            <div class="param">
+              <label class="label" for="heatMinutesInput">加热时长</label>
+              <input id="heatMinutesInput" class="control-field" type="number" min="5" max="180" value="120">
+              <input id="heatMinutesRange" type="range" min="5" max="180" value="120">
+            </div>
+            <div class="param">
+              <label class="label" for="stirMinutesInput">搅拌时长</label>
+              <input id="stirMinutesInput" class="control-field" type="number" min="0" max="120" value="60">
+              <input id="stirMinutesRange" type="range" min="0" max="120" value="60">
+            </div>
+            <div class="param">
+              <label class="label" for="stirRpmInput">搅拌转速</label>
+              <input id="stirRpmInput" class="control-field" type="number" min="100" max="1000" value="450">
+              <input id="stirRpmRange" type="range" min="100" max="1000" value="450">
+            </div>
+            <div class="param">
+              <label class="label" for="coolingMode">冷却方式</label>
+              <select id="coolingMode" class="control-field">
+                <option>自然冷却</option>
+                <option>强制风冷</option>
+                <option>水冷</option>
+              </select>
+            </div>
+          </div>
+          <div class="result-grid">
+            <input id="yieldInput" class="control-field" type="number" min="0" max="100" step="0.1" value="78.6" aria-label="产率百分比">
+            <input id="ratioInput" class="control-field" type="number" min="0" max="1" step="0.01" value="0.82" aria-label="产物比例">
+            <input id="notesInput" class="control-field" type="text" value="lab verification" aria-label="结果备注">
+            <button id="saveResultBtn" class="btn" type="button">录入结果</button>
+            <div id="operatorNote" class="inline-note">数据来自后端采集快照；本地断线时保留最后一次读数。</div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="column">
+        <section class="panel panel-pad">
+          <h2 class="section-title">AI Optimization</h2>
+          <div class="ai-box">
+            <div>已学习 <strong id="learnedBatches">--</strong> 批次</div>
+            <div class="progress-row">
+              <div class="progress"><span id="confidenceBar"></span></div>
+              <span id="confidenceText" class="mono">--%</span>
+            </div>
+            <div class="dim">上次更新 <span id="aiUpdateTime">14:31:05</span></div>
+            <div class="dim" id="memorySummary">记忆文件：等待加载</div>
+          </div>
+        </section>
+
+        <section class="panel panel-pad">
+          <div class="rec-head">
+            <h2 class="section-title" style="margin:0">Recommended</h2>
+            <span class="pill accent" style="height:20px;color:white;background:var(--accent);border-color:var(--accent)">AI</span>
+          </div>
+          <div class="rec-row">
+            <span class="rec-name">目标温度</span>
+            <span class="rec-value" id="recTemp">192 °C</span>
+            <span class="rec-compare" id="recTempCompare">↑ +17 vs 当前</span>
+          </div>
+          <div class="rec-row">
+            <span class="rec-name">加热时长</span>
+            <span class="rec-value" id="recHeat">95 min</span>
+            <span class="rec-compare" id="recHeatCompare">↓ -25 vs 当前</span>
+          </div>
+          <div class="rec-row">
+            <span class="rec-name">搅拌时长</span>
+            <span class="rec-value" id="recStir">60 min</span>
+            <span class="rec-compare" id="recStirCompare">→ 持平</span>
+          </div>
+          <div class="rec-row" style="margin-bottom:12px">
+            <span class="rec-name">预期产率</span>
+            <span class="rec-value success" id="recYield">--</span>
+            <span class="rec-compare" id="recRationale">等待批次结果</span>
+          </div>
+          <button id="applyRecommended" class="btn full" type="button">应用推荐参数</button>
+        </section>
+
+        <section class="panel panel-pad">
+          <h2 class="section-title">History</h2>
+          <table class="history-table">
+            <thead>
+              <tr><th>批次</th><th>温度</th><th>产率</th><th>状态</th></tr>
+            </thead>
+            <tbody id="historyRows"></tbody>
+          </table>
+        </section>
+
+        <section class="panel panel-pad">
+          <h2 class="section-title">Event Log</h2>
+          <div id="eventLog" class="event-log"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const sensors = [
+      { key: "temp", field: "temperature_c", icon: "T", name: "反应釜温度", value: 0, unit: "°C", min: 0, max: 300, normal: [0, 250], decimals: 1 },
+      { key: "pressure", field: "pressure_mpa", icon: "P", name: "釜内压力", value: 0, unit: "MPa", min: 0, max: 10, normal: [0, 1.0], decimals: 2 },
+      { key: "rpm", field: "stirrer_rpm", icon: "R", name: "搅拌转速", value: 0, unit: "RPM", min: 0, max: 1200, normal: [0, 1000], decimals: 0 },
+      { key: "shake", field: "shake_speed_cpm", icon: "S", name: "摇罐速度", value: 30, unit: "次/分", min: 0, max: 60, normal: [0, 55], decimals: 0 },
+      { key: "flow", field: "flow_rate_l_min", icon: "F", name: "流量", value: 2.5, unit: "L/min", min: 0, max: 10, normal: [0, 8], decimals: 1 }
+    ];
+
+    const controlMap = {
+      targetTemp: { input: "targetTempInput", range: "targetTempRange", value: 60, min: 50, max: 280 },
+      heatMinutes: { input: "heatMinutesInput", range: "heatMinutesRange", value: 120, min: 5, max: 180 },
+      stirMinutes: { input: "stirMinutesInput", range: "stirMinutesRange", value: 60, min: 0, max: 120 },
+      stirRpm: { input: "stirRpmInput", range: "stirRpmRange", value: 300, min: 100, max: 1000 }
+    };
+
+    const recommendation = {
+      targetTemp: 87.5,
+      heatMinutes: 127.5,
+      stirMinutes: 127.5,
+      stirRpm: 550,
+      expectedScore: 0,
+      rationale: "等待批次结果"
+    };
+
+    const tempPoints = [];
+    const targetPoints = [];
+    const aiPoints = [];
+    const maxPoints = 480;
+    const deviceId = "reactor_001";
+    const seenEvents = new Set();
+    let running = false;
+    let alarm = false;
+    let backendOnline = false;
+    let lastLive = null;
+    let elapsedSeconds = 0;
+    let operatorEditing = false;
+    let pollInFlight = false;
+    let operatorNoteStickyUntil = 0;
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function round(value, decimals = 0) {
+      const factor = Math.pow(10, decimals);
+      return Math.round(value * factor) / factor;
+    }
+
+    function formatSensor(sensor) {
+      return Number(sensor.value || 0).toFixed(sensor.decimals);
+    }
+
+    function setPill(id, textId, kind, label) {
+      const pill = $(id);
+      const text = $(textId);
+      pill.classList.remove("success", "warning", "danger", "accent");
+      pill.classList.add(kind);
+      text.textContent = label;
+    }
+
+    function statusFor(sensor) {
+      if (sensor.value < sensor.normal[0] || sensor.value > sensor.normal[1]) {
+        const farLow = sensor.normal[0] > 0 && sensor.value < sensor.normal[0] * 0.85;
+        const farHigh = sensor.value > sensor.normal[1] * 1.08;
+        return farLow || farHigh ? ["异常", "danger"] : ["偏高", "warning"];
+      }
+      return ["正常", "success"];
+    }
+
+    function renderSensors() {
+      const list = $("sensorList");
+      list.innerHTML = "";
+      sensors.forEach(sensor => {
+        sensor.history = Array.from({ length: 60 }, () => sensor.value);
+        const row = document.createElement("div");
+        row.className = "sensor-row";
+        row.id = `row-${sensor.key}`;
+        const [label, kind] = statusFor(sensor);
+        row.innerHTML = `
+          <div class="sensor-icon">${sensor.icon}</div>
+          <div class="sensor-main">
+            <div class="sensor-name">${sensor.name}</div>
+            <div class="sensor-sub">
+              <span id="status-${sensor.key}" class="pill ${kind}">${label}</span>
+              <canvas id="mini-${sensor.key}" class="mini-chart" width="60" height="24"></canvas>
+            </div>
+          </div>
+          <div class="sensor-value-wrap">
+            <div id="value-${sensor.key}" class="sensor-value">${formatSensor(sensor)}<span class="unit">${sensor.unit}</span></div>
+          </div>
+        `;
+        list.appendChild(row);
+      });
+    }
+
+    function updateSensorValue(sensor, value, animate = true) {
+      const next = clamp(Number(value) || 0, sensor.min, sensor.max);
+      const changed = Math.abs(next - sensor.value) > Math.pow(10, -sensor.decimals);
+      sensor.value = next;
+      sensor.history.push(next);
+      if (sensor.history.length > 60) sensor.history.shift();
+
+      const valueEl = $(`value-${sensor.key}`);
+      if (changed && animate) valueEl.classList.add("fade");
+      window.setTimeout(() => {
+        valueEl.innerHTML = `${formatSensor(sensor)}<span class="unit">${sensor.unit}</span>`;
+        valueEl.classList.remove("fade");
+      }, changed && animate ? 120 : 0);
+
+      const [label, kind] = statusFor(sensor);
+      const status = $(`status-${sensor.key}`);
+      status.className = `pill ${kind}`;
+      status.textContent = label;
+      valueEl.classList.toggle("danger", kind === "danger");
+      drawMini(sensor);
+    }
+
+    function drawMini(sensor) {
+      const canvas = $(`mini-${sensor.key}`);
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "#1D4ED8";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      sensor.history.forEach((value, index) => {
+        const x = index / Math.max(1, sensor.history.length - 1) * canvas.width;
+        const y = canvas.height - ((value - sensor.min) / (sensor.max - sensor.min)) * canvas.height;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function setControl(key, value, animate = false, silent = false) {
+      const control = controlMap[key];
+      const target = clamp(Number(value), control.min, control.max);
+      if (!animate) {
+        control.value = target;
+        $(control.input).value = Math.round(target);
+        $(control.range).value = Math.round(target);
+        if (!silent) updateRecommendationComparison();
+        return;
+      }
+
+      const start = control.value;
+      const startTime = performance.now();
+      const duration = 520;
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const current = start + (target - start) * eased;
+        control.value = current;
+        $(control.input).value = Math.round(current);
+        $(control.range).value = Math.round(current);
+        if (t < 1) requestAnimationFrame(step);
+        else if (!silent) updateRecommendationComparison();
+      }
+      requestAnimationFrame(step);
+    }
+
+    function bindControls() {
+      Object.entries(controlMap).forEach(([key, control]) => {
+        const input = $(control.input);
+        const range = $(control.range);
+        function sync(value) {
+          operatorEditing = true;
+          setControl(key, value);
+          window.clearTimeout(sync.timer);
+          sync.timer = window.setTimeout(() => {
+            operatorEditing = false;
+            pushTargets();
+          }, 450);
+        }
+        input.addEventListener("input", () => sync(input.value));
+        range.addEventListener("input", () => sync(range.value));
+      });
+
+      $("startBtn").addEventListener("click", startBatch);
+      $("stopBtn").addEventListener("click", stopBatch);
+      $("autoBtn").addEventListener("click", toggleAuto);
+      $("estopBtn").addEventListener("click", emergencyStop);
+      $("resetEstopBtn").addEventListener("click", resetEmergencyStop);
+      $("saveResultBtn").addEventListener("click", saveProductResult);
+      $("applyRecommended").addEventListener("click", applyRecommendation);
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        let message = body || `${response.status} ${response.statusText}`;
+        try {
+          const parsed = JSON.parse(body);
+          message = parsed.message || parsed.data?.error || message;
+        } catch (_) {
+          // Keep the raw response text when the backend does not return JSON.
+        }
+        throw new Error(message);
+      }
+      if (response.status === 204) return null;
+      return response.json();
+    }
+
+    async function pollLive() {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        const [live, realtime] = await Promise.all([
+          api("/api/live"),
+          api(`/api/v1/reactor/${deviceId}/realtime`)
+        ]);
+        backendOnline = true;
+        live.v1_realtime = realtime;
+        lastLive = live;
+        applyLive(live);
+      } catch (error) {
+        backendOnline = false;
+        setOperatorNote(`后端连接失败：${error.message}`);
+        setSystemStatus();
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    function applyLive(live) {
+      const runtime = live.runtime || {};
+      const sample = normalizeV1Realtime(live.v1_realtime, runtime.latest_sample);
+      running = Boolean(runtime.active_batch_id);
+      alarm = Boolean(runtime.emergency_stop || runtime.last_control_error);
+
+      if (sample) {
+        sensors.forEach(sensor => updateSensorValue(sensor, sample[sensor.field], true));
+        rebuildCharts(live.recent_samples || [], runtime.targets || {}, live.latest_recommendation);
+      }
+
+      if (runtime.targets && !operatorEditing) {
+        setControl("targetTemp", runtime.targets.temperature_c, false, true);
+        setControl("stirRpm", runtime.targets.stirrer_rpm, false, true);
+      }
+
+      applyRecommendationSnapshot(live.latest_recommendation);
+      renderMemorySummary(live.ai_memory);
+      renderHistory(live.recent_outcomes || [], live.recent_batches || []);
+      renderRecentEvents(live.recent_events || []);
+      setRuntimeButtons(runtime);
+      setSystemStatus(runtime, sample);
+      updateRecommendationComparison();
+      if (runtime.last_control_error) {
+        setOperatorNote(runtime.last_control_error, "danger", 8000);
+      } else if (Date.now() > operatorNoteStickyUntil) {
+        setOperatorNote("数据来自 ESP32/模拟采集管线，经后端安全限幅后显示。", "", 0);
+      }
+    }
+
+    function renderMemorySummary(memory) {
+      if (!memory) {
+        $("memorySummary").textContent = "记忆文件：未加载";
+        return;
+      }
+      const status = memory.enabled ? "已启用" : "未启用";
+      $("memorySummary").textContent =
+        `记忆文件：${memory.profile_name} v${memory.profile_version}，${status}，参考 ${memory.reference_batch_count} 批，禁区 ${memory.forbidden_zone_count} 个，阈值 ${memory.sensor_limit_count} 项`;
+    }
+
+    function normalizeV1Realtime(realtime, fallback) {
+      if (!realtime || !realtime.data) return fallback;
+      return {
+        temperature_c: Number(realtime.data.current_temp ?? fallback?.temperature_c ?? 0),
+        pressure_mpa: Number(realtime.data.current_pressure ?? fallback?.pressure_mpa ?? 0),
+        stirrer_rpm: Number(realtime.data.stir_speed ?? fallback?.stirrer_rpm ?? 0),
+        shake_speed_cpm: Number(realtime.data.shake_speed ?? fallback?.shake_speed_cpm ?? 0),
+        flow_rate_l_min: Number(realtime.data.flow_rate ?? fallback?.flow_rate_l_min ?? 0),
+        product_concentration_percent: Number(realtime.data.progress ?? fallback?.product_concentration_percent ?? 0),
+        ph: Number(fallback?.ph ?? 7),
+        captured_at: realtime.timestamp || fallback?.captured_at || new Date().toISOString()
+      };
+    }
+
+    function setRuntimeButtons(runtime) {
+      const active = Boolean(runtime.active_batch_id);
+      $("startBtn").hidden = active;
+      $("stopBtn").hidden = !active;
+      $("autoBtn").textContent = `自动控制：${runtime.auto_enabled ? "开启" : "关闭"}`;
+      $("autoBtn").classList.toggle("accent", Boolean(runtime.auto_enabled));
+      $("resetEstopBtn").disabled = !runtime.emergency_stop;
+      $("estopBtn").disabled = Boolean(runtime.emergency_stop);
+      $("batchLabel").textContent = active ? `Batch #${String(runtime.active_batch_id).padStart(3, "0")}` : "Batch --";
+    }
+
+    function setSystemStatus(runtime = {}, sample = null) {
+      const sampleAgeMs = sample ? Date.now() - Date.parse(sample.captured_at) : Number.POSITIVE_INFINITY;
+      const sensorOk = backendOnline && sample && sampleAgeMs < 8000;
+      const tempSensor = sensors.find(sensor => sensor.key === "temp");
+      const valueAlarm = sensors.some(sensor => statusFor(sensor)[1] === "danger");
+      const runtimeAlarm = Boolean(runtime.emergency_stop || runtime.last_control_error);
+      alarm = runtimeAlarm || valueAlarm || (tempSensor && tempSensor.value > 250);
+
+      if (alarm) {
+        setPill("systemPill", "systemText", "danger", runtime.emergency_stop ? "急停已触发" : "⚠ 参数异常");
+      } else if (runtime.active_batch_id) {
+        setPill("systemPill", "systemText", "success", "系统运行中");
+      } else {
+        setPill("systemPill", "systemText", "warning", "系统待机");
+      }
+
+      if (sensorOk) {
+        setPill("sensorPill", "sensorText", "success", "传感器已连接");
+      } else if (backendOnline) {
+        setPill("sensorPill", "sensorText", "warning", "等待传感器");
+      } else {
+        setPill("sensorPill", "sensorText", "danger", "后端离线");
+      }
+
+      if (runtime.last_control_error) {
+        setPill("aiPill", "aiText", "warning", "控制待检查");
+      } else {
+        setPill("aiPill", "aiText", "accent", "AI 引擎就绪");
+      }
+    }
+
+    function applyRecommendationSnapshot(rec) {
+      if (!rec) return;
+      recommendation.targetTemp = rec.target_temperature_c;
+      recommendation.stirRpm = rec.target_stirrer_rpm;
+      recommendation.heatMinutes = rec.heating_minutes;
+      recommendation.stirMinutes = rec.stirring_minutes;
+      recommendation.expectedScore = rec.expected_score;
+      recommendation.rationale = rec.rationale;
+
+      $("recTemp").textContent = `${round(rec.target_temperature_c, 1)} °C`;
+      $("recHeat").textContent = `${round(rec.heating_minutes, 1)} min`;
+      $("recStir").textContent = `${round(rec.stirring_minutes, 1)} min`;
+      $("recYield").textContent = rec.expected_score > 0 ? `${round(rec.expected_score, 1)} 分` : "待学习";
+      $("recRationale").textContent = rec.rationale.length > 18 ? `${rec.rationale.slice(0, 18)}...` : rec.rationale;
+      $("learnedBatches").textContent = rec.based_on_batch_count;
+      const confidence = clamp(45 + rec.based_on_batch_count * 10, 45, 95);
+      $("confidenceBar").style.width = `${confidence}%`;
+      $("confidenceText").textContent = `${confidence}%`;
+    }
+
+    function updateRecommendationComparison() {
+      setCompare("recTempCompare", recommendation.targetTemp, controlMap.targetTemp.value, "vs 当前");
+      setCompare("recHeatCompare", recommendation.heatMinutes, controlMap.heatMinutes.value, "vs 当前");
+      const stirDiff = recommendation.stirMinutes - controlMap.stirMinutes.value;
+      $("recStirCompare").textContent = Math.abs(stirDiff) < 1 ? "→ 持平" : `${stirDiff > 0 ? "↑" : "↓"} ${Math.round(stirDiff)} vs 当前`;
+    }
+
+    function setCompare(id, recommended, current, suffix) {
+      const diff = Math.round(recommended - current);
+      if (Math.abs(diff) < 1) {
+        $(id).textContent = "→ 持平";
+      } else {
+        $(id).textContent = `${diff > 0 ? "↑" : "↓"} ${diff > 0 ? "+" : ""}${diff} ${suffix}`;
+      }
+    }
+
+    function rebuildCharts(samples, targets, rec) {
+      if (!samples.length) return;
+      tempPoints.length = 0;
+      targetPoints.length = 0;
+      aiPoints.length = 0;
+      const slice = samples.slice(-maxPoints);
+      slice.forEach(sample => {
+        tempPoints.push(sample.temperature_c);
+        targetPoints.push(targets.temperature_c || controlMap.targetTemp.value);
+        aiPoints.push(rec ? rec.target_temperature_c : recommendation.targetTemp);
+      });
+      while (tempPoints.length < maxPoints) {
+        tempPoints.unshift(tempPoints[0]);
+        targetPoints.unshift(targetPoints[0]);
+        aiPoints.unshift(aiPoints[0]);
+      }
+      drawMainChart();
+    }
+
+    function drawMainChart() {
+      const canvas = $("temperatureChart");
+      const ctx = canvas.getContext("2d");
+      const w = canvas.width;
+      const h = canvas.height;
+      const pad = { l: 42, r: 92, t: 14, b: 24 };
+      const all = tempPoints.concat(targetPoints, aiPoints).filter(Number.isFinite);
+      const minY = Math.max(0, Math.floor((Math.min(...all, 20) - 10) / 10) * 10);
+      const maxY = Math.ceil((Math.max(...all, 120) + 10) / 10) * 10;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, w, h);
+      ctx.font = "10px DM Mono, Consolas, monospace";
+      ctx.fillStyle = "#A0A8B5";
+      ctx.strokeStyle = "#DDE1E8";
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 4]);
+      for (let i = 0; i <= 5; i++) {
+        const y = pad.t + i / 5 * (h - pad.t - pad.b);
+        const value = Math.round(maxY - i / 5 * (maxY - minY));
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(w - pad.r, y);
+        ctx.stroke();
+        ctx.fillText(String(value), 10, y + 3);
+      }
+      ctx.setLineDash([]);
+
+      for (let i = 0; i <= 8; i++) {
+        const x = pad.l + i / 8 * (w - pad.l - pad.r);
+        const label = i === 8 ? "now" : `-${8 - i}m`;
+        ctx.fillText(label, x - 10, h - 7);
+      }
+      ctx.fillText("°C", 10, 12);
+
+      drawSeries(ctx, tempPoints, "#1D4ED8", [], minY, maxY, pad, w, h);
+      drawSeries(ctx, targetPoints, "#6B7385", [5, 4], minY, maxY, pad, w, h);
+      drawSeries(ctx, aiPoints, "#D97706", [1, 4], minY, maxY, pad, w, h);
+    }
+
+    function drawSeries(ctx, points, color, dash, minY, maxY, pad, w, h) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      points.forEach((value, index) => {
+        const x = pad.l + index / Math.max(1, points.length - 1) * (w - pad.l - pad.r);
+        const y = pad.t + (1 - (value - minY) / Math.max(1, maxY - minY)) * (h - pad.t - pad.b);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    function renderHistory(outcomes, batches) {
+      let rows = [];
+      if (outcomes.length) {
+        const bestScore = Math.max(...outcomes.map(outcome => outcome.yield_percent));
+        rows = outcomes.slice(0, 7).map(outcome => [
+          `#${String(outcome.batch_id).padStart(3, "0")}`,
+          `${Math.round(outcome.target_temperature_c)}`,
+          `${round(outcome.yield_percent, 1)}%`,
+          outcome.yield_percent === bestScore ? "✓ 最优" : "已记录",
+          outcome.yield_percent === bestScore
+        ]);
+      } else {
+        rows = batches.slice(0, 7).map(batch => [
+          `#${String(batch.id).padStart(3, "0")}`,
+          `${Math.round(batch.target_temperature_c)}`,
+          "--",
+          batch.finished_at ? "待录入" : "运行中",
+          false
+        ]);
+      }
+      if (!rows.length) rows = [["--", "--", "--", "待启动", false]];
+      $("historyRows").innerHTML = rows.map(row => `
+        <tr class="${row[4] ? "best" : ""}">
+          <td>${row[0]}</td>
+          <td class="mono">${row[1]}</td>
+          <td class="mono">${row[2]}</td>
+          <td>${row[3]}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderRecentEvents(events) {
+      events.slice().reverse().forEach(event => {
+        if (seenEvents.has(event.id)) return;
+        seenEvents.add(event.id);
+        addLog(describeEvent(event), event.created_at);
+      });
+    }
+
+    function describeEvent(event) {
+      const map = {
+        batch_started: "批次已启动，目标参数写入运行状态",
+        batch_finished: "批次已结束，等待产物结果录入",
+        product_result_recorded: "产物结果已保存，AI 推荐已刷新",
+        auto_enabled: "自动控制已开启",
+        auto_disabled: "自动控制已关闭",
+        emergency_stop: "人工急停已触发",
+        emergency_stop_reset: "急停状态已复位",
+        operator_targets_updated: "人工目标值已更新并完成限幅",
+        device_write: "目标温度/转速已下发到设备管线"
+      };
+      return map[event.event_type] || event.reason || event.event_type;
+    }
+
+    function addLog(message, timestamp = null) {
+      const log = $("eventLog");
+      const row = document.createElement("div");
+      row.className = "log-row";
+      const date = timestamp ? new Date(timestamp) : new Date();
+      const time = date.toLocaleTimeString("zh-CN", { hour12: false });
+      row.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${message}</span>`;
+      log.appendChild(row);
+      while (log.children.length > 10) log.removeChild(log.firstChild);
+      log.scrollTop = log.scrollHeight;
+      $("aiUpdateTime").textContent = time;
+    }
+
+    function setOperatorNote(message, kind = "", stickyMs = 5000) {
+      const note = $("operatorNote");
+      note.textContent = message;
+      note.style.color = kind === "danger" ? "var(--danger)" : "var(--text-muted)";
+      operatorNoteStickyUntil = stickyMs > 0 ? Date.now() + stickyMs : 0;
+    }
+
+    async function pushTargets() {
+      try {
+        await api(`/api/v1/reactor/${deviceId}/control`, {
+          method: "POST",
+          body: JSON.stringify({
+            command_id: `cmd_${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            params: {
+              heat_time: controlMap.heatMinutes.value * 60,
+              hold_time: controlMap.stirMinutes.value * 60,
+              cool_time: 180,
+              stir_speed: controlMap.stirRpm.value,
+              shake_speed: 30,
+              target_temp: controlMap.targetTemp.value,
+              target_pressure: 0.5
+            },
+            priority: "normal",
+            auto_start: false
+          })
+        });
+        setOperatorNote("目标温度/转速已提交到后端安全限幅器。");
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`目标提交失败：${error.message}`, "danger");
+      }
+    }
+
+    async function startBatch() {
+      try {
+        await api("/api/batches/start", {
+          method: "POST",
+          body: JSON.stringify({
+            name: `batch-${new Date().toISOString()}`,
+            target_temperature_c: controlMap.targetTemp.value,
+            target_stirrer_rpm: controlMap.stirRpm.value,
+            heating_minutes: controlMap.heatMinutes.value,
+            stirring_minutes: controlMap.stirMinutes.value
+          })
+        });
+        elapsedSeconds = 0;
+        setOperatorNote("批次已启动。自动控制开启后才会持续下发目标值。");
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`启动失败：${error.message}`, "danger");
+      }
+    }
+
+    async function stopBatch() {
+      const id = lastLive && lastLive.runtime && lastLive.runtime.active_batch_id;
+      if (!id) return;
+      try {
+        await api(`/api/batches/${id}/finish`, { method: "POST" });
+        setOperatorNote("批次已结束，可以录入产率与产物比例。");
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`停止失败：${error.message}`, "danger");
+      }
+    }
+
+    async function toggleAuto() {
+      const enabled = !(lastLive && lastLive.runtime && lastLive.runtime.auto_enabled);
+      try {
+        await api("/api/control/auto", { method: "POST", body: JSON.stringify({ enabled }) });
+        setOperatorNote(`自动控制已${enabled ? "开启" : "关闭"}。`);
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`自动控制切换失败：${error.message}`, "danger");
+      }
+    }
+
+    async function emergencyStop() {
+      try {
+        await api("/api/control/emergency-stop", { method: "POST" });
+        setOperatorNote("急停已触发：自动控制已关闭。", "danger");
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`急停失败：${error.message}`, "danger");
+      }
+    }
+
+    async function resetEmergencyStop() {
+      try {
+        await api("/api/control/emergency-stop/reset", { method: "POST" });
+        setOperatorNote("急停状态已复位。请确认现场安全后再开启自动控制。 ");
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`急停复位失败：${error.message}`, "danger");
+      }
+    }
+
+    async function saveProductResult() {
+      const batches = (lastLive && lastLive.recent_batches) || [];
+      const batch = batches.find(item => item.finished_at);
+      if (!batch) {
+        setOperatorNote("没有已结束的批次可录入结果。", "danger");
+        return;
+      }
+      try {
+        await api("/api/product-results", {
+          method: "POST",
+          body: JSON.stringify({
+            batch_id: batch.id,
+            yield_percent: Number($("yieldInput").value),
+            product_ratio: Number($("ratioInput").value),
+            notes: $("notesInput").value
+          })
+        });
+        setOperatorNote(`批次 #${String(batch.id).padStart(3, "0")} 结果已录入，AI 推荐已重新生成。`);
+        await pollLive();
+      } catch (error) {
+        setOperatorNote(`结果录入失败：${error.message}`, "danger");
+      }
+    }
+
+    async function applyRecommendation() {
+      setControl("targetTemp", recommendation.targetTemp, true, true);
+      setControl("heatMinutes", recommendation.heatMinutes, true, true);
+      setControl("stirMinutes", recommendation.stirMinutes, true, true);
+      setControl("stirRpm", recommendation.stirRpm, true, true);
+      addLog("AI 推荐参数已填入控制面板并准备提交");
+      setOperatorNote("AI 推荐参数已填入。启动批次或继续调整目标值时会经过后端安全限幅。");
+    }
+
+    function updateClocks() {
+      const now = new Date();
+      $("wallClock").textContent = now.toLocaleTimeString("zh-CN", { hour12: false });
+      if (running) elapsedSeconds += 1;
+      const hh = String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0");
+      const ss = String(elapsedSeconds % 60).padStart(2, "0");
+      $("runClock").textContent = `${hh}:${mm}:${ss}`;
+    }
+
+    function boot() {
+      renderSensors();
+      bindControls();
+      sensors.forEach(drawMini);
+      drawMainChart();
+      addLog("上位机界面已加载，等待后端采集快照");
+      updateRecommendationComparison();
+      updateClocks();
+      pollLive();
+
+      setInterval(updateClocks, 1000);
+      setInterval(pollLive, 2000);
+    }
+
+    boot();
+  </script>
+</body>
+</html>
+

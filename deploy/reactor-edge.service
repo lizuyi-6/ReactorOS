@@ -1,0 +1,26 @@
+[Unit]
+Description=Reactor Edge Supervisor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+ExecStart=/usr/local/bin/reactor-edge-daemon \
+  --config /etc/reactor-edge/device.toml \
+  --safety /etc/reactor-edge/safety.toml \
+  --memory /etc/reactor-edge/ai_memory.toml \
+  --db /var/lib/reactor-edge/reactor.sqlite3 \
+  --assets /opt/reactor-edge/static \
+  --bind 0.0.0.0:8000
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/reactor-edge
+
+[Install]
+WantedBy=multi-user.target

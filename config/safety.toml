@@ -1,0 +1,28 @@
+[control]
+auto_enabled_default = false
+manual_lock_default = false
+control_interval_ms = 2000
+sensor_timeout_ms = 6000
+
+[temperature]
+min_c = 20.0
+max_c = 160.0
+max_step_c = 2.0
+default_target_c = 60.0
+
+[stirrer]
+min_rpm = 0.0
+max_rpm = 1200.0
+max_step_rpm = 50.0
+default_target_rpm = 300.0
+
+[optimizer]
+min_temperature_c = 35.0
+max_temperature_c = 140.0
+min_stirrer_rpm = 100.0
+max_stirrer_rpm = 1000.0
+min_heating_minutes = 15.0
+max_heating_minutes = 240.0
+min_stirring_minutes = 15.0
+max_stirring_minutes = 240.0
+

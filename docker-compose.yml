@@ -1,0 +1,40 @@
+services:
+  reactor-edge:
+    build:
+      context: .
+      target: runtime
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data
+    command:
+      - /usr/local/bin/reactor-edge-daemon
+      - --config
+      - /app/config/device.toml
+      - --safety
+      - /app/config/safety.toml
+      - --memory
+      - /app/config/ai_memory.toml
+      - --db
+      - /app/data/reactor.sqlite3
+      - --assets
+      - /app/static
+      - --bind
+      - 0.0.0.0:8000
+      - --enable-test-reset
+
+  test:
+    build:
+      context: .
+      target: test
+    working_dir: /work
+    volumes:
+      - .:/work
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/work/target
+    command: cargo test
+
+volumes:
+  cargo-cache:
+  target-cache:

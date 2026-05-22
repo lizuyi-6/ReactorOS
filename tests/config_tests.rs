@@ -1,0 +1,96 @@
+use reactor_edge_daemon::{
+    config::{load_device_config, DeviceConfig, DeviceMode, SafetyConfig},
+    memory::load_ai_memory,
+};
+
+#[test]
+fn parses_esp32_serial_device_mode() {
+    let raw = r#"
+mode = "esp32_serial"
+
+[serial]
+port = "/dev/ttyUSB0"
+baudrate = 115200
+parity = "N"
+stopbits = 1
+bytesize = 8
+timeout_ms = 1000
+
+[modbus]
+slave_id = 1
+
+[modbus.registers.temperature_c]
+address = 0
+scale = 0.1
+offset = 0.0
+min_valid = 0.0
+max_valid = 250.0
+
+[modbus.registers.stirrer_rpm]
+address = 1
+scale = 1.0
+offset = 0.0
+min_valid = 0.0
+max_valid = 2000.0
+
+[modbus.registers.target_temperature_c]
+address = 10
+scale = 0.1
+offset = 0.0
+
+[modbus.registers.target_stirrer_rpm]
+address = 11
+scale = 1.0
+offset = 0.0
+
+[esp32]
+frame_prefix = "RX"
+command_prefix = "TX"
+checksum = true
+max_line_bytes = 256
+
+[simulator]
+initial_temperature_c = 28.0
+initial_stirrer_rpm = 0.0
+ambient_temperature_c = 25.0
+heating_response = 0.08
+cooling_response = 0.02
+stirrer_response = 0.25
+noise = 0.15
+"#;
+
+    let config: DeviceConfig = toml::from_str(raw).unwrap();
+
+    assert_eq!(config.mode, DeviceMode::Esp32Serial);
+    assert_eq!(config.serial.baudrate, 115200);
+    assert_eq!(config.esp32.frame_prefix, "RX");
+}
+
+#[test]
+fn hardware_esp32_template_is_valid() {
+    let config = load_device_config("config/device.esp32.toml").unwrap();
+
+    assert_eq!(config.mode, DeviceMode::Esp32Serial);
+    assert_eq!(config.serial.baudrate, 115200);
+    assert_eq!(config.serial.parity, "N");
+    assert!(config.esp32.checksum);
+}
+
+#[test]
+fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+    let safety: SafetyConfig =
+        toml::from_str(&std::fs::read_to_string("config/safety.toml").unwrap()).unwrap();
+
+    memory
+        .validate_against_optimizer_bounds(&safety.optimizer)
+        .unwrap();
+    let bounds = memory.effective_optimizer_bounds(&safety.optimizer);
+
+    assert_eq!(memory.reference_batches.len(), 3);
+    assert_eq!(memory.forbidden_zones.len(), 2);
+    assert_eq!(bounds.min_temperature_c, 55.0);
+    assert_eq!(bounds.max_temperature_c, 135.0);
+    assert_eq!(bounds.min_stirrer_rpm, 250.0);
+    assert_eq!(memory.sensor_limits.configured_count(), 7);
+}

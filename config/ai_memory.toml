@@ -1,0 +1,142 @@
+[profile]
+name = "lab-poc-waterlike-reaction"
+version = "2026-05-22"
+reactor_model = "bench_reactor_esp32_bridge"
+material_family = "aqueous-or-low-viscosity-bio-poc"
+
+[objective]
+optimize_for = "yield_percent_with_product_ratio"
+yield_weight = 0.80
+product_ratio_weight = 0.20
+notes = "文件型记忆只提供 AI 推荐先验与报警参考，不替代反应釜、ESP32 固件和电气联锁的硬件安全保护。"
+
+[recommendation]
+enabled = true
+use_reference_batches = true
+
+[recommendation.bounds]
+min_temperature_c = 55.0
+max_temperature_c = 135.0
+min_stirrer_rpm = 250.0
+max_stirrer_rpm = 900.0
+min_heating_minutes = 30.0
+max_heating_minutes = 180.0
+min_stirring_minutes = 20.0
+max_stirring_minutes = 150.0
+
+[sensor_limits.temperature_c]
+label = "reactor temperature"
+unit = "degC"
+normal_min = 20.0
+normal_max = 140.0
+hard_min = 0.0
+hard_max = 160.0
+suggestion = "Stop heating, keep stirring if safe, and check cooling loop and temperature probe."
+
+[sensor_limits.pressure_mpa]
+label = "reactor pressure"
+unit = "MPa"
+normal_min = 0.0
+normal_max = 0.80
+hard_min = 0.0
+hard_max = 1.00
+suggestion = "Vent through the validated relief path and inspect pressure sensor and exhaust line."
+
+[sensor_limits.stirrer_rpm]
+label = "stirrer speed"
+unit = "RPM"
+normal_min = 0.0
+normal_max = 1000.0
+hard_min = 0.0
+hard_max = 1200.0
+suggestion = "Reduce stirrer target and inspect mechanical coupling."
+
+[sensor_limits.shake_speed_cpm]
+label = "shake speed"
+unit = "CPM"
+normal_min = 0.0
+normal_max = 50.0
+hard_min = 0.0
+hard_max = 60.0
+suggestion = "Reduce shake speed and verify vessel fixation."
+
+[sensor_limits.flow_rate_l_min]
+label = "coolant flow"
+unit = "L/min"
+normal_min = 0.2
+normal_max = 5.0
+hard_min = 0.0
+hard_max = 8.0
+suggestion = "Check coolant pump, valve position, and blocked tubing."
+
+[sensor_limits.product_concentration_percent]
+label = "product concentration"
+unit = "%"
+normal_min = 0.0
+normal_max = 95.0
+hard_min = 0.0
+hard_max = 100.0
+suggestion = "Confirm online concentration probe calibration before using the value for optimization."
+
+[sensor_limits.ph]
+label = "pH"
+unit = "pH"
+normal_min = 5.5
+normal_max = 8.5
+hard_min = 0.0
+hard_max = 14.0
+suggestion = "Confirm pH probe calibration and pause automatic optimization if the chemistry is outside the validated range."
+
+[[reference_batches]]
+id = "seed-low-temp-stable"
+target_temperature_c = 70.0
+target_stirrer_rpm = 420.0
+heating_minutes = 80.0
+stirring_minutes = 60.0
+yield_percent = 68.0
+product_ratio = 0.72
+notes = "Conservative starting point for low-temperature validation."
+
+[[reference_batches]]
+id = "seed-mid-temp-best"
+target_temperature_c = 92.0
+target_stirrer_rpm = 560.0
+heating_minutes = 95.0
+stirring_minutes = 70.0
+yield_percent = 84.0
+product_ratio = 0.88
+notes = "Historical lab note suggests this region balances yield and selectivity."
+
+[[reference_batches]]
+id = "seed-high-stir-mixed"
+target_temperature_c = 118.0
+target_stirrer_rpm = 780.0
+heating_minutes = 120.0
+stirring_minutes = 95.0
+yield_percent = 77.0
+product_ratio = 0.80
+notes = "Useful exploration point but not the preferred default."
+
+[[forbidden_zones]]
+name = "hot-low-stir"
+reason = "High temperature with weak mixing caused unstable readings during bench tests."
+min_temperature_c = 125.0
+max_temperature_c = 160.0
+min_stirrer_rpm = 0.0
+max_stirrer_rpm = 350.0
+
+[[forbidden_zones]]
+name = "long-high-temp-hold"
+reason = "Avoid long high-temperature residence until product degradation data is available."
+min_temperature_c = 130.0
+max_temperature_c = 160.0
+min_heating_minutes = 150.0
+max_heating_minutes = 240.0
+
+[[operator_notes]]
+topic = "hardware_safety"
+note = "ESP32 firmware and reactor controller must keep independent hard interlocks for over-temperature, over-pressure, motor fault, and emergency stop."
+
+[[operator_notes]]
+topic = "data_quality"
+note = "Do not trust AI recommendations until at least three real finished batches have verified yield and product ratio records."

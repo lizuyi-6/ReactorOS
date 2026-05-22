@@ -1,0 +1,12 @@
+/target/
+/.idea/
+/.vscode/
+/node_modules/
+/test-results/
+/playwright-report/
+data/*.sqlite3
+data/*.sqlite3-*
+data/*.db
+data/*.db-*
+.playwright-mcp/
+*.log
