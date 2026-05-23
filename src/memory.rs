@@ -138,6 +138,7 @@ pub struct SensorLimits {
     pub pressure_mpa: Option<SensorLimit>,
     pub stirrer_rpm: Option<SensorLimit>,
     pub shake_speed_cpm: Option<SensorLimit>,
+    pub tilt_angle_deg: Option<SensorLimit>,
     pub flow_rate_l_min: Option<SensorLimit>,
     pub product_concentration_percent: Option<SensorLimit>,
     pub ph: Option<SensorLimit>,
@@ -436,6 +437,7 @@ impl SensorLimits {
             self.pressure_mpa.as_ref(),
             self.stirrer_rpm.as_ref(),
             self.shake_speed_cpm.as_ref(),
+            self.tilt_angle_deg.as_ref(),
             self.flow_rate_l_min.as_ref(),
             self.product_concentration_percent.as_ref(),
             self.ph.as_ref(),
@@ -451,6 +453,7 @@ impl SensorLimits {
             ("pressure_mpa", self.pressure_mpa.as_ref()),
             ("stirrer_rpm", self.stirrer_rpm.as_ref()),
             ("shake_speed_cpm", self.shake_speed_cpm.as_ref()),
+            ("tilt_angle_deg", self.tilt_angle_deg.as_ref()),
             ("flow_rate_l_min", self.flow_rate_l_min.as_ref()),
             (
                 "product_concentration_percent",

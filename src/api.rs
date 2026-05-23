@@ -26,7 +26,7 @@ use crate::{
     db::{Batch, BatchOutcome, ControlEvent, Db, ProductResult},
     memory::{AiMemory, AiMemorySummary, LimitLevel, SensorLimit},
     optimizer::{recommend_with_memory, Recommendation},
-    state::{ControlTargets, RuntimeState, SensorSnapshot, SharedState},
+    state::{fit_tilt_angle_deg, ControlTargets, RuntimeState, SensorSnapshot, SharedState},
 };
 
 #[derive(Clone)]
@@ -64,11 +64,33 @@ pub struct V1Envelope<T> {
     pub data: T,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DeviceStatusSummary {
+    pub total_count: usize,
+    pub online_count: usize,
+    pub devices: Vec<DeviceStatusItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceStatusItem {
+    pub device_id: String,
+    pub device_role: String,
+    pub online: bool,
+    pub status: String,
+    pub last_seen_at: Option<String>,
+    pub last_seen_age_ms: Option<i64>,
+    pub stale_after_ms: i64,
+    pub active_batch_id: Option<i64>,
+    pub emergency_stop: bool,
+    pub last_control_error: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct StartBatchRequest {
     pub name: Option<String>,
     pub target_temperature_c: Option<f64>,
     pub target_stirrer_rpm: Option<f64>,
+    pub target_shake_speed_cpm: Option<f64>,
     pub heating_minutes: Option<f64>,
     pub stirring_minutes: Option<f64>,
 }
@@ -95,6 +117,7 @@ pub struct ManualLockRequest {
 pub struct TargetRequest {
     pub temperature_c: f64,
     pub stirrer_rpm: f64,
+    pub shake_speed_cpm: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,6 +168,7 @@ pub struct PipelineSampleRequest {
     pub pressure_mpa: f64,
     pub stirrer_rpm: f64,
     pub shake_speed_cpm: f64,
+    pub tilt_state: u8,
     pub flow_rate_l_min: f64,
     pub product_concentration_percent: f64,
     pub ph: f64,
@@ -154,6 +178,8 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/live", get(live))
+        .route("/api/devices/status", get(devices_status))
+        .route("/api/v1/devices/status", get(devices_status))
         .route("/api/v1/reactor/:device_id/control", post(v1_control))
         .route(
             "/api/v1/reactor/:device_id/samples",
@@ -219,6 +245,13 @@ async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppEr
         recent_events,
         ai_memory,
     }))
+}
+
+async fn devices_status(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<DeviceStatusSummary>>, AppError> {
+    let runtime = state.runtime.read().await.clone();
+    Ok(Json(success(device_status_summary(&state, &runtime))))
 }
 
 async fn v1_control(
@@ -350,6 +383,9 @@ fn v1_realtime_payload(device_id: &str, runtime: &RuntimeState, memory: &AiMemor
             "current_pressure": sample.map(|sample| sample.pressure_mpa),
             "stir_speed": sample.map(|sample| sample.stirrer_rpm),
             "shake_speed": sample.map(|sample| sample.shake_speed_cpm),
+            "tilt_state": sample.map(|sample| sample.tilt_state),
+            "tilt_angle": sample.map(|sample| sample.tilt_angle_deg),
+            "tilt_angle_source": "software_fit_from_binary_sensor",
             "flow_rate": sample.map(|sample| sample.flow_rate_l_min),
             "phase": phase_for(&runtime),
             "progress": progress_for(sample)
@@ -387,6 +423,9 @@ async fn v1_history(
                     "current_pressure": sample.pressure_mpa,
                     "stir_speed": sample.stirrer_rpm,
                     "shake_speed": sample.shake_speed_cpm,
+                    "tilt_state": sample.tilt_state,
+                    "tilt_angle": sample.tilt_angle_deg,
+                    "tilt_angle_source": "software_fit_from_binary_sensor",
                     "flow_rate": sample.flow_rate_l_min,
                     "product_concentration": sample.product_concentration_percent,
                     "ph": sample.ph
@@ -512,6 +551,11 @@ async fn start_batch(
             .unwrap_or(targets.temperature_c),
     );
     let target_stirrer_rpm = round2(payload.target_stirrer_rpm.unwrap_or(targets.stirrer_rpm));
+    let target_shake_speed_cpm = round2(
+        payload
+            .target_shake_speed_cpm
+            .unwrap_or(targets.shake_speed_cpm),
+    );
     let heating_minutes = round2(payload.heating_minutes.unwrap_or(60.0));
     let stirring_minutes = round2(payload.stirring_minutes.unwrap_or(60.0));
     let name = payload.name.unwrap_or_else(|| "batch".to_string());
@@ -533,7 +577,7 @@ async fn start_batch(
                 hold_time_s: batch.stirring_minutes * 60.0,
                 cool_time_s: targets.cool_time_s,
                 stirrer_rpm: batch.target_stirrer_rpm,
-                shake_speed_cpm: targets.shake_speed_cpm,
+                shake_speed_cpm: target_shake_speed_cpm,
                 target_pressure_mpa: targets.target_pressure_mpa,
             },
         );
@@ -541,7 +585,16 @@ async fn start_batch(
     state.db.insert_control_event(
         Some(batch.id),
         "batch_started",
-        None,
+        Some(&SafeCommand {
+            target_temperature_c: batch.target_temperature_c,
+            heat_time_s: batch.heating_minutes * 60.0,
+            hold_time_s: batch.stirring_minutes * 60.0,
+            cool_time_s: targets.cool_time_s,
+            target_stirrer_rpm: batch.target_stirrer_rpm,
+            target_shake_speed_cpm,
+            target_pressure_mpa: targets.target_pressure_mpa,
+            reason: "batch started and runtime targets updated".to_string(),
+        }),
         "batch started and runtime targets updated",
     )?;
     Ok(Json(batch))
@@ -649,7 +702,7 @@ async fn set_targets(
             hold_time_s: current.hold_time_s,
             cool_time_s: current.cool_time_s,
             stirrer_rpm: payload.stirrer_rpm,
-            shake_speed_cpm: current.shake_speed_cpm,
+            shake_speed_cpm: payload.shake_speed_cpm.unwrap_or(current.shake_speed_cpm),
             target_pressure_mpa: current.target_pressure_mpa,
         }
     });
@@ -762,18 +815,23 @@ async fn accept_pipeline_sample(
 fn pipeline_sample_from_request(
     payload: PipelineSampleRequest,
 ) -> Result<SensorSnapshot, AppError> {
+    let captured_at = Utc::now();
+    let tilt_state = validate_tilt_state(payload.tilt_state)?;
+    let shake_speed_cpm = round2_finite("shake_speed_cpm", payload.shake_speed_cpm)?;
     Ok(SensorSnapshot {
         temperature_c: round2_finite("temperature_c", payload.temperature_c)?,
         pressure_mpa: round2_finite("pressure_mpa", payload.pressure_mpa)?,
         stirrer_rpm: round2_finite("stirrer_rpm", payload.stirrer_rpm)?,
-        shake_speed_cpm: round2_finite("shake_speed_cpm", payload.shake_speed_cpm)?,
+        shake_speed_cpm,
+        tilt_state,
+        tilt_angle_deg: fit_tilt_angle_deg(tilt_state, shake_speed_cpm, captured_at),
         flow_rate_l_min: round2_finite("flow_rate_l_min", payload.flow_rate_l_min)?,
         product_concentration_percent: round2_finite(
             "product_concentration_percent",
             payload.product_concentration_percent,
         )?,
         ph: round2_finite("ph", payload.ph)?,
-        captured_at: Utc::now(),
+        captured_at,
     })
 }
 
@@ -949,6 +1007,16 @@ fn round2_finite(field: &str, value: f64) -> Result<f64, AppError> {
     Ok(round2(value))
 }
 
+fn validate_tilt_state(value: u8) -> Result<u8, AppError> {
+    if value <= 1 {
+        Ok(value)
+    } else {
+        Err(AppError::bad_request(
+            "tilt_state must be 0 or 1 for the shake vessel binary tilt sensor",
+        ))
+    }
+}
+
 fn validate_target_temperature(safety: &SafetyConfig, value: f64) -> Result<(), AppError> {
     validate_range("target_temp", value, 0.0, 500.0)?;
     if value > safety.temperature.max_c {
@@ -987,6 +1055,66 @@ fn parse_required_time(value: Option<&str>, field: &str) -> Result<DateTime<Utc>
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
         .map_err(|_| AppError::bad_request(format!("{field} must be ISO8601")))
+}
+
+fn device_status_summary(state: &AppState, runtime: &RuntimeState) -> DeviceStatusSummary {
+    let device = device_status_item("reactor_001", "reactor_bridge", state, runtime);
+    DeviceStatusSummary {
+        total_count: 1,
+        online_count: usize::from(device.online),
+        devices: vec![device],
+    }
+}
+
+fn device_status_item(
+    device_id: &str,
+    device_role: &str,
+    state: &AppState,
+    runtime: &RuntimeState,
+) -> DeviceStatusItem {
+    let now = Utc::now();
+    let stale_after_ms = state.safety.control.sensor_timeout_ms;
+    let (last_seen_at, last_seen_age_ms, sample_fresh) = match &runtime.latest_sample {
+        Some(sample) => {
+            let age = now
+                .signed_duration_since(sample.captured_at)
+                .num_milliseconds();
+            (
+                Some(sample.captured_at.to_rfc3339()),
+                Some(age),
+                age <= stale_after_ms,
+            )
+        }
+        None => (None, None, false),
+    };
+    let status = if runtime.emergency_stop {
+        "error"
+    } else if !sample_fresh {
+        if runtime.latest_sample.is_some() {
+            "stale"
+        } else {
+            "offline"
+        }
+    } else if runtime.last_control_error.is_some() {
+        "error"
+    } else if runtime.active_batch_id.is_some() {
+        "running"
+    } else {
+        "idle"
+    };
+
+    DeviceStatusItem {
+        device_id: device_id.to_string(),
+        device_role: device_role.to_string(),
+        online: sample_fresh && !runtime.emergency_stop && runtime.last_control_error.is_none(),
+        status: status.to_string(),
+        last_seen_at,
+        last_seen_age_ms,
+        stale_after_ms,
+        active_batch_id: runtime.active_batch_id,
+        emergency_stop: runtime.emergency_stop,
+        last_control_error: runtime.last_control_error.clone(),
+    }
 }
 
 fn device_status(runtime: &RuntimeState) -> &'static str {
@@ -1060,6 +1188,12 @@ fn alarms_for(
             "shake_speed_limit",
             memory.sensor_limits.shake_speed_cpm.as_ref(),
             sample.shake_speed_cpm,
+        );
+        push_sensor_alarm(
+            &mut alarms,
+            "tilt_angle_limit",
+            memory.sensor_limits.tilt_angle_deg.as_ref(),
+            sample.tilt_angle_deg,
         );
         push_sensor_alarm(
             &mut alarms,

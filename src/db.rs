@@ -53,6 +53,7 @@ pub struct ControlEvent {
     pub event_type: String,
     pub target_temperature_c: Option<f64>,
     pub target_stirrer_rpm: Option<f64>,
+    pub target_shake_speed_cpm: Option<f64>,
     pub reason: String,
     pub created_at: DateTime<Utc>,
 }
@@ -106,6 +107,8 @@ impl Db {
                 pressure_mpa REAL NOT NULL DEFAULT 0,
                 stirrer_rpm REAL NOT NULL,
                 shake_speed_cpm REAL NOT NULL DEFAULT 0,
+                tilt_state INTEGER NOT NULL DEFAULT 0,
+                tilt_angle_deg REAL NOT NULL DEFAULT 0,
                 flow_rate_l_min REAL NOT NULL DEFAULT 0,
                 product_concentration_percent REAL NOT NULL DEFAULT 0,
                 ph REAL NOT NULL DEFAULT 7,
@@ -119,6 +122,7 @@ impl Db {
                 event_type TEXT NOT NULL,
                 target_temperature_c REAL,
                 target_stirrer_rpm REAL,
+                target_shake_speed_cpm REAL,
                 reason TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(batch_id) REFERENCES batches(id)
@@ -163,6 +167,18 @@ impl Db {
         add_column_if_missing(
             &conn,
             "sensor_samples",
+            "tilt_angle_deg",
+            "REAL NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sensor_samples",
+            "tilt_state",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &conn,
+            "sensor_samples",
             "flow_rate_l_min",
             "REAL NOT NULL DEFAULT 0",
         )?;
@@ -173,6 +189,7 @@ impl Db {
             "REAL NOT NULL DEFAULT 0",
         )?;
         add_column_if_missing(&conn, "sensor_samples", "ph", "REAL NOT NULL DEFAULT 7")?;
+        add_column_if_missing(&conn, "control_events", "target_shake_speed_cpm", "REAL")?;
         if has_legacy_pressure_kpa {
             conn.execute(
                 "UPDATE sensor_samples SET pressure_mpa = pressure_kpa / 1000.0 WHERE pressure_mpa = 0 AND pressure_kpa > 0",
@@ -235,8 +252,8 @@ impl Db {
             r#"
             INSERT INTO sensor_samples
                 (batch_id, temperature_c, pressure_mpa, stirrer_rpm,
-                 shake_speed_cpm, flow_rate_l_min, product_concentration_percent, ph, captured_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             params![
                 batch_id,
@@ -244,6 +261,8 @@ impl Db {
                 sample.pressure_mpa,
                 sample.stirrer_rpm,
                 sample.shake_speed_cpm,
+                sample.tilt_state,
+                sample.tilt_angle_deg,
                 sample.flow_rate_l_min,
                 sample.product_concentration_percent,
                 sample.ph,
@@ -258,22 +277,24 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT temperature_c, pressure_mpa, stirrer_rpm,
-                   shake_speed_cpm, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                   shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
             FROM sensor_samples
             ORDER BY id DESC
             LIMIT ?1
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
-            let captured_at: String = row.get(7)?;
+            let captured_at: String = row.get(9)?;
             Ok(SensorSnapshot {
                 temperature_c: row.get(0)?,
                 pressure_mpa: row.get(1)?,
                 stirrer_rpm: row.get(2)?,
                 shake_speed_cpm: row.get(3)?,
-                flow_rate_l_min: row.get(4)?,
-                product_concentration_percent: row.get(5)?,
-                ph: row.get(6)?,
+                tilt_state: row.get(4)?,
+                tilt_angle_deg: row.get(5)?,
+                flow_rate_l_min: row.get(6)?,
+                product_concentration_percent: row.get(7)?,
+                ph: row.get(8)?,
                 captured_at: parse_dt(&captured_at)?,
             })
         })?;
@@ -297,7 +318,7 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT temperature_c, pressure_mpa, stirrer_rpm,
-                   shake_speed_cpm, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                   shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
             FROM sensor_samples
             WHERE captured_at >= ?1 AND captured_at <= ?2
             ORDER BY captured_at ASC, id ASC
@@ -312,15 +333,17 @@ impl Db {
                 offset as i64
             ],
             |row| {
-                let captured_at: String = row.get(7)?;
+                let captured_at: String = row.get(9)?;
                 Ok(SensorSnapshot {
                     temperature_c: row.get(0)?,
                     pressure_mpa: row.get(1)?,
                     stirrer_rpm: row.get(2)?,
                     shake_speed_cpm: row.get(3)?,
-                    flow_rate_l_min: row.get(4)?,
-                    product_concentration_percent: row.get(5)?,
-                    ph: row.get(6)?,
+                    tilt_state: row.get(4)?,
+                    tilt_angle_deg: row.get(5)?,
+                    flow_rate_l_min: row.get(6)?,
+                    product_concentration_percent: row.get(7)?,
+                    ph: row.get(8)?,
                     captured_at: parse_dt(&captured_at)?,
                 })
             },
@@ -344,14 +367,15 @@ impl Db {
         conn.execute(
             r#"
             INSERT INTO control_events
-                (batch_id, event_type, target_temperature_c, target_stirrer_rpm, reason, created_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm, reason, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             "#,
             params![
                 batch_id,
                 event_type,
                 command.map(|cmd| cmd.target_temperature_c),
                 command.map(|cmd| cmd.target_stirrer_rpm),
+                command.map(|cmd| cmd.target_shake_speed_cpm),
                 reason,
                 Utc::now().to_rfc3339()
             ],
@@ -535,21 +559,22 @@ impl Db {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm, reason, created_at
+            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm, reason, created_at
             FROM control_events
             ORDER BY id DESC
             LIMIT ?1
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
-            let created_at: String = row.get(6)?;
+            let created_at: String = row.get(7)?;
             Ok(ControlEvent {
                 id: row.get(0)?,
                 batch_id: row.get(1)?,
                 event_type: row.get(2)?,
                 target_temperature_c: row.get(3)?,
                 target_stirrer_rpm: row.get(4)?,
-                reason: row.get(5)?,
+                target_shake_speed_cpm: row.get(5)?,
+                reason: row.get(6)?,
                 created_at: parse_dt(&created_at)?,
             })
         })?;

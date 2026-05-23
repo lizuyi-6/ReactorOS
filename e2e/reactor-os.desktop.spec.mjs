@@ -19,10 +19,41 @@ test.afterEach(async ({ page }) => {
   assertNoConsoleErrors(page);
 });
 
-test("Nordic dashboard exposes backend-fed monitoring, program, materials, AI and alarms", async ({ page, request }) => {
+test("production HMI shows error state instead of fake readings without pipeline data", async ({ page, request }) => {
+  await request.post("/api/test/reset");
+  const unavailable = await request.get("/api/live");
+  expect(unavailable.status()).toBe(503);
+  const devices = await request.get("/api/devices/status");
+  expect(devices.status()).toBe(200);
+  const payload = await devices.json();
+  expect(payload.data.online_count).toBe(0);
+  expect(payload.data.devices[0].status).toBe("offline");
+
+  const consoleErrors = [];
+  page.on("console", message => {
+    if (message.type() !== "error") return;
+    const text = message.text();
+    if (text.includes("Failed to load resource") && text.includes("503")) return;
+    consoleErrors.push(text);
+  });
+  page.on("pageerror", error => consoleErrors.push(error.message));
+  page.consoleErrors = consoleErrors;
+  await page.goto("/");
+  await page.waitForLoadState("domcontentloaded");
+  await expect(page.locator(selectors.runState)).toContainText("Error 503");
+  await expect(page.locator("#pipelineState")).toContainText("Devices 0/1 Pipeline 503");
+  await expect(page.locator(selectors.sideSensors)).not.toContainText("31.11 °C");
+  await expect(page.locator(selectors.sideSensors)).not.toContainText("0.50 MPa");
+  await expect(page.locator(selectors.sideSensors)).not.toContainText("125.18 RPM");
+});
+
+test("HMI dashboard exposes backend-fed monitoring, program, materials, AI and alarms", async ({ page, request }) => {
   await assertNoHorizontalOverflow(page);
   await assertNoTextClipping(page);
   await expect(page.locator(selectors.runState)).toContainText(/Idle|Running|Alarm/);
+  await expect(page.locator("body")).toContainText("Process Line");
+  await expect(page.locator("body")).toContainText("Detector Signals");
+  await expect(page.locator("body")).toContainText("Operator Control");
   const live = await latestLive(request);
   expect(live.runtime.latest_sample).toMatchObject(pipelineSample);
   const temp = pipelineSample.temperature_c.toFixed(2);
@@ -32,19 +63,23 @@ test("Nordic dashboard exposes backend-fed monitoring, program, materials, AI an
   const flow = pipelineSample.flow_rate_l_min.toFixed(2);
   const concentration = pipelineSample.product_concentration_percent.toFixed(2);
   const ph = pipelineSample.ph.toFixed(2);
+  const fittedTilt = live.runtime.latest_sample.tilt_angle_deg.toFixed(2);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${pressure} MPa`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${rpm} RPM`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${shake} CPM`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${fittedTilt} deg`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${flow} L/min`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${concentration} %`);
   await expect(page.locator(selectors.sideSensors)).toContainText(ph);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${temp} °C`);
   await expect(page.locator(selectors.batchSummary)).toContainText("Target Temp");
   await expect(page.locator(selectors.batchSummary)).toContainText(`${shake} CPM`);
+  await expect(page.locator(selectors.batchSummary)).toContainText(`${fittedTilt} deg`);
   await expect(page.locator(selectors.batchSummary)).toContainText(`${flow} L/min`);
-  await expect(page.locator(selectors.feedSummary)).toContainText("A : B ratio");
   await assertCanvasHasInk(page, selectors.mainChart);
+  await assertCanvasHasInk(page, selectors.processCanvas);
   await assertCanvasHasInk(page, "#shakeChart");
+  await assertCanvasHasInk(page, "#tiltChart");
   await assertCanvasHasInk(page, "#flowChart");
 
   await switchTab(page, selectors.programTab, "view-program");
@@ -90,7 +125,7 @@ test("Nordic dashboard exposes backend-fed monitoring, program, materials, AI an
     .toContain("product_result_recorded");
 
   await switchTab(page, selectors.aiTab, "view-ai");
-  await expect(page.locator(selectors.aiRecommendation)).toContainText("目标温度");
+  await expect(page.locator(selectors.aiRecommendation)).toContainText("Target Temp");
   await assertCanvasHasInk(page, "#sensitivityChart");
   await assertCanvasHasInk(page, "#learningChart");
   await page.locator(selectors.applyAi).click();

@@ -51,6 +51,8 @@ fn persists_extended_sensor_sample() {
             pressure_mpa: 0.2102,
             stirrer_rpm: 450.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.5,
             product_concentration_percent: 62.4,
             ph: 7.18,
@@ -58,4 +60,9 @@ fn persists_extended_sensor_sample() {
         },
     )
     .unwrap();
+
+    let sample = db.recent_samples(1).unwrap().pop().unwrap();
+    assert_eq!(sample.shake_speed_cpm, 30.0);
+    assert_eq!(sample.tilt_state, 1);
+    assert_eq!(sample.tilt_angle_deg, 12.5);
 }

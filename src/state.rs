@@ -12,6 +12,8 @@ pub struct SensorSnapshot {
     pub pressure_mpa: f64,
     pub stirrer_rpm: f64,
     pub shake_speed_cpm: f64,
+    pub tilt_state: u8,
+    pub tilt_angle_deg: f64,
     pub flow_rate_l_min: f64,
     pub product_concentration_percent: f64,
     pub ph: f64,
@@ -62,4 +64,25 @@ impl RuntimeState {
             last_control_error: None,
         }
     }
+}
+
+pub fn fit_tilt_angle_deg(tilt_state: u8, shake_speed_cpm: f64, captured_at: DateTime<Utc>) -> f64 {
+    let speed = if shake_speed_cpm.is_finite() {
+        shake_speed_cpm.clamp(0.0, 60.0)
+    } else {
+        0.0
+    };
+    if speed <= 0.01 {
+        return 0.0;
+    }
+
+    let period_ms = 60_000.0 / speed;
+    let phase = (captured_at.timestamp_millis() as f64).rem_euclid(period_ms) / period_ms;
+    let envelope = (phase * std::f64::consts::TAU).sin().abs();
+    let sign = if tilt_state == 0 { -1.0 } else { 1.0 };
+    round2(sign * 30.0 * envelope)
+}
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
 }

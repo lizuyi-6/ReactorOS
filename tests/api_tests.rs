@@ -95,6 +95,8 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
             pressure_mpa: 0.0629,
             stirrer_rpm: 300.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.2,
             product_concentration_percent: 12.9,
             ph: 6.04,
@@ -176,6 +178,26 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
         .contains("sensor data unavailable"));
 
     let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["total_count"], 1);
+    assert_eq!(body["data"]["online_count"], 0);
+    assert_eq!(body["data"]["devices"][0]["device_id"], "reactor_001");
+    assert_eq!(body["data"]["devices"][0]["online"], false);
+    assert_eq!(body["data"]["devices"][0]["status"], "offline");
+
+    let response = app
         .oneshot(
             Request::builder()
                 .uri("/api/v1/reactor/reactor_001/realtime")
@@ -232,6 +254,7 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
                         "pressure_mpa": 0.504,
                         "stirrer_rpm": 125.184,
                         "shake_speed_cpm": 30.004,
+                        "tilt_state": 1,
                         "flow_rate_l_min": 2.424,
                         "product_concentration_percent": 11.104,
                         "ph": 6.154
@@ -250,6 +273,9 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
     assert_eq!(body["data"]["sample"]["temperature_c"], 31.11);
     assert_eq!(body["data"]["sample"]["pressure_mpa"], 0.5);
     assert_eq!(body["data"]["sample"]["stirrer_rpm"], 125.18);
+    assert_eq!(body["data"]["sample"]["shake_speed_cpm"], 30.0);
+    assert_eq!(body["data"]["sample"]["tilt_state"], 1);
+    assert!(body["data"]["sample"]["tilt_angle_deg"].as_f64().unwrap() >= 0.0);
     assert_eq!(
         body["data"]["sample"]["product_concentration_percent"],
         11.1
@@ -257,6 +283,7 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
     assert_eq!(body["data"]["sample"]["ph"], 6.15);
 
     let live = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/live")
@@ -271,12 +298,36 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
     assert_eq!(body["runtime"]["latest_sample"]["temperature_c"], 31.11);
     assert_eq!(body["runtime"]["latest_sample"]["pressure_mpa"], 0.5);
     assert_eq!(body["runtime"]["latest_sample"]["stirrer_rpm"], 125.18);
+    assert_eq!(body["runtime"]["latest_sample"]["shake_speed_cpm"], 30.0);
+    assert_eq!(body["runtime"]["latest_sample"]["tilt_state"], 1);
+    assert!(
+        body["runtime"]["latest_sample"]["tilt_angle_deg"]
+            .as_f64()
+            .unwrap()
+            >= 0.0
+    );
     assert_eq!(
         body["runtime"]["latest_sample"]["product_concentration_percent"],
         11.1
     );
     assert_eq!(body["runtime"]["latest_sample"]["ph"], 6.15);
     assert!(body["recent_events"].as_array().unwrap().is_empty());
+
+    let devices = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(devices.status(), StatusCode::OK);
+    let body = to_bytes(devices.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["online_count"], 1);
+    assert_eq!(body["data"]["devices"][0]["online"], true);
+    assert_eq!(body["data"]["devices"][0]["status"], "idle");
 }
 
 #[tokio::test]
@@ -307,6 +358,7 @@ async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
                         "pressure_mpa": 0.50,
                         "stirrer_rpm": 125.18,
                         "shake_speed_cpm": 30.00,
+                        "tilt_state": 1,
                         "flow_rate_l_min": 2.42,
                         "product_concentration_percent": 11.10,
                         "ph": 6.15
@@ -349,6 +401,7 @@ async fn test_pipeline_sample_endpoint_wraps_the_v1_pipeline_for_e2e() {
                         "pressure_mpa": 0.50,
                         "stirrer_rpm": 125.18,
                         "shake_speed_cpm": 30.00,
+                        "tilt_state": 1,
                         "flow_rate_l_min": 2.42,
                         "product_concentration_percent": 11.10,
                         "ph": 6.15
@@ -380,6 +433,8 @@ async fn live_endpoint_rejects_stale_pipeline_samples() {
             pressure_mpa: 0.5,
             stirrer_rpm: 125.18,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.42,
             product_concentration_percent: 11.1,
             ph: 6.15,
@@ -432,6 +487,8 @@ async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
             pressure_mpa: 0.0629,
             stirrer_rpm: 300.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.2,
             product_concentration_percent: 12.9,
             ph: 6.04,
@@ -505,6 +562,8 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
             pressure_mpa: 0.0629,
             stirrer_rpm: 300.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.2,
             product_concentration_percent: 12.9,
             ph: 6.04,
@@ -537,7 +596,12 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
                 .uri("/api/control/targets")
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({"temperature_c": 500.0, "stirrer_rpm": 5000.0}).to_string(),
+                    json!({
+                        "temperature_c": 500.0,
+                        "stirrer_rpm": 5000.0,
+                        "shake_speed_cpm": 99.0
+                    })
+                    .to_string(),
                 ))
                 .unwrap(),
         )
@@ -549,6 +613,7 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["temperature_c"], 160.0);
     assert_eq!(body["stirrer_rpm"], 1200.0);
+    assert_eq!(body["shake_speed_cpm"], 60.0);
 
     let response = app
         .oneshot(
@@ -565,6 +630,7 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
     assert_eq!(event["event_type"], "operator_targets_updated");
     assert_eq!(event["target_temperature_c"], 160.0);
     assert_eq!(event["target_stirrer_rpm"], 1200.0);
+    assert_eq!(event["target_shake_speed_cpm"], 60.0);
 }
 
 #[tokio::test]
@@ -578,6 +644,8 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             pressure_mpa: 0.12,
             stirrer_rpm: 800.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.5,
             product_concentration_percent: 45.5,
             ph: 7.1,
@@ -660,6 +728,12 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
     assert_eq!(body["data"]["current_pressure"], 0.12);
     assert_eq!(body["data"]["stir_speed"], 800.0);
     assert_eq!(body["data"]["shake_speed"], 30.0);
+    assert_eq!(body["data"]["tilt_state"], 1);
+    assert!(body["data"]["tilt_angle"].as_f64().unwrap() >= 0.0);
+    assert_eq!(
+        body["data"]["tilt_angle_source"],
+        "software_fit_from_binary_sensor"
+    );
     assert_eq!(body["data"]["flow_rate"], 2.5);
     assert!(body["alarms"].is_array());
 
@@ -683,6 +757,13 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
     assert_eq!(body["data"]["device_id"], "reactor_001");
     assert_eq!(body["data"]["page"], 1);
     assert_eq!(body["data"]["items"][0]["data"]["current_temp"], 85.5);
+    assert_eq!(body["data"]["items"][0]["data"]["tilt_state"], 1);
+    assert!(
+        body["data"]["items"][0]["data"]["tilt_angle"]
+            .as_f64()
+            .unwrap()
+            >= 0.0
+    );
 }
 
 #[tokio::test]
@@ -794,6 +875,8 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             pressure_mpa: 0.0629,
             stirrer_rpm: 300.0,
             shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
             flow_rate_l_min: 2.2,
             product_concentration_percent: 12.9,
             ph: 6.04,

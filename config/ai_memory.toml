@@ -60,6 +60,15 @@ hard_min = 0.0
 hard_max = 60.0
 suggestion = "Reduce shake speed and verify vessel fixation."
 
+[sensor_limits.tilt_angle_deg]
+label = "shake vessel tilt angle"
+unit = "deg"
+normal_min = -30.0
+normal_max = 30.0
+hard_min = -45.0
+hard_max = 45.0
+suggestion = "Stop or reduce shake motion and inspect the vessel clamp, stepper linkage, and tilt sensor mounting."
+
 [sensor_limits.flow_rate_l_min]
 label = "coolant flow"
 unit = "L/min"

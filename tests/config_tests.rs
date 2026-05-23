@@ -91,5 +91,5 @@ fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
     assert_eq!(bounds.min_temperature_c, 55.0);
     assert_eq!(bounds.max_temperature_c, 135.0);
     assert_eq!(bounds.min_stirrer_rpm, 250.0);
-    assert_eq!(memory.sensor_limits.configured_count(), 7);
+    assert_eq!(memory.sensor_limits.configured_count(), 8);
 }

@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReactorOS Workshop - Industrial HMI Prototype</title>
+  <style>
+    :root {
+      --bg: #FAF8F5;
+      --surface: #F2EFE9;
+      --line: #D6CFC3;
+      --line-strong: #BDB3A4;
+      --text-1: #1A1814;
+      --text-2: #6E665C;
+      --text-3: #A89E8F;
+      --accent: #2D5A3D;
+      --accent-bg: #EBF2EE;
+      --danger: #8B3A2A;
+      --danger-bg: #F5EBE8;
+      --warning: #7A5C1E;
+      --warning-bg: #F5F0E8;
+      --font-body: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+      --font-display: "JetBrains Mono", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text-1);
+      font-family: var(--font-body);
+      font-size: 15px;
+      font-weight: 300;
+      letter-spacing: 0;
+    }
+
+    button {
+      min-height: 56px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface);
+      color: var(--text-1);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+    }
+
+    .screen {
+      min-height: 100vh;
+      padding: 14px;
+    }
+
+    .hmi-shell {
+      display: grid;
+      grid-template-rows: 68px minmax(0, 1fr);
+      gap: 12px;
+      max-width: 1360px;
+      min-height: calc(100vh - 28px);
+      margin: 0 auto;
+      border: 1px solid var(--line-strong);
+      background: #FBFAF7;
+      box-shadow: 0 20px 54px rgba(26, 24, 20, 0.08);
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr) 300px;
+      align-items: stretch;
+      border-bottom: 1px solid var(--line-strong);
+      background: var(--surface);
+    }
+
+    .brand,
+    .runtime,
+    .status-rail {
+      display: flex;
+      align-items: center;
+      border-right: 1px solid var(--line);
+    }
+
+    .brand {
+      padding: 0 20px;
+      gap: 12px;
+    }
+
+    .mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-weight: 400;
+    }
+
+    .brand-title {
+      font-size: 19px;
+      font-weight: 400;
+      line-height: 1.05;
+    }
+
+    .brand-sub,
+    .micro,
+    .label,
+    .pill-label {
+      color: var(--text-2);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .runtime {
+      min-width: 0;
+      padding: 0 18px;
+      gap: 10px;
+    }
+
+    .demo-banner {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--warning);
+      background: var(--warning-bg);
+      color: var(--warning);
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .status-rail {
+      justify-content: flex-end;
+      padding: 0 16px;
+      gap: 14px;
+      border-right: 0;
+    }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      background: #FFF;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .dot.warning {
+      background: var(--warning);
+    }
+
+    .dot.danger {
+      background: var(--danger);
+    }
+
+    .clock {
+      font-family: var(--font-display);
+      font-size: 28px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 31% minmax(0, 1fr) 28%;
+      gap: 12px;
+      min-height: 0;
+      padding: 0 12px 12px;
+    }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      border: 1px solid var(--line-strong);
+      background: #FFF;
+    }
+
+    .panel-head {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--surface);
+    }
+
+    .panel-title {
+      font-size: 15px;
+      font-weight: 400;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .left-stack,
+    .right-stack,
+    .center-stack {
+      display: grid;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .center-stack {
+      grid-template-rows: auto minmax(220px, 1fr) auto;
+    }
+
+    .process-panel {
+      display: grid;
+      grid-template-rows: 44px minmax(190px, 1fr);
+    }
+
+    .process-canvas {
+      height: 100%;
+      min-height: 190px;
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .sensor-card {
+      min-height: 120px;
+      display: grid;
+      grid-template-rows: auto auto minmax(38px, 1fr);
+      gap: 4px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+    }
+
+    .sensor-card.wide {
+      grid-column: 1 / -1;
+    }
+
+    .sensor-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .sensor-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .sensor-value {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      font-family: var(--font-display);
+      font-size: 34px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .sensor-unit {
+      color: var(--text-2);
+      font-family: var(--font-body);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .sensor-meta {
+      color: var(--text-2);
+      font-size: 12px;
+    }
+
+    .mini-chart {
+      height: 42px;
+      align-self: end;
+    }
+
+    .trend-panel {
+      display: grid;
+      grid-template-rows: 44px minmax(0, 1fr);
+    }
+
+    .trend-body {
+      display: grid;
+      grid-template-rows: minmax(210px, 1fr) 68px 62px;
+      min-height: 0;
+      padding: 12px 14px;
+      gap: 8px;
+    }
+
+    .main-chart {
+      min-height: 210px;
+      height: 100%;
+    }
+
+    .stage-strip {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr) 82px;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    .stage-name {
+      font-weight: 400;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .stage-track {
+      height: 16px;
+      border: 1px solid var(--line-strong);
+      background: repeating-linear-gradient(
+        45deg,
+        var(--surface),
+        var(--surface) 8px,
+        #E8E2D8 8px,
+        #E8E2D8 16px
+      );
+    }
+
+    .stage-fill {
+      height: 100%;
+      width: 64%;
+      background: var(--accent);
+    }
+
+    .stage-percent {
+      font-family: var(--font-display);
+      font-size: 28px;
+      text-align: right;
+    }
+
+    .gantt-canvas {
+      height: 62px;
+      border-top: 1px solid var(--line);
+      padding-top: 6px;
+    }
+
+    .control-panel {
+      display: grid;
+      grid-template-rows: 44px auto;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .control-cell {
+      min-height: 78px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+    }
+
+    .setpoint {
+      margin-top: 5px;
+      font-family: var(--font-display);
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0 10px 10px;
+    }
+
+    .primary-action {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #FFF;
+      font-size: 17px;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    .secondary-action {
+      background: #FFF;
+      color: var(--text-1);
+    }
+
+    .danger-action {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #FFF;
+      font-size: 17px;
+      font-weight: 400;
+    }
+
+    .danger-action.confirm {
+      background: var(--warning);
+      border-color: var(--warning);
+    }
+
+    .recipe-card,
+    .ai-card,
+    .alarm-card {
+      padding: 12px 14px;
+    }
+
+    .batch-number {
+      font-family: var(--font-display);
+      font-size: 42px;
+      line-height: 1;
+    }
+
+    .kv {
+      display: grid;
+      gap: 1px;
+      margin-top: 10px;
+      background: var(--line);
+    }
+
+    .kv-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 0 0 10px;
+      background: #FFF;
+    }
+
+    .kv-row span:first-child {
+      color: var(--text-2);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .kv-row span:last-child {
+      padding: 0 10px;
+      font-family: var(--font-display);
+      font-size: 20px;
+      white-space: nowrap;
+    }
+
+    .ai-panel {
+      background: var(--accent-bg);
+      border-color: #B7CFBF;
+    }
+
+    .ai-score {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .score-big {
+      font-family: var(--font-display);
+      font-size: 44px;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    .bar {
+      height: 9px;
+      margin-top: 10px;
+      border: 1px solid #B7CFBF;
+      background: #FFF;
+    }
+
+    .bar > div {
+      height: 100%;
+      width: 86%;
+      background: var(--accent);
+    }
+
+    .alarm-list {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .alarm-item {
+      display: grid;
+      grid-template-columns: 64px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 46px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      background: var(--warning-bg);
+    }
+
+    .alarm-item.danger {
+      background: var(--danger-bg);
+      border-color: #DDBBB4;
+    }
+
+    .alarm-time {
+      font-family: var(--font-display);
+      font-size: 18px;
+    }
+
+    .ack {
+      min-height: 38px;
+      padding: 0 12px;
+      border-color: var(--line-strong);
+      background: #FFF;
+      color: var(--text-2);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .alarm-dist {
+      height: 72px;
+      margin: 0 10px 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 1120px) {
+      .screen {
+        padding: 8px;
+      }
+
+      .hmi-shell {
+        min-height: calc(100vh - 16px);
+      }
+
+      .topbar {
+        grid-template-columns: 190px minmax(0, 1fr) 250px;
+      }
+
+      .brand-title {
+        font-size: 17px;
+      }
+
+      .demo-banner {
+        font-size: 12px;
+      }
+
+      .workspace {
+        grid-template-columns: 29% minmax(0, 1fr) 26%;
+        gap: 8px;
+        padding: 0 8px 8px;
+      }
+
+      .sensor-grid,
+      .control-grid,
+      .actions,
+      .alarm-list {
+        gap: 8px;
+        padding: 8px;
+      }
+
+      .sensor-card {
+        min-height: 108px;
+        padding: 8px;
+      }
+
+      .sensor-value {
+        font-size: 28px;
+      }
+
+      .control-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .actions {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .alarm-item {
+        grid-template-columns: 48px minmax(0, 1fr) 58px;
+        gap: 6px;
+        padding: 0 6px;
+        font-size: 13px;
+      }
+
+      .alarm-time {
+        font-size: 16px;
+      }
+
+      .ack {
+        padding: 0 6px;
+      }
+    }
+
+    @media (max-width: 840px) {
+      .hmi-shell {
+        display: block;
+      }
+
+      .topbar,
+      .workspace {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .workspace {
+        padding: 8px;
+      }
+
+      .brand,
+      .runtime,
+      .status-rail {
+        min-height: 58px;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status-rail {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .sensor-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="screen">
+    <div class="hmi-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark">R</div>
+          <div>
+            <div class="brand-title">ReactorOS HMI</div>
+            <div class="brand-sub">Workshop Prototype</div>
+          </div>
+        </div>
+        <div class="runtime">
+          <span class="demo-banner">WORKSHOP DEMO / 未接入后端</span>
+          <span class="status-chip"><i id="runDot" class="dot"></i><span id="runText">RUNNING</span></span>
+          <span class="status-chip"><i class="dot warning"></i>SIM DATA</span>
+        </div>
+        <div class="status-rail">
+          <span class="micro">Batch 043 · Heat-up</span>
+          <span id="clock" class="clock">--:--:--</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="left-stack">
+          <section class="panel process-panel">
+            <div class="panel-head">
+              <div class="panel-title">Process Line</div>
+              <div class="micro">ESP32 → Pi → HMI</div>
+            </div>
+            <canvas id="processCanvas" class="process-canvas" height="220"></canvas>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div class="panel-title">Detector Signals</div>
+              <div class="micro">7 channels</div>
+            </div>
+            <div id="sensorGrid" class="sensor-grid"></div>
+          </section>
+        </section>
+
+        <section class="center-stack">
+          <section class="panel trend-panel">
+            <div class="panel-head">
+              <div class="panel-title">Live Trend / Temperature · Pressure · RPM</div>
+              <div class="micro">rolling 10 min</div>
+            </div>
+            <div class="trend-body">
+              <canvas id="mainTrend" class="main-chart" height="270"></canvas>
+              <div class="stage-strip">
+                <div>
+                  <div class="label">Current Stage</div>
+                  <div id="stageName" class="stage-name">Heat-up</div>
+                </div>
+                <div class="stage-track"><div id="stageFill" class="stage-fill"></div></div>
+                <div id="stagePercent" class="stage-percent">64%</div>
+              </div>
+              <canvas id="stageGantt" class="gantt-canvas" height="62"></canvas>
+            </div>
+          </section>
+
+          <section class="panel control-panel">
+            <div class="panel-head">
+              <div class="panel-title">Operator Control</div>
+              <div class="micro">touch targets ≥ 56px</div>
+            </div>
+            <div class="control-grid">
+              <div class="control-cell"><div class="label">Target Temp</div><div id="setTemp" class="setpoint">192.00 °C</div></div>
+              <div class="control-cell"><div class="label">Target RPM</div><div id="setRpm" class="setpoint">500.00</div></div>
+              <div class="control-cell"><div class="label">Hold Time</div><div id="setHold" class="setpoint">95.00 min</div></div>
+              <div class="control-cell"><div class="label">Coolant</div><div class="setpoint">FLOW</div></div>
+            </div>
+            <div class="actions">
+              <button id="startBtn" class="primary-action" type="button">▶ START</button>
+              <button id="pauseBtn" class="secondary-action" type="button">Ⅱ PAUSE</button>
+              <button id="applyBtn" class="primary-action" type="button">✓ APPLY AI</button>
+              <button id="estopBtn" class="danger-action" type="button">■ E-STOP</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="right-stack">
+          <section class="panel recipe-card">
+            <div class="panel-title">Batch Summary</div>
+            <div class="batch-number">043</div>
+            <div class="kv" id="batchKv"></div>
+          </section>
+
+          <section class="panel ai-panel ai-card">
+            <div class="panel-title">AI Recommendation</div>
+            <div class="ai-score">
+              <div>
+                <div class="label">Confidence</div>
+                <div class="score-big">86%</div>
+              </div>
+              <div>
+                <div class="label">Expected Lift</div>
+                <div class="score-big">+8.30%</div>
+              </div>
+            </div>
+            <div class="bar"><div></div></div>
+            <div class="kv" id="aiKv"></div>
+          </section>
+
+          <section class="panel alarm-card">
+            <div class="panel-head" style="margin:-12px -14px 0">
+              <div class="panel-title">Alarm Queue</div>
+              <div id="alarmCount" class="micro">2 active</div>
+            </div>
+            <div id="alarmList" class="alarm-list"></div>
+            <canvas id="alarmDist" class="alarm-dist" height="72"></canvas>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+    const fmt = (value, digits = 2) => Number(value).toFixed(digits);
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+    const demoState = {
+      running: true,
+      elapsed: 0,
+      stageProgress: 64,
+      estopConfirmUntil: 0,
+      stages: [
+        { name: "PREHEAT", minutes: 8 },
+        { name: "HEAT-UP", minutes: 21 },
+        { name: "HOLD", minutes: 95 },
+        { name: "COOL", minutes: 36 }
+      ],
+      sensors: [
+        { key: "temp", label: "TEMP", name: "Temperature", value: 175.42, unit: "°C", normal: [50, 240], min: 120, max: 220, target: 192.00, amp: 0.8, history: [] },
+        { key: "pressure", label: "PRESS", name: "Pressure", value: 0.32, unit: "MPa", normal: [0.05, 0.40], min: 0.12, max: 0.45, target: 0.50, amp: 0.01, history: [] },
+        { key: "rpm", label: "RPM", name: "Stirrer", value: 452.18, unit: "RPM", normal: [100, 900], min: 280, max: 700, target: 500.00, amp: 6, history: [] },
+        { key: "shake", label: "SHAKE", name: "Shake Speed", value: 36.70, unit: "CPM", normal: [0, 50], min: 16, max: 55, target: 35.00, amp: 0.6, history: [] },
+        { key: "flow", label: "FLOW", name: "Coolant Flow", value: 3.82, unit: "L/min", normal: [0.2, 5], min: 1.2, max: 5.4, target: 4.20, amp: 0.06, history: [] },
+        { key: "conc", label: "CONC", name: "Concentration", value: 62.40, unit: "%", normal: [0, 95], min: 20, max: 90, target: 70.00, amp: 0.35, history: [] },
+        { key: "ph", label: "PH", name: "pH", value: 6.82, unit: "", normal: [5.5, 8.5], min: 4.8, max: 8.9, target: 6.90, amp: 0.03, history: [] }
+      ],
+      alarms: [
+        { id: "A-104", time: "14:32", level: "warn", text: "Coolant flow near lower control band", acknowledged: false },
+        { id: "A-098", time: "14:18", level: "danger", text: "Pressure reached review threshold", acknowledged: false },
+        { id: "A-076", time: "13:54", level: "info", text: "AI recommendation applied", acknowledged: true }
+      ]
+    };
+
+    for (const sensor of demoState.sensors) {
+      for (let i = 0; i < 90; i += 1) {
+        const phase = i / 9;
+        sensor.history.push(sensor.value + Math.sin(phase) * sensor.amp * 2 + (Math.random() - 0.5) * sensor.amp);
+      }
+    }
+
+    function renderStatic() {
+      $("#sensorGrid").innerHTML = demoState.sensors.map((sensor, index) => `
+        <article class="sensor-card ${index === 0 ? "wide" : ""}" data-sensor="${sensor.key}">
+          <div class="sensor-top">
+            <div class="label">${sensor.label}</div>
+            <div class="sensor-status"><i class="dot ${isOut(sensor) ? "danger" : ""}"></i>${isOut(sensor) ? "LIMIT" : "NORMAL"}</div>
+          </div>
+          <div class="sensor-value"><span data-value="${sensor.key}">${fmt(sensor.value)}</span><span class="sensor-unit">${sensor.unit}</span></div>
+          <div class="sensor-meta">Target ${fmt(sensor.target)} ${sensor.unit} · Range ${fmt(sensor.normal[0])}-${fmt(sensor.normal[1])}</div>
+          <canvas class="mini-chart" data-mini="${sensor.key}" height="42"></canvas>
+        </article>
+      `).join("");
+
+      $("#batchKv").innerHTML = rows([
+        ["Recipe", "Paraffin v3"],
+        ["Started", "14:15:02"],
+        ["Phase", "Heat-up"],
+        ["Elapsed", "14:23 / 21:00"],
+        ["A:B Ratio", "3.60 : 1"]
+      ]);
+      $("#aiKv").innerHTML = rows([
+        ["Target Temp", "192.00 °C"],
+        ["Hold Time", "95.00 min"],
+        ["Stirrer RPM", "500.00"],
+        ["A:B Ratio", "4.00 : 1"]
+      ]);
+      renderAlarms();
+    }
+
+    function rows(items) {
+      return items.map(([label, value]) => `<div class="kv-row"><span>${label}</span><span>${value}</span></div>`).join("");
+    }
+
+    function isOut(sensor) {
+      return sensor.value < sensor.normal[0] || sensor.value > sensor.normal[1];
+    }
+
+    function tickDemo() {
+      $("#clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      if (demoState.running) {
+        demoState.elapsed += 1;
+        demoState.stageProgress = (demoState.stageProgress + 0.08) % 100;
+      }
+      for (const sensor of demoState.sensors) {
+        const drift = (sensor.target - sensor.value) * 0.006;
+        sensor.value += drift + (Math.random() - 0.5) * sensor.amp;
+        sensor.value = clamp(sensor.value, sensor.min, sensor.max);
+        sensor.history.push(sensor.value);
+        if (sensor.history.length > 120) sensor.history.shift();
+        const valueNode = document.querySelector(`[data-value="${sensor.key}"]`);
+        if (valueNode) valueNode.textContent = fmt(sensor.value);
+      }
+      $("#stageFill").style.width = `${demoState.stageProgress}%`;
+      $("#stagePercent").textContent = `${Math.round(demoState.stageProgress)}%`;
+      drawAll();
+    }
+
+    function renderAlarms() {
+      const active = demoState.alarms.filter((alarm) => !alarm.acknowledged);
+      $("#alarmCount").textContent = `${active.length} active`;
+      $("#alarmList").innerHTML = demoState.alarms.map((alarm) => `
+        <div class="alarm-item ${alarm.level === "danger" ? "danger" : ""}">
+          <div class="alarm-time">${alarm.time}</div>
+          <div>${alarm.text}</div>
+          <button class="ack" type="button" data-ack="${alarm.id}" ${alarm.acknowledged ? "disabled" : ""}>${alarm.acknowledged ? "ACKED" : "ACK"}</button>
+        </div>
+      `).join("");
+    }
+
+    function fitCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width * ratio));
+      const height = Math.max(1, Math.floor(rect.height * ratio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      return { ctx, w: rect.width, h: rect.height };
+    }
+
+    function drawAll() {
+      drawProcess();
+      drawMainTrend();
+      drawStageGantt();
+      drawMiniCharts();
+      drawAlarmDistribution();
+    }
+
+    function drawProcess() {
+      const canvas = $("#processCanvas");
+      const { ctx, w, h } = fitCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#BDB3A4";
+      ctx.lineWidth = 1.5;
+      ctx.fillStyle = "#FAF8F5";
+
+      const y = h * 0.52;
+      drawBox(ctx, 18, y - 38, 86, 76, "FEED", "A/B/C");
+      drawTank(ctx, w * 0.5 - 55, y - 70, 110, 140);
+      drawBox(ctx, w - 116, y - 38, 96, 76, "COND.", "FLOW");
+
+      ctx.beginPath();
+      ctx.moveTo(104, y);
+      ctx.lineTo(w * 0.5 - 55, y);
+      ctx.moveTo(w * 0.5 + 55, y);
+      ctx.lineTo(w - 116, y);
+      ctx.stroke();
+
+      drawArrow(ctx, w * 0.5 - 76, y);
+      drawArrow(ctx, w - 136, y);
+
+      ctx.fillStyle = "#2D5A3D";
+      ctx.fillRect(w * 0.5 - 27, y - 4, 54, 8);
+      ctx.fillStyle = "#1A1814";
+      ctx.font = "400 14px Jost, sans-serif";
+      ctx.fillText("REACTOR V-01", w * 0.5 - 48, y + 92);
+      ctx.fillStyle = "#6E665C";
+      ctx.font = "300 11px Jost, sans-serif";
+      ctx.fillText(`T ${fmt(sensor("temp").value)} °C`, w * 0.5 - 42, y - 18);
+      ctx.fillText(`P ${fmt(sensor("pressure").value)} MPa`, w * 0.5 - 44, y + 2);
+      ctx.fillText(`RPM ${fmt(sensor("rpm").value)}`, w * 0.5 - 38, y + 22);
+    }
+
+    function drawBox(ctx, x, y, w, h, a, b) {
+      ctx.fillStyle = "#FAF8F5";
+      ctx.strokeStyle = "#BDB3A4";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+      ctx.fillStyle = "#1A1814";
+      ctx.font = "400 14px Jost, sans-serif";
+      ctx.fillText(a, x + 13, y + 30);
+      ctx.fillStyle = "#6E665C";
+      ctx.font = "300 12px Jost, sans-serif";
+      ctx.fillText(b, x + 13, y + 51);
+    }
+
+    function drawTank(ctx, x, y, w, h) {
+      ctx.fillStyle = "#FAF8F5";
+      ctx.strokeStyle = "#BDB3A4";
+      ctx.beginPath();
+      ctx.ellipse(x + w / 2, y + 16, w / 2, 16, 0, Math.PI, 0);
+      ctx.lineTo(x + w, y + h - 18);
+      ctx.ellipse(x + w / 2, y + h - 18, w / 2, 16, 0, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#2D5A3D";
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y + h / 2, 27, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 3; i += 1) {
+        const angle = i * Math.PI * 2 / 3 + demoState.elapsed * 0.08;
+        ctx.beginPath();
+        ctx.moveTo(x + w / 2, y + h / 2);
+        ctx.lineTo(x + w / 2 + Math.cos(angle) * 28, y + h / 2 + Math.sin(angle) * 28);
+        ctx.stroke();
+      }
+    }
+
+    function drawArrow(ctx, x, y) {
+      ctx.beginPath();
+      ctx.moveTo(x, y - 6);
+      ctx.lineTo(x + 12, y);
+      ctx.lineTo(x, y + 6);
+      ctx.stroke();
+    }
+
+    function drawMainTrend() {
+      const canvas = $("#mainTrend");
+      const { ctx, w, h } = fitCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = "#FFF";
+      ctx.fillRect(0, 0, w, h);
+      const pad = { l: 46, r: 20, t: 18, b: 28 };
+      ctx.strokeStyle = "#E0DBD3";
+      ctx.fillStyle = "#A89E8F";
+      ctx.font = "300 11px Jost, sans-serif";
+      for (let i = 0; i <= 5; i += 1) {
+        const y = pad.t + (i / 5) * (h - pad.t - pad.b);
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(w - pad.r, y);
+        ctx.stroke();
+        ctx.fillText(`${220 - i * 30}`, 10, y + 4);
+      }
+      drawSeries(ctx, sensor("temp").history, "#1A1814", [], 2, 120, 220, pad, w, h);
+      drawSeries(ctx, sensor("rpm").history.map((v) => v / 4), "#2D5A3D", [2, 5], 1.5, 120, 220, pad, w, h);
+      drawSeries(ctx, sensor("pressure").history.map((v) => v * 420), "#7A5C1E", [6, 4], 1.5, 120, 220, pad, w, h);
+      ctx.fillStyle = "#1A1814";
+      ctx.fillText("TEMP", w - 158, 20);
+      ctx.fillStyle = "#2D5A3D";
+      ctx.fillText("RPM / 4", w - 108, 20);
+      ctx.fillStyle = "#7A5C1E";
+      ctx.fillText("PRESS", w - 52, 20);
+    }
+
+    function drawStageGantt() {
+      const canvas = $("#stageGantt");
+      const { ctx, w, h } = fitCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const pad = { l: 2, r: 2, t: 9, b: 18 };
+      const total = demoState.stages.reduce((sum, item) => sum + item.minutes, 0);
+      const usable = w - pad.l - pad.r;
+      let x = pad.l;
+      const currentMinutes = total * demoState.stageProgress / 100;
+      let elapsed = 0;
+
+      for (const stage of demoState.stages) {
+        const width = usable * stage.minutes / total;
+        const isDone = elapsed + stage.minutes < currentMinutes;
+        const isActive = elapsed <= currentMinutes && elapsed + stage.minutes >= currentMinutes;
+        ctx.fillStyle = isDone ? "#2D5A3D" : isActive ? "#F5F0E8" : "#E0DBD3";
+        ctx.fillRect(x, pad.t, width, h - pad.t - pad.b);
+        ctx.strokeStyle = "#BDB3A4";
+        ctx.strokeRect(x, pad.t, width, h - pad.t - pad.b);
+
+        if (isActive) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, pad.t, width, h - pad.t - pad.b);
+          ctx.clip();
+          ctx.strokeStyle = "#7A5C1E";
+          ctx.lineWidth = 1;
+          for (let stripe = x - h; stripe < x + width + h; stripe += 9) {
+            ctx.beginPath();
+            ctx.moveTo(stripe, h - pad.b);
+            ctx.lineTo(stripe + h, pad.t);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        ctx.fillStyle = isDone ? "#FFF" : "#6E665C";
+        ctx.font = "300 10px Jost, sans-serif";
+        ctx.fillText(stage.name, x + 5, h - 5);
+        x += width;
+        elapsed += stage.minutes;
+      }
+
+      const markerX = pad.l + usable * demoState.stageProgress / 100;
+      ctx.strokeStyle = "#8B3A2A";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(markerX, 5);
+      ctx.lineTo(markerX, h - 13);
+      ctx.stroke();
+      ctx.fillStyle = "#8B3A2A";
+      ctx.beginPath();
+      ctx.moveTo(markerX, 3);
+      ctx.lineTo(markerX - 5, 9);
+      ctx.lineTo(markerX + 5, 9);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawMiniCharts() {
+      $$("[data-mini]").forEach((canvas) => {
+        const item = sensor(canvas.dataset.mini);
+        const { ctx, w, h } = fitCanvas(canvas);
+        ctx.clearRect(0, 0, w, h);
+        const min = Math.min(...item.history);
+        const max = Math.max(...item.history);
+        const color = isOut(item) ? "#8B3A2A" : "#2D5A3D";
+        drawSeries(ctx, item.history, color, [], 1.4, min, max, { l: 0, r: 0, t: 5, b: 5 }, w, h);
+      });
+    }
+
+    function drawAlarmDistribution() {
+      const canvas = $("#alarmDist");
+      const { ctx, w, h } = fitCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const bars = [0, 1, 0, 0, 2, 1, 0, 3, 1, 0, 0, 2, 1, 4, 2, 1, 0, 2, 1, 0, 0, 1, 0, 0];
+      const max = Math.max(...bars);
+      const bw = w / bars.length;
+      bars.forEach((bar, index) => {
+        const height = (bar / max) * (h - 18);
+        ctx.fillStyle = bar >= 3 ? "#8B3A2A" : bar > 0 ? "#7A5C1E" : "#D6CFC3";
+        ctx.fillRect(index * bw + 1, h - height - 12, Math.max(2, bw - 2), height || 2);
+      });
+      ctx.fillStyle = "#A89E8F";
+      ctx.font = "300 10px Jost, sans-serif";
+      ctx.fillText("00", 0, h - 2);
+      ctx.fillText("12", w / 2 - 8, h - 2);
+      ctx.fillText("24h", w - 22, h - 2);
+    }
+
+    function drawSeries(ctx, points, color, dash, width, min, max, pad, w, h) {
+      if (!points.length) return;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const x = pad.l + (index / Math.max(1, points.length - 1)) * (w - pad.l - pad.r);
+        const y = pad.t + (1 - (point - min) / Math.max(0.0001, max - min)) * (h - pad.t - pad.b);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function sensor(key) {
+      return demoState.sensors.find((item) => item.key === key);
+    }
+
+    function bindActions() {
+      $("#startBtn").addEventListener("click", () => {
+        demoState.running = true;
+        $("#runText").textContent = "RUNNING";
+        $("#runDot").className = "dot";
+      });
+      $("#pauseBtn").addEventListener("click", () => {
+        demoState.running = false;
+        $("#runText").textContent = "PAUSED";
+        $("#runDot").className = "dot warning";
+      });
+      $("#applyBtn").addEventListener("click", () => {
+        $("#applyBtn").textContent = "✓ APPLIED";
+        setTimeout(() => $("#applyBtn").textContent = "✓ APPLY AI", 1400);
+      });
+      $("#estopBtn").addEventListener("click", () => {
+        const now = Date.now();
+        if (demoState.estopConfirmUntil > now) {
+          demoState.running = false;
+          $("#runText").textContent = "E-STOP";
+          $("#runDot").className = "dot danger";
+          $("#estopBtn").textContent = "■ E-STOP";
+          $("#estopBtn").classList.remove("confirm");
+          demoState.estopConfirmUntil = 0;
+          return;
+        }
+        demoState.estopConfirmUntil = now + 1500;
+        $("#estopBtn").textContent = "CONFIRM STOP";
+        $("#estopBtn").classList.add("confirm");
+        setTimeout(() => {
+          if (demoState.estopConfirmUntil && demoState.estopConfirmUntil < Date.now()) {
+            $("#estopBtn").textContent = "■ E-STOP";
+            $("#estopBtn").classList.remove("confirm");
+            demoState.estopConfirmUntil = 0;
+          }
+        }, 1600);
+      });
+      $("#alarmList").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-ack]");
+        if (!button) return;
+        const alarm = demoState.alarms.find((item) => item.id === button.dataset.ack);
+        if (!alarm) return;
+        alarm.acknowledged = true;
+        renderAlarms();
+      });
+    }
+
+    renderStatic();
+    bindActions();
+    tickDemo();
+    setInterval(tickDemo, 1200);
+    window.addEventListener("resize", drawAll);
+  </script>
+</body>
+</html>

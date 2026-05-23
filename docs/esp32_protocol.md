@@ -15,7 +15,7 @@
 ESP32 每秒上报一帧传感器数据：
 
 ```text
-RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|flow_rate=2.5|chk=AB
+RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|tilt_state=1|flow_rate=2.5|chk=AB
 ```
 
 必填字段：
@@ -29,6 +29,7 @@ RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|
 | `pressure` | Float | MPa | +/- 0.01 MPa | 釜内压力，不是 kPa |
 | `stir_speed` | Int | RPM | +/- 1 RPM | 搅拌速度 |
 | `shake_speed` | Int | 次/分 | +/- 1 次/分 | 摇罐速度 |
+| `tilt_state` | Int | - | 0 或 1 | 摇罐倾角开关量。硬件只回传二值状态，树莓派软件侧会按 `tilt_state + shake_speed` 拟合展示用倾角曲线 |
 | `flow_rate` | Float | L/min | +/- 0.1 L/min | 流量 |
 | `chk` | Hex | - | - | 2 位大写或小写十六进制 XOR |
 
@@ -39,7 +40,9 @@ RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|
 | `product_concentration` | Float | % | 如接入在线浓度传感器，可上报产物浓度 |
 | `ph` | Float | pH | 如接入 pH 传感器，可上报 pH |
 
-兼容字段：后端仍能读取旧样机字段 `rpm`、`shake`、`flow`、`conc`，但新固件应使用上表字段。
+兼容字段：后端仍能读取旧样机字段 `rpm`、`shake`、`tilt`、`flow`、`conc`，但新固件应使用上表字段。
+
+注意：`tilt_state` 是唯一硬件输入，取值只能是 `0` 或 `1`。API 中返回的 `tilt_angle` / `tilt_angle_deg` 是软件拟合值，用于趋势图和报警判断，不代表倾角传感器直接测得的模拟量。
 
 ## TX: Raspberry Pi -> ESP32
 
@@ -102,7 +105,15 @@ ls -l /dev/serial/by-id/
 curl http://127.0.0.1:8000/api/v1/reactor/reactor_001/realtime
 ```
 
-返回的 `data.current_temp`、`data.current_pressure`、`data.stir_speed`、`data.shake_speed`、`data.flow_rate` 应随 ESP32 数据刷新。
+返回的 `data.current_temp`、`data.current_pressure`、`data.stir_speed`、`data.shake_speed`、`data.tilt_state`、`data.tilt_angle`、`data.flow_rate` 应随 ESP32 数据刷新。其中 `data.tilt_angle_source` 固定为 `software_fit_from_binary_sensor`。
+
+设备在线状态检查：
+
+```bash
+curl http://127.0.0.1:8000/api/devices/status
+```
+
+没有新鲜上行数据时，`/api/live` 和实时数据接口会返回 HTTP 503；设备状态接口仍返回 HTTP 200，并在 `data.online_count` 与 `data.devices[].status` 中表达 `offline`、`stale` 或 `error`。
 
 5. 下发控制检查：
 

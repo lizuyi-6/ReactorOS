@@ -12,7 +12,7 @@ use serialport::{DataBits, Parity, SerialPort, StopBits};
 use crate::{
     config::{DeviceConfig, DeviceMode, ReadRegister, WriteRegister},
     control::SafeCommand,
-    state::SensorSnapshot,
+    state::{fit_tilt_angle_deg, SensorSnapshot},
 };
 
 #[async_trait::async_trait]
@@ -104,6 +104,8 @@ impl ReactorDevice for ModbusRtuDevice {
                 pressure_mpa: 0.0,
                 stirrer_rpm,
                 shake_speed_cpm: 0.0,
+                tilt_state: 0,
+                tilt_angle_deg: 0.0,
                 flow_rate_l_min: 0.0,
                 product_concentration_percent: 0.0,
                 ph: 7.0,
@@ -273,11 +275,16 @@ pub fn parse_esp32_frame(
         return Err(anyhow!("unsupported esp32 frame version {version}"));
     }
 
+    let shake_speed_cpm = parse_f64_any(&fields, &["shake_speed", "shake"], "shake_speed")?;
+    let tilt_state = parse_tilt_state_any(&fields, &["tilt_state", "tilt"], "tilt_state")?;
+    let captured_at = Utc::now();
     Ok(SensorSnapshot {
         temperature_c: parse_f64_any(&fields, &["temp", "temperature"], "temp")?,
         pressure_mpa: parse_f64_any(&fields, &["pressure"], "pressure")?,
         stirrer_rpm: parse_f64_any(&fields, &["stir_speed", "rpm"], "stir_speed")?,
-        shake_speed_cpm: parse_f64_any(&fields, &["shake_speed", "shake"], "shake_speed")?,
+        shake_speed_cpm,
+        tilt_state,
+        tilt_angle_deg: fit_tilt_angle_deg(tilt_state, shake_speed_cpm, captured_at),
         flow_rate_l_min: parse_f64_any(&fields, &["flow_rate", "flow"], "flow_rate")?,
         product_concentration_percent: parse_optional_f64_any(
             &fields,
@@ -286,7 +293,7 @@ pub fn parse_esp32_frame(
         )?
         .unwrap_or(0.0),
         ph: parse_optional_f64_any(&fields, &["ph"], "ph")?.unwrap_or(7.0),
-        captured_at: Utc::now(),
+        captured_at,
     })
 }
 
@@ -314,12 +321,13 @@ pub fn build_esp32_sample_frame(
     checksum_enabled: bool,
 ) -> String {
     let body = format!(
-        "{prefix}|v=1|seq=0|ms={}|temp={:.2}|pressure={:.2}|stir_speed={:.2}|shake_speed={:.2}|flow_rate={:.2}|product_concentration={:.2}|ph={:.2}",
+        "{prefix}|v=1|seq=0|ms={}|temp={:.2}|pressure={:.2}|stir_speed={:.2}|shake_speed={:.2}|tilt_state={}|flow_rate={:.2}|product_concentration={:.2}|ph={:.2}",
         sample.captured_at.timestamp_millis().max(0),
         sample.temperature_c,
         sample.pressure_mpa,
         sample.stirrer_rpm,
         sample.shake_speed_cpm,
+        sample.tilt_state,
         sample.flow_rate_l_min,
         sample.product_concentration_percent,
         sample.ph
@@ -352,6 +360,19 @@ fn parse_f64_any(fields: &HashMap<&str, &str>, keys: &[&str], canonical_key: &st
     Err(anyhow!("esp32 frame missing field {canonical_key}"))
 }
 
+fn parse_tilt_state_any(
+    fields: &HashMap<&str, &str>,
+    keys: &[&str],
+    canonical_key: &str,
+) -> Result<u8> {
+    for key in keys {
+        if let Some(value) = fields.get(key).copied() {
+            return parse_tilt_state_value(key, value);
+        }
+    }
+    Err(anyhow!("esp32 frame missing field {canonical_key}"))
+}
+
 fn parse_optional_f64_any(
     fields: &HashMap<&str, &str>,
     keys: &[&str],
@@ -374,6 +395,16 @@ fn parse_f64_value(key: &str, value: &str) -> Result<f64> {
         return Err(anyhow!("invalid esp32 field {key}: non-finite value"));
     }
     Ok(parsed)
+}
+
+fn parse_tilt_state_value(key: &str, value: &str) -> Result<u8> {
+    match value.trim() {
+        "0" => Ok(0),
+        "1" => Ok(1),
+        other => Err(anyhow!(
+            "invalid esp32 field {key}: tilt state must be 0 or 1, got {other}"
+        )),
+    }
 }
 
 fn decode_read_register(raw: u16, register: &ReadRegister) -> Result<f64> {

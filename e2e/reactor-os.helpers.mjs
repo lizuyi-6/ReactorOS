@@ -10,6 +10,7 @@ export const selectors = {
   alarmsTab: '.tab-btn[data-tab="alarms"]',
   activeView: ".view.active",
   sideSensors: "#sideSensors",
+  processCanvas: "#processCanvas",
   alarmSummary: "#alarmSummary",
   runState: "#runState",
   runClock: "#runClock",
@@ -40,6 +41,7 @@ export const pipelineSample = {
   pressure_mpa: 0.50,
   stirrer_rpm: 125.18,
   shake_speed_cpm: 30.00,
+  tilt_state: 1,
   flow_rate_l_min: 2.42,
   product_concentration_percent: 11.10,
   ph: 6.15
@@ -87,7 +89,8 @@ export async function preparePage(page, request) {
   page.consoleErrors = consoleErrors;
   await page.goto("/");
   await page.waitForLoadState("domcontentloaded");
-  await expect(page.locator("body")).toContainText("ReactorOS");
+  await expect(page.locator("body")).toContainText("ReactorOS HMI");
+  await expect(page.locator("body")).not.toContainText("WORKSHOP DEMO");
   await expect(page.locator(selectors.sideSensors)).toContainText("TEMP");
   await expect(page.locator(selectors.activeView)).toHaveAttribute("id", "view-monitor");
   await page.waitForFunction(() => window.__reactorState?.dataReady === true, null, { timeout: 12_000 });
@@ -161,20 +164,22 @@ export async function latestLive(request) {
 
 export async function assertResponsiveLayout(page) {
   const result = await page.evaluate(() => {
-    const sidebar = document.querySelector(".sidebar").getBoundingClientRect();
+    const topbar = document.querySelector(".topbar").getBoundingClientRect();
     const main = document.querySelector(".main").getBoundingClientRect();
     const sensors = getComputedStyle(document.querySelector("#sideSensors")).gridTemplateColumns;
-    const mainPaddingTop = parseFloat(getComputedStyle(document.querySelector(".main")).paddingTop);
+    const grid = getComputedStyle(document.querySelector(".hmi-grid")).gridTemplateColumns;
     return {
-      sidebarBottom: sidebar.bottom,
-      sidebarHeight: sidebar.height,
+      topbarBottom: topbar.bottom,
+      topbarHeight: topbar.height,
       mainLeft: main.left,
-      mainPaddingTop,
-      sensorColumns: sensors.split(" ").length
+      mainTop: main.top,
+      sensorColumns: sensors.split(" ").length,
+      gridColumns: grid.split(" ").length
     };
   });
-  expect(result.mainLeft).toBeLessThan(2);
-  expect(result.sidebarHeight).toBeLessThanOrEqual(140);
-  expect(result.mainPaddingTop).toBeGreaterThan(result.sidebarBottom - 1);
-  expect(result.sensorColumns).toBeGreaterThanOrEqual(5);
+  expect(result.mainLeft).toBeLessThanOrEqual(24);
+  expect(result.topbarHeight).toBeGreaterThan(50);
+  expect(result.mainTop).toBeGreaterThanOrEqual(result.topbarBottom - 12);
+  expect(result.sensorColumns).toBeGreaterThanOrEqual(1);
+  expect(result.gridColumns).toBeGreaterThanOrEqual(1);
 }

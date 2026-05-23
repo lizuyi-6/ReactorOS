@@ -81,6 +81,7 @@ http://127.0.0.1:8000/
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/api/live
+Invoke-RestMethod http://127.0.0.1:8000/api/devices/status
 ```
 
 ## 本地开发
@@ -140,8 +141,10 @@ timeout_ms = 1000
 ESP32 上行采集帧示例：
 
 ```text
-RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|flow_rate=2.5|chk=AB
+RX|v=1|seq=123|ms=456789|temp=175.4|pressure=0.21|stir_speed=450|shake_speed=30|tilt_state=1|flow_rate=2.5|chk=AB
 ```
+
+摇罐倾角传感器只要求 ESP32 上报二值 `tilt_state=0|1`。ReactorOS 会结合 `shake_speed` 在软件侧拟合 `tilt_angle_deg` 曲线，用于趋势图和报警；该曲线不是硬件直接采集的模拟倾角。
 
 树莓派下行控制帧示例：
 
@@ -222,6 +225,7 @@ EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 | --- | --- | --- |
 | `GET` | `/health` | 服务健康检查 |
 | `GET` | `/api/live` | Web UI 实时聚合数据 |
+| `GET` | `/api/devices/status` | 当前在线设备数量和设备状态 |
 | `POST` | `/api/batches/start` | 启动批次并写入目标参数 |
 | `POST` | `/api/batches/:id/finish` | 结束批次 |
 | `POST` | `/api/product-results` | 录入产率和产物比例 |
@@ -230,6 +234,7 @@ EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 | `POST` | `/api/control/targets` | 更新目标温度和转速 |
 | `POST` | `/api/control/emergency-stop` | 急停或复位急停 |
 | `GET` | `/api/recommendations/latest` | 获取最新 AI 推荐 |
+| `GET` | `/api/v1/devices/status` | 文档版设备在线状态接口 |
 | `POST` | `/api/v1/reactor/:device_id/control` | 文档版控制接口 |
 | `POST` | `/api/v1/reactor/:device_id/samples` | 数据管线上行样本写入接口 |
 | `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据接口 |
@@ -237,6 +242,35 @@ EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 | `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket |
 
 本地 E2E 使用的 `/api/test/reset` 和 `/api/test/pipeline-sample` 只有在启动参数包含 `--enable-test-reset` 时可用，生产部署不要开启。
+
+设备状态接口示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total_count": 1,
+    "online_count": 0,
+    "devices": [
+      {
+        "device_id": "reactor_001",
+        "device_role": "reactor_bridge",
+        "online": false,
+        "status": "offline",
+        "last_seen_at": null,
+        "last_seen_age_ms": null,
+        "stale_after_ms": 6000,
+        "active_batch_id": null,
+        "emergency_stop": false,
+        "last_control_error": null
+      }
+    ]
+  }
+}
+```
+
+`status` 取值为 `offline`、`stale`、`error`、`idle`、`running`。这个接口即使在 `/api/live` 因缺少管线数据返回 `503` 时也会返回 `200`，用于前端和运维脚本判断设备在线数量。
 
 ## 测试
 

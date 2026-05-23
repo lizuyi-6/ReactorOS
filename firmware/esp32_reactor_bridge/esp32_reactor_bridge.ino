@@ -32,7 +32,7 @@ String checksumHex(uint8_t value) {
   return out;
 }
 
-void sendFrame(float tempC, float pressureMpa, float rpm, float shakeCpm, float flowLMin, float concentration, float ph) {
+void sendFrame(float tempC, float pressureMpa, float rpm, float shakeCpm, uint8_t tiltState, float flowLMin, float concentration, float ph) {
   String body = "RX|v=1";
   body += "|seq=" + String(seqNo++);
   body += "|ms=" + String(millis());
@@ -40,6 +40,7 @@ void sendFrame(float tempC, float pressureMpa, float rpm, float shakeCpm, float 
   body += "|pressure=" + String(pressureMpa, 2);
   body += "|stir_speed=" + String(rpm, 2);
   body += "|shake_speed=" + String(shakeCpm, 2);
+  body += "|tilt_state=" + String(tiltState);
   body += "|flow_rate=" + String(flowLMin, 2);
   body += "|product_concentration=" + String(concentration, 2);
   body += "|ph=" + String(ph, 2);
@@ -106,6 +107,12 @@ float readShakeCpm() {
   return targetShakeCpm;
 }
 
+uint8_t readTiltState() {
+  // Replace with the binary tilt/limit sensor on the shake vessel tray.
+  // ReactorOS fits a display curve from this 0/1 signal and the shake target.
+  return (millis() / 1000UL) % 2 == 0 ? 1 : 0;
+}
+
 float readFlowLMin() {
   return 2.5f + targetRpm / 1000.0f + targetShakeCpm / 100.0f;
 }
@@ -120,6 +127,8 @@ float readPh() {
 
 void applyTargets(float tempC, float rpm, float shakeCpm, float pressureMpa) {
   // Replace with relay/PWM/VFD/control-loop output.
+  // For the shake vessel, translate shakeCpm to stepper profile locally on ESP32.
+  // Raspberry Pi only sends the target shake speed; it must not generate step pulses.
   // Keep hard safety interlocks here, independent of Raspberry Pi.
   (void)tempC;
   (void)rpm;
@@ -158,6 +167,7 @@ void loop() {
       readPressureMpa(),
       readRpm(),
       readShakeCpm(),
+      readTiltState(),
       readFlowLMin(),
       readConcentrationPercent(),
       readPh()
