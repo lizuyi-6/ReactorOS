@@ -164,9 +164,17 @@ export async function assertResponsiveLayout(page) {
     const sidebar = document.querySelector(".sidebar").getBoundingClientRect();
     const main = document.querySelector(".main").getBoundingClientRect();
     const sensors = getComputedStyle(document.querySelector("#sideSensors")).gridTemplateColumns;
-    return { sidebarHeight: sidebar.height, mainLeft: main.left, sensorColumns: sensors.split(" ").length };
+    const mainPaddingTop = parseFloat(getComputedStyle(document.querySelector(".main")).paddingTop);
+    return {
+      sidebarBottom: sidebar.bottom,
+      sidebarHeight: sidebar.height,
+      mainLeft: main.left,
+      mainPaddingTop,
+      sensorColumns: sensors.split(" ").length
+    };
   });
   expect(result.mainLeft).toBeLessThan(2);
-  expect(result.sidebarHeight).toBeLessThanOrEqual(90);
+  expect(result.sidebarHeight).toBeLessThanOrEqual(140);
+  expect(result.mainPaddingTop).toBeGreaterThan(result.sidebarBottom - 1);
   expect(result.sensorColumns).toBeGreaterThanOrEqual(5);
 }

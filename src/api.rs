@@ -205,7 +205,7 @@ async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppEr
     let recent_samples = state.db.recent_samples(480)?;
     let recent_batches = state.db.recent_batches(20)?;
     let recent_outcomes = state.db.recent_batch_outcomes(20)?;
-    let recent_events = state.db.recent_control_events(20)?;
+    let recent_events = state.db.recent_control_events(100)?;
     let ai_memory = AiMemorySummary::from(state.ai_memory.as_ref());
     let recommendation = current_cached_or_local_recommendation(&state)?;
     let ai_provider = local_provider_for(&state);
@@ -584,14 +584,14 @@ async fn product_results(
         product_ratio: round2(payload.product_ratio),
         notes: payload.notes.unwrap_or_default(),
     })?;
-    let recommendation = generate_recommendation(&state).await?;
-    state.db.insert_recommendation(&recommendation)?;
     state.db.insert_control_event(
         Some(payload.batch_id),
         "product_result_recorded",
         None,
-        "product result saved and recommendation regenerated",
+        "product result saved; recommendation regeneration queued",
     )?;
+    let recommendation = generate_recommendation(&state).await?;
+    state.db.insert_recommendation(&recommendation)?;
     Ok(Json(recommendation_envelope(&state, recommendation).await))
 }
 

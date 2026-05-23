@@ -28,16 +28,24 @@ test("Nordic dashboard exposes backend-fed monitoring, program, materials, AI an
   const temp = pipelineSample.temperature_c.toFixed(2);
   const pressure = pipelineSample.pressure_mpa.toFixed(2);
   const rpm = pipelineSample.stirrer_rpm.toFixed(2);
+  const shake = pipelineSample.shake_speed_cpm.toFixed(2);
+  const flow = pipelineSample.flow_rate_l_min.toFixed(2);
   const concentration = pipelineSample.product_concentration_percent.toFixed(2);
   const ph = pipelineSample.ph.toFixed(2);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${pressure} MPa`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${rpm} RPM`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${shake} CPM`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${flow} L/min`);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${concentration} %`);
   await expect(page.locator(selectors.sideSensors)).toContainText(ph);
   await expect(page.locator(selectors.sideSensors)).toContainText(`${temp} °C`);
   await expect(page.locator(selectors.batchSummary)).toContainText("Target Temp");
+  await expect(page.locator(selectors.batchSummary)).toContainText(`${shake} CPM`);
+  await expect(page.locator(selectors.batchSummary)).toContainText(`${flow} L/min`);
   await expect(page.locator(selectors.feedSummary)).toContainText("A : B ratio");
   await assertCanvasHasInk(page, selectors.mainChart);
+  await assertCanvasHasInk(page, "#shakeChart");
+  await assertCanvasHasInk(page, "#flowChart");
 
   await switchTab(page, selectors.programTab, "view-program");
   await expect(page.locator(selectors.timeline)).toContainText("Heat-up");
