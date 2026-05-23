@@ -895,6 +895,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["device_id"], "reactor_001");
     assert_eq!(body["data"]["page"], 1);
+    assert!(body["data"]["items"][0]["batch_id"].is_null());
     assert_eq!(body["data"]["items"][0]["data"]["current_temp"], 85.5);
     assert_eq!(body["data"]["items"][0]["data"]["tilt_state"], 1);
     assert!(
@@ -903,6 +904,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             .unwrap()
             >= 0.0
     );
+    assert_eq!(body["data"]["records"], body["data"]["items"]);
 }
 
 #[tokio::test]

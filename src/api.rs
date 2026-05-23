@@ -654,9 +654,11 @@ async fn v1_history(
         .samples_between(start_time, end_time, page_size, offset)?;
     let rows: Vec<Value> = samples
         .into_iter()
-        .map(|sample| {
+        .map(|record| {
+            let sample = record.sample;
             json!({
                 "device_id": device_id,
+                "batch_id": record.batch_id,
                 "timestamp": sample.captured_at.to_rfc3339(),
                 "data": {
                     "current_temp": sample.temperature_c,
@@ -681,7 +683,8 @@ async fn v1_history(
         "interval": query.interval.unwrap_or_else(|| "raw".to_string()),
         "start_time": start_time.to_rfc3339(),
         "end_time": end_time.to_rfc3339(),
-        "items": rows
+        "items": rows.clone(),
+        "records": rows
     }))))
 }
 

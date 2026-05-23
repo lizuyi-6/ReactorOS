@@ -643,11 +643,11 @@ impl Db {
         end_time: DateTime<Utc>,
         limit: usize,
         offset: usize,
-    ) -> Result<Vec<SensorSnapshot>> {
+    ) -> Result<Vec<SensorSampleRecord>> {
         let conn = self.lock()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT temperature_c, pressure_mpa, stirrer_rpm,
+            SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
                    shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
             FROM sensor_samples
             WHERE captured_at >= ?1 AND captured_at <= ?2
@@ -663,18 +663,21 @@ impl Db {
                 offset as i64
             ],
             |row| {
-                let captured_at: String = row.get(9)?;
-                Ok(SensorSnapshot {
-                    temperature_c: row.get(0)?,
-                    pressure_mpa: row.get(1)?,
-                    stirrer_rpm: row.get(2)?,
-                    shake_speed_cpm: row.get(3)?,
-                    tilt_state: row.get(4)?,
-                    tilt_angle_deg: row.get(5)?,
-                    flow_rate_l_min: row.get(6)?,
-                    product_concentration_percent: row.get(7)?,
-                    ph: row.get(8)?,
-                    captured_at: parse_dt(&captured_at)?,
+                let captured_at: String = row.get(10)?;
+                Ok(SensorSampleRecord {
+                    batch_id: row.get(0)?,
+                    sample: SensorSnapshot {
+                        temperature_c: row.get(1)?,
+                        pressure_mpa: row.get(2)?,
+                        stirrer_rpm: row.get(3)?,
+                        shake_speed_cpm: row.get(4)?,
+                        tilt_state: row.get(5)?,
+                        tilt_angle_deg: row.get(6)?,
+                        flow_rate_l_min: row.get(7)?,
+                        product_concentration_percent: row.get(8)?,
+                        ph: row.get(9)?,
+                        captured_at: parse_dt(&captured_at)?,
+                    },
                 })
             },
         )?;
