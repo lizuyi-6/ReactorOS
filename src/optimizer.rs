@@ -93,10 +93,10 @@ pub fn recommend_with_memory(
 
     Recommendation {
         based_on_batch_count: outcomes.len() as i64,
-        target_temperature_c: round1(temp),
-        target_stirrer_rpm: round0(rpm),
-        heating_minutes: round1(heating),
-        stirring_minutes: round1(stirring),
+        target_temperature_c: round2(temp),
+        target_stirrer_rpm: round2(rpm),
+        heating_minutes: round2(heating),
+        stirring_minutes: round2(stirring),
         expected_score: round2(score_with_weights(best, objective_weights)),
         rationale: rationale(
             best,
@@ -131,10 +131,10 @@ fn midpoint_recommendation(
         .unwrap_or_default();
     Recommendation {
         based_on_batch_count: count,
-        target_temperature_c: round1((bounds.min_temperature_c + bounds.max_temperature_c) / 2.0),
-        target_stirrer_rpm: round0((bounds.min_stirrer_rpm + bounds.max_stirrer_rpm) / 2.0),
-        heating_minutes: round1((bounds.min_heating_minutes + bounds.max_heating_minutes) / 2.0),
-        stirring_minutes: round1((bounds.min_stirring_minutes + bounds.max_stirring_minutes) / 2.0),
+        target_temperature_c: round2((bounds.min_temperature_c + bounds.max_temperature_c) / 2.0),
+        target_stirrer_rpm: round2((bounds.min_stirrer_rpm + bounds.max_stirrer_rpm) / 2.0),
+        heating_minutes: round2((bounds.min_heating_minutes + bounds.max_heating_minutes) / 2.0),
+        stirring_minutes: round2((bounds.min_stirring_minutes + bounds.max_stirring_minutes) / 2.0),
         expected_score: 0.0,
         rationale: format!(
             "Not enough finished batches yet; using the center of configured safe optimizer bounds.{profile_note}{reference_note}"
@@ -327,14 +327,6 @@ fn rationale(
         "Based on the top {elite_count} batches from {real_outcome_count} recorded and {memory_outcome_count} file reference outcomes; best batch {} reached yield {:.2}% and product ratio {:.3}.{memory_note}{reference_note}{forbidden_note}",
         best.batch_id, best.yield_percent, best.product_ratio
     )
-}
-
-fn round0(value: f64) -> f64 {
-    value.round()
-}
-
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
 }
 
 fn round2(value: f64) -> f64 {

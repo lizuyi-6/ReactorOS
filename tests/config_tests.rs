@@ -49,14 +49,6 @@ command_prefix = "TX"
 checksum = true
 max_line_bytes = 256
 
-[simulator]
-initial_temperature_c = 28.0
-initial_stirrer_rpm = 0.0
-ambient_temperature_c = 25.0
-heating_response = 0.08
-cooling_response = 0.02
-stirrer_response = 0.25
-noise = 0.15
 "#;
 
     let config: DeviceConfig = toml::from_str(raw).unwrap();
@@ -64,6 +56,13 @@ noise = 0.15
     assert_eq!(config.mode, DeviceMode::Esp32Serial);
     assert_eq!(config.serial.baudrate, 115200);
     assert_eq!(config.esp32.frame_prefix, "RX");
+}
+
+#[test]
+fn default_device_config_uses_external_pipeline_mode() {
+    let config = load_device_config("config/device.toml").unwrap();
+
+    assert_eq!(config.mode, DeviceMode::Pipeline);
 }
 
 #[test]

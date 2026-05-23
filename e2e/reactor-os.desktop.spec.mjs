@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
 import {
-  assertConsistentControlStyling,
-  assertCriticalCopy,
+  assertCanvasHasInk,
   assertNoConsoleErrors,
   assertNoHorizontalOverflow,
   assertNoTextClipping,
-  numericInputValue,
+  latestLive,
+  pipelineSample,
   preparePage,
-  selectors
+  selectors,
+  switchTab
 } from "./reactor-os.helpers.mjs";
 
 test.beforeEach(async ({ page, request }) => {
@@ -18,59 +19,89 @@ test.afterEach(async ({ page }) => {
   assertNoConsoleErrors(page);
 });
 
-test("normal operator flow: apply AI recommendation, start, auto, stop, record result", async ({
-  page
-}) => {
+test("Nordic dashboard exposes backend-fed monitoring, program, materials, AI and alarms", async ({ page, request }) => {
   await assertNoHorizontalOverflow(page);
   await assertNoTextClipping(page);
-  await assertCriticalCopy(page);
-  await assertConsistentControlStyling(page);
+  await expect(page.locator(selectors.runState)).toContainText(/Idle|Running|Alarm/);
+  const live = await latestLive(request);
+  expect(live.runtime.latest_sample).toMatchObject(pipelineSample);
+  const temp = pipelineSample.temperature_c.toFixed(2);
+  const pressure = pipelineSample.pressure_mpa.toFixed(2);
+  const rpm = pipelineSample.stirrer_rpm.toFixed(2);
+  const concentration = pipelineSample.product_concentration_percent.toFixed(2);
+  const ph = pipelineSample.ph.toFixed(2);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${pressure} MPa`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${rpm} RPM`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${concentration} %`);
+  await expect(page.locator(selectors.sideSensors)).toContainText(ph);
+  await expect(page.locator(selectors.sideSensors)).toContainText(`${temp} °C`);
+  await expect(page.locator(selectors.batchSummary)).toContainText("Target Temp");
+  await expect(page.locator(selectors.feedSummary)).toContainText("A : B ratio");
+  await assertCanvasHasInk(page, selectors.mainChart);
 
-  const initialTemp = await numericInputValue(page, selectors.targetTemp);
-  await page.locator(selectors.applyRecommended).click();
-  await expect(page.locator(selectors.eventLog)).toContainText("AI 推荐参数已填入");
+  await switchTab(page, selectors.programTab, "view-program");
+  await expect(page.locator(selectors.timeline)).toContainText("Heat-up");
+  await page.locator(selectors.addStage).click();
+  await expect(page.locator(".stage-block")).toHaveCount(4);
+  await page.locator(selectors.stageTemp).fill("188.50");
+  await page.locator(selectors.stageTemp).blur();
+  await expect(page.locator(selectors.stageTemp)).toHaveValue("188.50");
+  await page.locator("#saveRecipeBtn").click();
+  await expect(page.locator(selectors.activeView)).toHaveAttribute("id", "view-recipes");
+
+  await expect(page.locator(selectors.recipeList)).toContainText("Recipe");
+  await page.getByText("加载到程序").click();
+  await expect(page.locator(selectors.activeView)).toHaveAttribute("id", "view-program");
+
+  await switchTab(page, selectors.materialsTab, "view-materials");
+  await expect(page.locator('#materialRows input[data-field="name"]').first()).toHaveValue("Reactant A");
+  await page.locator(selectors.addMaterial).click();
+  await expect(page.locator("#materialRows tr")).toHaveCount(4);
+  await switchTab(page, selectors.programTab, "view-program");
+  await page.locator(selectors.startProgram).click();
   await expect
-    .poll(() => numericInputValue(page, selectors.targetTemp))
-    .not.toBe(initialTemp);
+    .poll(async () => {
+      const next = await latestLive(request);
+      return next.runtime.active_batch_id;
+    }, { timeout: 12_000 })
+    .not.toBeNull();
+  await expect(page.locator(selectors.runState)).toContainText(/Running|Alarm/);
+  await switchTab(page, selectors.materialsTab, "view-materials");
+  await expect(page.locator("#finishBatchBtn")).toBeEnabled();
+  await page.locator("#finishBatchBtn").click();
+  await page.locator("#finishBatchBtn").click();
+  await page.locator(selectors.productMass).fill("36.00");
+  await page.locator(selectors.theoreticalMass).fill("48.00");
+  await expect(page.locator(selectors.computedYield)).toContainText("75.00%");
+  await page.locator("#saveProductBtn").click();
+  await expect
+    .poll(async () => {
+      const next = await latestLive(request);
+      return next.recent_events.map(event => event.event_type);
+    }, { timeout: 20_000 })
+    .toContain("product_result_recorded");
 
-  await page.locator(selectors.start).click();
-  await expect(page.locator(selectors.systemText)).toContainText("系统运行中");
-  await expect(page.locator(selectors.batchLabel)).toContainText("Batch #");
-  await expect(page.locator(selectors.operatorNote)).toContainText("批次已启动");
+  await switchTab(page, selectors.aiTab, "view-ai");
+  await expect(page.locator(selectors.aiRecommendation)).toContainText("目标温度");
+  await assertCanvasHasInk(page, "#sensitivityChart");
+  await assertCanvasHasInk(page, "#learningChart");
+  await page.locator(selectors.applyAi).click();
+  await expect(page.locator(selectors.activeView)).toHaveAttribute("id", "view-program");
 
-  await page.locator(selectors.auto).click();
-  await expect(page.locator(selectors.auto)).toContainText("自动控制：开启");
-  await expect(page.locator(selectors.operatorNote)).toContainText("自动控制已开启");
-
-  await page.locator(selectors.stop).click();
-  await expect(page.locator(selectors.systemText)).toContainText("系统待机");
-  await expect(page.locator(selectors.operatorNote)).toContainText("批次已结束");
-
-  await page.locator(selectors.yieldInput).fill("86.7");
-  await page.locator(selectors.ratioInput).fill("0.91");
-  await page.locator(selectors.notesInput).fill("desktop acceptance normal flow");
-  await page.locator(selectors.saveResult).click();
-  await expect(page.locator(selectors.operatorNote)).toContainText("结果已录入");
-  await expect(page.locator("tbody")).toContainText("86.7%");
-  await expect(page.locator(selectors.memorySummary)).toContainText("参考 3 批");
+  await switchTab(page, selectors.alarmsTab, "view-alarms");
+  await expect(page.locator(selectors.activeAlarmRows)).toContainText(/Acknowledge|No active alarms/);
+  const before = await page.locator(".ack-btn").count();
+  if (before > 0) {
+    const acknowledgedId = await page.locator(".ack-btn").first().getAttribute("data-ack");
+    await page.locator(".ack-btn").first().click();
+    await expect(page.locator(`.ack-btn[data-ack="${acknowledgedId}"]`)).toHaveCount(0);
+  }
 });
 
-test("boundary flow: invalid control input is rejected with concise operator feedback", async ({
-  page
-}) => {
-  await assertNoHorizontalOverflow(page);
-
-  await page.locator(selectors.targetTemp).fill("999");
-  await page.locator(selectors.stirRpm).fill("9999");
-  await page.keyboard.press("Tab");
-  await expect(page.locator(selectors.operatorNote)).toContainText("目标提交失败");
-  await expect(page.locator(selectors.operatorNote)).toContainText("target_temp");
-  await expect(page.locator(selectors.operatorNote)).not.toContainText("\"data\"");
-  await expect(page.locator(selectors.operatorNote)).not.toContainText("{");
-
-  await page.locator(selectors.yieldInput).fill("101");
-  await page.locator(selectors.ratioInput).fill("1.5");
-  await page.locator(selectors.saveResult).click();
-  const note = page.locator(selectors.operatorNote);
-  await expect(note).toContainText(/没有已结束的批次可录入结果|结果录入失败/);
+test("export menu opens and offers all static export actions", async ({ page }) => {
+  await page.locator(selectors.exportTrigger).click();
+  await expect(page.locator(selectors.exportMenu)).toBeVisible();
+  await expect(page.locator(selectors.exportMenu)).toContainText("批次报告 PDF");
+  await expect(page.locator(selectors.exportMenu)).toContainText("历史数据 CSV");
+  await expect(page.locator(selectors.exportMenu)).toContainText("报警记录 CSV");
 });

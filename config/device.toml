@@ -1,4 +1,4 @@
-mode = "simulator"
+mode = "pipeline"
 
 [serial]
 port = "/dev/ttyUSB0"
@@ -40,12 +40,3 @@ offset = 0.0
 address = 11
 scale = 1.0
 offset = 0.0
-
-[simulator]
-initial_temperature_c = 28.0
-initial_stirrer_rpm = 0.0
-ambient_temperature_c = 25.0
-heating_response = 0.08
-cooling_response = 0.02
-stirrer_response = 0.25
-noise = 0.15

@@ -76,30 +76,34 @@ pub fn decide_control(
     );
 
     ControlDecision::Write(SafeCommand {
-        target_temperature_c: round1(temperature),
-        heat_time_s: targets.heat_time_s,
-        hold_time_s: targets.hold_time_s,
-        cool_time_s: targets.cool_time_s,
-        target_stirrer_rpm: round1(stirrer),
-        target_shake_speed_cpm: targets.shake_speed_cpm,
-        target_pressure_mpa: targets.target_pressure_mpa,
+        target_temperature_c: round2(temperature),
+        heat_time_s: round2(targets.heat_time_s),
+        hold_time_s: round2(targets.hold_time_s),
+        cool_time_s: round2(targets.cool_time_s),
+        target_stirrer_rpm: round2(stirrer),
+        target_shake_speed_cpm: round2(targets.shake_speed_cpm),
+        target_pressure_mpa: round2(targets.target_pressure_mpa),
         reason: "auto control within configured safety limits".to_string(),
     })
 }
 
 pub fn clamp_operator_targets(safety: &SafetyConfig, targets: ControlTargets) -> ControlTargets {
     ControlTargets {
-        temperature_c: targets
-            .temperature_c
-            .clamp(safety.temperature.min_c, safety.temperature.max_c),
-        heat_time_s: targets.heat_time_s.clamp(0.0, 3600.0),
-        hold_time_s: targets.hold_time_s.clamp(0.0, 7200.0),
-        cool_time_s: targets.cool_time_s.clamp(0.0, 3600.0),
-        stirrer_rpm: targets
-            .stirrer_rpm
-            .clamp(safety.stirrer.min_rpm, safety.stirrer.max_rpm),
-        shake_speed_cpm: targets.shake_speed_cpm.clamp(0.0, 60.0),
-        target_pressure_mpa: targets.target_pressure_mpa.clamp(0.0, 10.0),
+        temperature_c: round2(
+            targets
+                .temperature_c
+                .clamp(safety.temperature.min_c, safety.temperature.max_c),
+        ),
+        heat_time_s: round2(targets.heat_time_s.clamp(0.0, 3600.0)),
+        hold_time_s: round2(targets.hold_time_s.clamp(0.0, 7200.0)),
+        cool_time_s: round2(targets.cool_time_s.clamp(0.0, 3600.0)),
+        stirrer_rpm: round2(
+            targets
+                .stirrer_rpm
+                .clamp(safety.stirrer.min_rpm, safety.stirrer.max_rpm),
+        ),
+        shake_speed_cpm: round2(targets.shake_speed_cpm.clamp(0.0, 60.0)),
+        target_pressure_mpa: round2(targets.target_pressure_mpa.clamp(0.0, 10.0)),
     }
 }
 
@@ -109,6 +113,6 @@ fn clamp_step(current: f64, desired: f64, min: f64, max: f64, max_step: f64) -> 
     (current + delta).clamp(min, max)
 }
 
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
 }

@@ -3,8 +3,9 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use anyhow::Result;
 use clap::Parser;
 use reactor_edge_daemon::{
+    ai_provider::AiProvider,
     api::{serve, AppState},
-    config::{load_device_config, load_safety_config},
+    config::{load_device_config, load_safety_config, DeviceMode},
     control::{decide_control, ControlDecision},
     db::Db,
     device::build_device,
@@ -40,9 +41,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
     let device_config = load_device_config(&args.config)?;
+    let device_mode = device_config.mode.clone();
     let safety = Arc::new(load_safety_config(&args.safety)?);
     let ai_memory = Arc::new(load_ai_memory(&args.memory)?);
     ai_memory.validate_against_optimizer_bounds(&safety.optimizer)?;
+    let ai_provider = AiProvider::from_env()?.map(Arc::new);
     let db = Db::open(&args.db)?;
     let device = build_device(&device_config)?;
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
@@ -52,7 +55,7 @@ async fn main() -> Result<()> {
     let loop_safety = Arc::clone(&safety);
     let loop_device = Arc::clone(&device);
     tokio::spawn(async move {
-        control_loop(loop_device, loop_db, loop_state, loop_safety).await;
+        control_loop(loop_device, loop_db, loop_state, loop_safety, device_mode).await;
     });
 
     serve(
@@ -61,6 +64,7 @@ async fn main() -> Result<()> {
             runtime,
             safety,
             ai_memory,
+            ai_provider,
             test_reset_enabled: args.enable_test_reset,
         },
         args.assets,
@@ -74,25 +78,34 @@ async fn control_loop(
     db: Db,
     runtime: SharedState,
     safety: Arc<reactor_edge_daemon::config::SafetyConfig>,
+    device_mode: DeviceMode,
 ) {
     let interval = Duration::from_millis(safety.control.control_interval_ms);
     loop {
-        match device.read_sample().await {
-            Ok(sample) => {
-                let active_batch_id = {
-                    let mut state = runtime.write().await;
-                    state.latest_sample = Some(sample.clone());
-                    state.last_control_error = None;
-                    state.active_batch_id
-                };
-                if let Err(err) = db.insert_sample(active_batch_id, &sample) {
-                    tracing::warn!("failed to persist sensor sample: {err}");
-                }
+        if matches!(device_mode, DeviceMode::Pipeline) {
+            let mut state = runtime.write().await;
+            if state.latest_sample.is_none() {
+                state.last_control_error =
+                    Some("waiting for external data pipeline sample".to_string());
             }
-            Err(err) => {
-                tracing::warn!("sensor read failed: {err}");
-                let mut state = runtime.write().await;
-                state.last_control_error = Some(err.to_string());
+        } else {
+            match device.read_sample().await {
+                Ok(sample) => {
+                    let active_batch_id = {
+                        let mut state = runtime.write().await;
+                        state.latest_sample = Some(sample.clone());
+                        state.last_control_error = None;
+                        state.active_batch_id
+                    };
+                    if let Err(err) = db.insert_sample(active_batch_id, &sample) {
+                        tracing::warn!("failed to persist sensor sample: {err}");
+                    }
+                }
+                Err(err) => {
+                    tracing::warn!("sensor read failed: {err}");
+                    let mut state = runtime.write().await;
+                    state.last_control_error = Some(err.to_string());
+                }
             }
         }
 

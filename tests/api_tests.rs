@@ -65,6 +65,7 @@ async fn health_endpoint_works() {
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -112,6 +113,7 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -138,10 +140,310 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
 }
 
 #[tokio::test]
-async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
+async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("sensor data unavailable"));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/reactor/reactor_001/realtime")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+}
+
+#[tokio::test]
+async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let unavailable = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/reactor/reactor_001/samples")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "temperature_c": 31.114,
+                        "pressure_mpa": 0.504,
+                        "stirrer_rpm": 125.184,
+                        "shake_speed_cpm": 30.004,
+                        "flow_rate_l_min": 2.424,
+                        "product_concentration_percent": 11.104,
+                        "ph": 6.154
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["device_id"], "reactor_001");
+    assert_eq!(body["data"]["sample"]["temperature_c"], 31.11);
+    assert_eq!(body["data"]["sample"]["pressure_mpa"], 0.5);
+    assert_eq!(body["data"]["sample"]["stirrer_rpm"], 125.18);
+    assert_eq!(
+        body["data"]["sample"]["product_concentration_percent"],
+        11.1
+    );
+    assert_eq!(body["data"]["sample"]["ph"], 6.15);
+
+    let live = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["runtime"]["latest_sample"]["temperature_c"], 31.11);
+    assert_eq!(body["runtime"]["latest_sample"]["pressure_mpa"], 0.5);
+    assert_eq!(body["runtime"]["latest_sample"]["stirrer_rpm"], 125.18);
+    assert_eq!(
+        body["runtime"]["latest_sample"]["product_concentration_percent"],
+        11.1
+    );
+    assert_eq!(body["runtime"]["latest_sample"]["ph"], 6.15);
+    assert!(body["recent_events"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/test/pipeline-sample")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "temperature_c": 31.11,
+                        "pressure_mpa": 0.50,
+                        "stirrer_rpm": 125.18,
+                        "shake_speed_cpm": 30.00,
+                        "flow_rate_l_min": 2.42,
+                        "product_concentration_percent": 11.10,
+                        "ph": 6.15
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_pipeline_sample_endpoint_wraps_the_v1_pipeline_for_e2e() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: true,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/test/pipeline-sample")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "temperature_c": 31.11,
+                        "pressure_mpa": 0.50,
+                        "stirrer_rpm": 125.18,
+                        "shake_speed_cpm": 30.00,
+                        "flow_rate_l_min": 2.42,
+                        "product_concentration_percent": 11.10,
+                        "ph": 6.15
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn live_endpoint_rejects_stale_pipeline_samples() {
+    let safety = Arc::new(SafetyConfig {
+        control: ControlConfig {
+            sensor_timeout_ms: 1,
+            ..safety().control
+        },
+        ..safety()
+    });
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 31.11,
+            pressure_mpa: 0.5,
+            stirrer_rpm: 125.18,
+            shake_speed_cpm: 30.0,
+            flow_rate_l_min: 2.42,
+            product_concentration_percent: 11.1,
+            ph: 6.15,
+            captured_at: Utc::now() - chrono::Duration::seconds(1),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+    assert!(body["message"].as_str().unwrap().contains("stale"));
+}
+
+#[tokio::test]
+async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
     let ai_memory = Arc::new(AiMemory {
         recommendation: RecommendationMemory {
             enabled: true,
@@ -165,6 +467,7 @@ async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
             runtime,
             safety,
             ai_memory,
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -187,19 +490,40 @@ async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
     assert_eq!(body["latest_recommendation"]["target_stirrer_rpm"], 450.0);
     assert_eq!(body["latest_recommendation"]["heating_minutes"], 40.0);
     assert_eq!(body["latest_recommendation"]["stirring_minutes"], 50.0);
+    assert_eq!(body["ai_provider"]["mode"], "local_optimizer");
+    assert_eq!(body["ai_provider"]["model"], "local-tpe-lite");
 }
 
 #[tokio::test]
 async fn operator_target_update_is_audited_with_clamped_targets() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
     let app = router(
         AppState {
             db,
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -272,6 +596,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -370,6 +695,7 @@ async fn v1_control_rejects_values_outside_interface_document_ranges() {
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -420,6 +746,7 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -460,13 +787,32 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
 async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
     let app = router(
         AppState {
             db,
             runtime,
             safety,
             ai_memory: memory(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -574,6 +920,15 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
         .await
         .unwrap();
     assert_eq!(result.status(), StatusCode::OK);
+    let body = to_bytes(result.into_body(), usize::MAX).await.unwrap();
+    let recommendation: Value = serde_json::from_slice(&body).unwrap();
+    assert_two_decimal_parameters([
+        recommendation["target_temperature_c"].as_f64().unwrap(),
+        recommendation["target_stirrer_rpm"].as_f64().unwrap(),
+        recommendation["heating_minutes"].as_f64().unwrap(),
+        recommendation["stirring_minutes"].as_f64().unwrap(),
+        recommendation["expected_score"].as_f64().unwrap(),
+    ]);
 
     let live = app
         .oneshot(
@@ -669,6 +1024,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
             runtime,
             safety,
             ai_memory: ai_memory.clone(),
+            ai_provider: None,
             test_reset_enabled: false,
         },
         PathBuf::from("static"),
@@ -689,6 +1045,8 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
         .await
         .unwrap();
     let rec: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(rec["provider"]["mode"], "local_optimizer");
+    assert_eq!(rec["provider"]["model"], "local-tpe-lite");
     let temp = rec["target_temperature_c"].as_f64().unwrap();
     let rpm = rec["target_stirrer_rpm"].as_f64().unwrap();
     let heating = rec["heating_minutes"].as_f64().unwrap();
@@ -698,6 +1056,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
     assert!((400.0..=800.0).contains(&rpm));
     assert!((50.0..=140.0).contains(&heating));
     assert!((40.0..=120.0).contains(&stirring));
+    assert_two_decimal_parameters([temp, rpm, heating, stirring]);
     assert!(!ai_memory.forbidden_zones[0].contains(temp, rpm, heating, stirring));
     assert!(rec["rationale"]
         .as_str()
@@ -752,5 +1111,15 @@ fn reference(
         yield_percent,
         product_ratio,
         notes: String::new(),
+    }
+}
+
+fn assert_two_decimal_parameters(values: impl IntoIterator<Item = f64>) {
+    for value in values {
+        let scaled = value * 100.0;
+        assert!(
+            (scaled - scaled.round()).abs() < 1e-9,
+            "parameter should be rounded to two decimals: {value}"
+        );
     }
 }

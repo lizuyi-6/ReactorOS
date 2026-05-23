@@ -36,12 +36,12 @@ void sendFrame(float tempC, float pressureMpa, float rpm, float shakeCpm, float 
   String body = "RX|v=1";
   body += "|seq=" + String(seqNo++);
   body += "|ms=" + String(millis());
-  body += "|temp=" + String(tempC, 1);
+  body += "|temp=" + String(tempC, 2);
   body += "|pressure=" + String(pressureMpa, 2);
-  body += "|stir_speed=" + String(rpm, 0);
-  body += "|shake_speed=" + String(shakeCpm, 0);
-  body += "|flow_rate=" + String(flowLMin, 1);
-  body += "|product_concentration=" + String(concentration, 1);
+  body += "|stir_speed=" + String(rpm, 2);
+  body += "|shake_speed=" + String(shakeCpm, 2);
+  body += "|flow_rate=" + String(flowLMin, 2);
+  body += "|product_concentration=" + String(concentration, 2);
   body += "|ph=" + String(ph, 2);
   Serial.println(body + "|chk=" + checksumHex(xorChecksum(body)));
 }

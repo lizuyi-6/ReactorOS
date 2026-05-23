@@ -1,3 +1,4 @@
+pub mod ai_provider;
 pub mod api;
 pub mod config;
 pub mod control;

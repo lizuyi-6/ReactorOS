@@ -3,9 +3,10 @@ import {
   assertNoConsoleErrors,
   assertNoHorizontalOverflow,
   assertNoTextClipping,
-  assertResponsiveSingleColumn,
+  assertResponsiveLayout,
   preparePage,
-  selectors
+  selectors,
+  switchTab
 } from "./reactor-os.helpers.mjs";
 
 test.beforeEach(async ({ page, request }) => {
@@ -16,26 +17,14 @@ test.afterEach(async ({ page }) => {
   assertNoConsoleErrors(page);
 });
 
-test("mobile operator flow: responsive layout, emergency stop and reset", async ({ page }) => {
-  await assertResponsiveSingleColumn(page);
+test("mobile layout folds sidebar into horizontal sensor summary", async ({ page }) => {
+  await assertResponsiveLayout(page);
   await assertNoHorizontalOverflow(page);
   await assertNoTextClipping(page);
 
-  await page.locator(selectors.start).click();
-  await expect(page.locator(selectors.systemText)).toContainText("系统运行中");
-
-  await page.locator(selectors.estop).click();
-  await expect(page.locator(selectors.systemText)).toContainText("急停已触发");
-  await expect(page.locator(selectors.auto)).toContainText("自动控制：关闭");
-  await expect(page.locator(selectors.estop)).toBeDisabled();
-  await expect(page.locator(selectors.resetEstop)).toBeEnabled();
-  await expect(page.locator(selectors.operatorNote)).toContainText("急停已触发");
-
-  await page.locator(selectors.resetEstop).click();
-  await expect(page.locator(selectors.systemText)).toContainText("系统运行中");
-  await expect(page.locator(selectors.estop)).toBeEnabled();
-  await expect(page.locator(selectors.operatorNote)).toContainText("急停状态已复位");
-
-  await page.locator(selectors.stop).click();
-  await expect(page.locator(selectors.systemText)).toContainText("系统待机");
+  await expect(page.locator(selectors.sideSensors)).toContainText("TEMP");
+  await switchTab(page, selectors.materialsTab, "view-materials");
+  await expect(page.locator(selectors.ratioRaw)).toContainText("45.00");
+  await switchTab(page, selectors.alarmsTab, "view-alarms");
+  await expect(page.locator(selectors.activeAlarmRows)).toContainText(/Acknowledge|No active alarms/);
 });

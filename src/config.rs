@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DeviceConfig {
@@ -9,13 +9,12 @@ pub struct DeviceConfig {
     pub serial: SerialConfig,
     pub modbus: ModbusConfig,
     pub esp32: Esp32Config,
-    pub simulator: SimulatorConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceMode {
-    Simulator,
+    Pipeline,
     Modbus,
     Esp32Serial,
 }
@@ -69,17 +68,6 @@ pub struct WriteRegister {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SimulatorConfig {
-    pub initial_temperature_c: f64,
-    pub initial_stirrer_rpm: f64,
-    pub ambient_temperature_c: f64,
-    pub heating_response: f64,
-    pub cooling_response: f64,
-    pub stirrer_response: f64,
-    pub noise: f64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 pub struct SafetyConfig {
     pub control: ControlConfig,
     pub temperature: TemperatureSafety,
@@ -111,7 +99,7 @@ pub struct StirrerSafety {
     pub default_target_rpm: f64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OptimizerBounds {
     pub min_temperature_c: f64,
     pub max_temperature_c: f64,

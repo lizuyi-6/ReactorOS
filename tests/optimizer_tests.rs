@@ -44,6 +44,13 @@ fn recommendation_stays_inside_configured_bounds() {
         assert!((100.0..=1000.0).contains(&rec.target_stirrer_rpm));
         assert!((15.0..=240.0).contains(&rec.heating_minutes));
         assert!((15.0..=240.0).contains(&rec.stirring_minutes));
+        assert_two_decimal_parameters([
+            rec.target_temperature_c,
+            rec.target_stirrer_rpm,
+            rec.heating_minutes,
+            rec.stirring_minutes,
+            rec.expected_score,
+        ]);
         assert_eq!(rec.based_on_batch_count, 4);
     }
 }
@@ -173,5 +180,15 @@ fn reference(
         yield_percent,
         product_ratio,
         notes: String::new(),
+    }
+}
+
+fn assert_two_decimal_parameters(values: impl IntoIterator<Item = f64>) {
+    for value in values {
+        let scaled = value * 100.0;
+        assert!(
+            (scaled - scaled.round()).abs() < 1e-9,
+            "parameter should be rounded to two decimals: {value}"
+        );
     }
 }

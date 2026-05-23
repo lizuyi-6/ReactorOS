@@ -21,6 +21,8 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 ReadWritePaths=/var/lib/reactor-edge
+# Optional real AI provider. Keep the key in an EnvironmentFile outside git:
+# EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 
 [Install]
 WantedBy=multi-user.target

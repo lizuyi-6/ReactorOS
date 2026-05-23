@@ -7,12 +7,10 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use chrono::Utc;
-use rand::Rng;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
-use tokio::sync::Mutex;
 
 use crate::{
-    config::{DeviceConfig, DeviceMode, Esp32Config, ReadRegister, SimulatorConfig, WriteRegister},
+    config::{DeviceConfig, DeviceMode, ReadRegister, WriteRegister},
     control::SafeCommand,
     state::SensorSnapshot,
 };
@@ -27,117 +25,22 @@ pub type SharedDevice = Arc<dyn ReactorDevice>;
 
 pub fn build_device(config: &DeviceConfig) -> Result<SharedDevice> {
     match config.mode {
-        DeviceMode::Simulator => Ok(Arc::new(SimulatorDevice::new(
-            config.simulator.clone(),
-            config.esp32.clone(),
-        ))),
+        DeviceMode::Pipeline => Ok(Arc::new(PipelineDevice)),
         DeviceMode::Modbus => Ok(Arc::new(ModbusRtuDevice::new(config.clone())?)),
         DeviceMode::Esp32Serial => Ok(Arc::new(Esp32SerialDevice::new(config.clone())?)),
     }
 }
 
 #[derive(Debug)]
-struct SimulatorInner {
-    temperature_c: f64,
-    pressure_mpa: f64,
-    stirrer_rpm: f64,
-    shake_speed_cpm: f64,
-    flow_rate_l_min: f64,
-    product_concentration_percent: f64,
-    ph: f64,
-    target_temperature_c: f64,
-    target_stirrer_rpm: f64,
-    target_shake_speed_cpm: f64,
-    target_pressure_mpa: f64,
-}
-
-#[derive(Debug)]
-pub struct SimulatorDevice {
-    config: SimulatorConfig,
-    esp32: Esp32Config,
-    inner: Mutex<SimulatorInner>,
-}
-
-impl SimulatorDevice {
-    pub fn new(config: SimulatorConfig, esp32: Esp32Config) -> Self {
-        Self {
-            inner: Mutex::new(SimulatorInner {
-                temperature_c: config.initial_temperature_c,
-                pressure_mpa: 0.10,
-                stirrer_rpm: config.initial_stirrer_rpm,
-                shake_speed_cpm: 30.0,
-                flow_rate_l_min: 2.5,
-                product_concentration_percent: 0.0,
-                ph: 7.0,
-                target_temperature_c: config.initial_temperature_c,
-                target_stirrer_rpm: config.initial_stirrer_rpm,
-                target_shake_speed_cpm: 30.0,
-                target_pressure_mpa: 0.5,
-            }),
-            config,
-            esp32,
-        }
-    }
-}
+pub struct PipelineDevice;
 
 #[async_trait::async_trait]
-impl ReactorDevice for SimulatorDevice {
+impl ReactorDevice for PipelineDevice {
     async fn read_sample(&self) -> Result<SensorSnapshot> {
-        let mut inner = self.inner.lock().await;
-        let heating_response = if inner.target_temperature_c >= inner.temperature_c {
-            self.config.heating_response
-        } else {
-            self.config.cooling_response
-        };
-        inner.temperature_c +=
-            (inner.target_temperature_c - inner.temperature_c) * heating_response;
-        if inner.target_temperature_c <= self.config.ambient_temperature_c {
-            inner.temperature_c += (self.config.ambient_temperature_c - inner.temperature_c)
-                * self.config.cooling_response;
-        }
-        inner.stirrer_rpm +=
-            (inner.target_stirrer_rpm - inner.stirrer_rpm) * self.config.stirrer_response;
-        inner.shake_speed_cpm += (inner.target_shake_speed_cpm - inner.shake_speed_cpm) * 0.2;
-        inner.pressure_mpa += (inner.target_pressure_mpa - inner.pressure_mpa) * 0.03;
-        inner.flow_rate_l_min =
-            (2.0 + inner.stirrer_rpm / 1000.0 + inner.shake_speed_cpm / 100.0).clamp(0.0, 10.0);
-        inner.product_concentration_percent =
-            (inner.product_concentration_percent + 0.08 + rng_like(inner.temperature_c, 0.015))
-                .clamp(0.0, 100.0);
-        inner.ph = (inner.ph + rng_like(inner.temperature_c, 0.015)).clamp(0.0, 14.0);
-
-        let mut rng = rand::thread_rng();
-        let temp_noise = rng.gen_range(-self.config.noise..=self.config.noise);
-        let rpm_noise = rng.gen_range(-self.config.noise * 5.0..=self.config.noise * 5.0);
-        let pressure_noise = rng.gen_range(-self.config.noise * 0.002..=self.config.noise * 0.002);
-        let shake_noise = rng.gen_range(-self.config.noise..=self.config.noise);
-        let flow_noise = rng.gen_range(-self.config.noise * 0.04..=self.config.noise * 0.04);
-        let concentration_noise = rng.gen_range(-self.config.noise..=self.config.noise);
-        let ph_noise = rng.gen_range(-self.config.noise * 0.04..=self.config.noise * 0.04);
-
-        let sample = SensorSnapshot {
-            temperature_c: round2(inner.temperature_c + temp_noise),
-            pressure_mpa: round2((inner.pressure_mpa + pressure_noise).max(0.0)),
-            stirrer_rpm: round2((inner.stirrer_rpm + rpm_noise).max(0.0)),
-            shake_speed_cpm: round2((inner.shake_speed_cpm + shake_noise).clamp(0.0, 60.0)),
-            flow_rate_l_min: round2((inner.flow_rate_l_min + flow_noise).max(0.0)),
-            product_concentration_percent: round2(
-                (inner.product_concentration_percent + concentration_noise).clamp(0.0, 100.0),
-            ),
-            ph: round2((inner.ph + ph_noise).clamp(0.0, 14.0)),
-            captured_at: Utc::now(),
-        };
-        let frame =
-            build_esp32_sample_frame(&self.esp32.frame_prefix, &sample, self.esp32.checksum);
-        parse_esp32_frame(&frame, &self.esp32.frame_prefix, self.esp32.checksum)
+        Err(anyhow!("waiting for external data pipeline sample"))
     }
 
-    async fn write_targets(&self, command: &SafeCommand) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        inner.target_temperature_c = command.target_temperature_c;
-        inner.target_stirrer_rpm = command.target_stirrer_rpm;
-        inner.target_shake_speed_cpm = command.target_shake_speed_cpm;
-        inner.target_pressure_mpa = command.target_pressure_mpa;
+    async fn write_targets(&self, _command: &SafeCommand) -> Result<()> {
         Ok(())
     }
 }
@@ -294,10 +197,6 @@ fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
 }
 
-fn rng_like(seed: f64, scale: f64) -> f64 {
-    seed.sin() * scale
-}
-
 fn open_serial_port(config: &DeviceConfig) -> Result<Box<dyn SerialPort>> {
     let parity = match config.serial.parity.as_str() {
         "N" | "n" => Parity::None,
@@ -393,7 +292,7 @@ pub fn parse_esp32_frame(
 
 pub fn build_esp32_command(prefix: &str, command: &SafeCommand, checksum_enabled: bool) -> String {
     let body = format!(
-        "{prefix}|v=1|heat_time={:.0}|hold_time={:.0}|cool_time={:.0}|target_temp={:.1}|stir_speed={:.0}|shake_speed={:.0}|target_pressure={:.2}",
+        "{prefix}|v=1|heat_time={:.2}|hold_time={:.2}|cool_time={:.2}|target_temp={:.2}|stir_speed={:.2}|shake_speed={:.2}|target_pressure={:.2}",
         command.heat_time_s,
         command.hold_time_s,
         command.cool_time_s,

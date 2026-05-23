@@ -1,31 +1,30 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ReactorOS - 反应釜智能上位机</title>
-  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="%23F7F8FA"/><path d="M9 6h14v5l5 7v3a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-3l5-7z" fill="%23FFFFFF" stroke="%231D4ED8"/><path d="M9 12h14M7 19h18" stroke="%231C2033" stroke-width="1.5"/></svg>'>
+  <title>ReactorOS - 化学反应釜智能上位机</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Jost:wght@300;400&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #F7F8FA;
-      --surface: #FFFFFF;
-      --border: #DDE1E8;
-      --border-dark: #B8BFC9;
-      --text-primary: #1C2033;
-      --text-muted: #6B7385;
-      --text-dim: #A0A8B5;
-      --accent: #1D4ED8;
-      --accent-light: #EFF4FF;
-      --success: #166534;
-      --success-bg: #F0FDF4;
-      --warning: #92400E;
-      --warning-bg: #FFFBEB;
-      --danger: #991B1B;
-      --danger-bg: #FEF2F2;
-      --font-body: "Inter", "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
-      --font-mono: "DM Mono", "Cascadia Mono", "Consolas", monospace;
-      --radius-card: 8px;
-      --radius-control: 4px;
+      --bg: #FAF8F5;
+      --surface: #F2EFE9;
+      --line: #E0DBD3;
+      --text-1: #1A1814;
+      --text-2: #7A7268;
+      --text-3: #B0A898;
+      --accent: #2D5A3D;
+      --accent-bg: #EBF2EE;
+      --danger: #8B3A2A;
+      --danger-bg: #F5EBE8;
+      --warning: #7A5C1E;
+      --warning-bg: #F5F0E8;
+      --nav-h: 64px;
+      --side-w: 200px;
+      --font-body: "Jost", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+      --font-display: "DM Serif Display", Georgia, serif;
     }
 
     * {
@@ -37,1220 +36,2374 @@
       margin: 0;
       min-height: 100%;
       background: var(--bg);
-      color: var(--text-primary);
+      color: var(--text-1);
       font-family: var(--font-body);
       font-size: 13px;
+      font-weight: 300;
       letter-spacing: 0;
     }
 
     button,
     input,
-    select {
+    select,
+    textarea {
       font: inherit;
+      color: inherit;
     }
 
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      height: 48px;
-      display: grid;
-      grid-template-columns: minmax(260px, 1fr) minmax(420px, auto) minmax(260px, 1fr);
-      gap: 16px;
-      align-items: center;
-      padding: 0 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
+    button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      cursor: pointer;
     }
 
-    .brand,
-    .status-group,
-    .top-right {
-      display: flex;
-      align-items: center;
-      min-width: 0;
-    }
-
-    .brand {
-      gap: 12px;
-    }
-
-    .logo {
-      font-weight: 500;
-      font-size: 15px;
-      color: var(--text-primary);
-    }
-
-    .divider {
-      width: 1px;
-      height: 18px;
-      background: var(--border);
-      flex: 0 0 auto;
-    }
-
-    .batch-label {
-      color: var(--text-muted);
-      font-size: 12px;
-      white-space: nowrap;
-    }
-
-    .status-group {
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .top-right {
-      justify-content: flex-end;
-      gap: 12px;
-      color: var(--text-muted);
-    }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      height: 24px;
-      padding: 0 8px;
-      border-radius: var(--radius-control);
-      border: 1px solid var(--border);
-      background: var(--surface);
-      color: var(--text-muted);
-      white-space: nowrap;
-      font-size: 12px;
-    }
-
-    .pill.success {
-      color: var(--success);
-      background: var(--success-bg);
-      border-color: #BBF7D0;
-    }
-
-    .pill.warning {
-      color: var(--warning);
-      background: var(--warning-bg);
-      border-color: #FDE68A;
-    }
-
-    .pill.danger {
-      color: var(--danger);
-      background: var(--danger-bg);
-      border-color: #FECACA;
-    }
-
-    .pill.accent {
-      color: var(--accent);
-      background: var(--accent-light);
-      border-color: #BFDBFE;
-    }
-
-    .status-dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: currentColor;
-      flex: 0 0 auto;
+    button[disabled] {
+      cursor: default;
+      opacity: 0.48;
+      pointer-events: none;
     }
 
     .mono {
-      font-family: var(--font-mono);
-      font-weight: 500;
+      font-family: var(--font-display);
+      font-weight: 400;
+      letter-spacing: 0;
     }
 
-    .shell {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 16px 24px 24px;
-    }
-
-    .layout {
+    .topbar {
+      position: fixed;
+      inset: 0 0 auto 0;
+      z-index: 50;
+      height: var(--nav-h);
       display: grid;
-      grid-template-columns: 280px minmax(0, 1fr) 300px;
-      gap: 16px;
-      align-items: start;
+      grid-template-columns: 180px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 28px;
+      padding: 0 28px;
+      background: rgba(250, 248, 245, 0.96);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(8px);
     }
 
-    .column {
-      display: grid;
-      gap: 16px;
+    .brand {
+      font-size: 15px;
+      font-weight: 400;
+      white-space: nowrap;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 22px;
+      height: 100%;
       min-width: 0;
     }
 
+    .tab-btn {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      height: 100%;
+      color: var(--text-2);
+      font-size: 13px;
+      font-weight: 300;
+      white-space: nowrap;
+    }
+
+    .tab-btn.active {
+      color: var(--text-1);
+      font-weight: 400;
+    }
+
+    .tab-btn.active::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .top-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+
+    .state-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .state-dot.danger {
+      background: var(--danger);
+    }
+
+    .sep {
+      color: var(--text-3);
+    }
+
+    .primary-btn,
+    .secondary-btn,
+    .text-btn,
+    .ack-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+      white-space: nowrap;
+    }
+
+    .primary-btn {
+      min-width: 160px;
+      min-height: 52px;
+      padding: 0 22px;
+      border-radius: 0;
+      background: var(--accent);
+      color: #fff;
+      font-size: 15px;
+      font-weight: 400;
+      letter-spacing: 0.05em;
+    }
+
+    .primary-btn.danger,
+    .danger-btn {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .secondary-btn {
+      min-width: 120px;
+      min-height: 44px;
+      padding: 0 18px;
+      border: 1.5px solid var(--line);
+      background: var(--bg);
+      color: var(--text-2);
+      font-size: 13px;
+      font-weight: 300;
+    }
+
+    .secondary-btn:hover,
+    .ack-btn:hover {
+      border-color: var(--text-1);
+      background: var(--surface);
+    }
+
+    .text-btn {
+      min-height: 36px;
+      padding: 0 12px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 300;
+      text-align: left;
+    }
+
+    .text-btn:hover {
+      background: var(--accent-bg);
+    }
+
+    .text-btn.danger {
+      color: var(--danger);
+    }
+
+    .ack-btn {
+      width: 100px;
+      min-height: 40px;
+      border: 1.5px solid var(--line);
+      background: var(--bg);
+      color: var(--text-2);
+      font-size: 13px;
+      font-weight: 300;
+    }
+
+    .icon-btn {
+      min-width: 36px;
+      width: 36px;
+      min-height: 36px;
+      height: 36px;
+      padding: 0;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .sidebar {
+      position: fixed;
+      z-index: 20;
+      top: var(--nav-h);
+      left: 0;
+      bottom: 0;
+      width: var(--side-w);
+      display: flex;
+      flex-direction: column;
+      padding: 28px 24px 20px 28px;
+      background: var(--bg);
+      border-right: 1px solid var(--line);
+    }
+
+    .sensor-list {
+      display: grid;
+    }
+
+    .side-sensor {
+      padding: 0 0 17px;
+      margin-bottom: 17px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .side-sensor:last-child {
+      margin-bottom: 0;
+    }
+
+    .sensor-label,
+    .label {
+      color: var(--text-2);
+      font-size: 10px;
+      font-weight: 300;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .sensor-number {
+      margin-top: 4px;
+      font-family: var(--font-display);
+      font-size: 22px;
+      line-height: 1.05;
+      color: var(--text-1);
+      white-space: nowrap;
+    }
+
+    .sensor-number.danger {
+      color: var(--danger);
+    }
+
+    .mini-trend {
+      height: 48px;
+      margin-top: 8px;
+    }
+
+    .alarm-summary {
+      margin-top: auto;
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--danger);
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .main {
+      min-height: 100vh;
+      margin-left: var(--side-w);
+      padding: calc(var(--nav-h) + 34px) 36px 72px;
+    }
+
+    .view {
+      display: none;
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    .view-title {
+      margin: 0 0 24px;
+      font-family: var(--font-display);
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 400;
+    }
+
     .section-title {
-      margin: 0 0 10px;
-      color: var(--text-muted);
+      margin: 0 0 14px;
+      color: var(--text-2);
       font-size: 11px;
-      font-weight: 500;
+      font-weight: 300;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
     .panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-card);
+      padding: 0;
     }
 
-    .panel-pad {
-      padding: 16px;
-    }
-
-    .sensor-list {
-      background: var(--surface);
-      border-radius: var(--radius-card);
-      border: 1px solid var(--border);
-      overflow: hidden;
-    }
-
-    .sensor-row {
+    .monitor-grid,
+    .recipes-grid {
       display: grid;
-      grid-template-columns: 18px minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: center;
-      padding: 13px 12px;
-      border-bottom: 0.5px solid var(--border);
+      grid-template-columns: minmax(0, 55fr) minmax(330px, 45fr);
+      gap: 42px;
+      align-items: start;
     }
 
-    .sensor-row:last-child {
-      border-bottom: 0;
-    }
-
-    .sensor-icon {
-      width: 16px;
-      height: 16px;
-      color: var(--text-muted);
-      display: grid;
-      place-items: center;
-    }
-
-    .sensor-main {
-      min-width: 0;
-    }
-
-    .sensor-name {
-      color: var(--text-primary);
-      font-size: 13px;
-      margin-bottom: 5px;
-    }
-
-    .sensor-sub {
+    .chart-tabs {
       display: flex;
-      align-items: center;
-      gap: 8px;
+      gap: 18px;
+      margin-bottom: 14px;
+      color: var(--text-2);
+      font-size: 12px;
     }
 
-    .sensor-value-wrap {
-      display: grid;
-      justify-items: end;
-      gap: 5px;
-      min-width: 88px;
-    }
-
-    .sensor-value {
-      font-family: var(--font-mono);
-      font-size: 18px;
-      font-weight: 500;
-      color: var(--text-primary);
-      line-height: 1;
-      opacity: 1;
-      transition: opacity 0.3s ease, color 0.3s ease;
-    }
-
-    .sensor-value.fade {
-      opacity: 0.35;
-    }
-
-    .sensor-value.danger {
-      color: var(--danger);
-    }
-
-    .unit {
-      margin-left: 4px;
-      color: var(--text-muted);
-      font-family: var(--font-body);
-      font-size: 11px;
+    .chart-tab.active {
+      color: var(--text-1);
       font-weight: 400;
     }
 
-    .mini-chart {
-      width: 60px;
-      height: 24px;
+    .chart-tab {
+      min-height: 36px;
+      padding: 0 6px;
+    }
+
+    canvas {
       display: block;
-    }
-
-    .chart-panel {
-      padding: 16px;
-    }
-
-    .chart-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 8px;
-    }
-
-    .chart-legend {
-      display: grid;
-      gap: 5px;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .legend-item {
-      display: grid;
-      grid-template-columns: 28px auto;
-      gap: 6px;
-      align-items: center;
-      white-space: nowrap;
-    }
-
-    .legend-line {
-      width: 28px;
-      height: 0;
-      border-top: 1.5px solid var(--line);
-    }
-
-    .legend-line.dash {
-      border-top-style: dashed;
-    }
-
-    .legend-line.dot {
-      border-top-style: dotted;
-    }
-
-    .main-chart {
       width: 100%;
-      height: 220px;
-      display: block;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
     }
 
-    .parameter-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
+    .large-chart {
+      height: 140px;
     }
 
-    .button-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .btn {
-      min-height: 30px;
-      border-radius: 5px;
-      border: 1px solid var(--accent);
-      background: var(--surface);
-      color: var(--accent);
-      padding: 5px 10px;
-      cursor: pointer;
-      font-weight: 500;
-      transition: background 0.18s ease, border-color 0.18s ease;
-    }
-
-    .btn:hover {
-      background: var(--accent-light);
-    }
-
-    .btn.danger {
-      border-color: var(--danger);
-      color: var(--danger);
-    }
-
-    .btn.danger:hover {
-      background: var(--danger-bg);
-    }
-
-    .btn.full {
-      width: 100%;
-      min-height: 34px;
-    }
-
-    .btn[disabled] {
-      color: var(--text-dim);
-      border-color: var(--border);
-      background: var(--bg);
-      cursor: default;
-    }
-
-    .ops-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin: 0 0 14px;
-    }
-
-    .result-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-      gap: 8px;
-      margin-top: 14px;
-      padding-top: 14px;
-      border-top: 0.5px solid var(--border);
-    }
-
-    .inline-note {
-      grid-column: 1 / -1;
-      color: var(--text-muted);
-      font-size: 11px;
-      min-height: 14px;
-    }
-
-    .param-grid {
+    .monitor-chart-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px 16px;
+      gap: 16px;
     }
 
-    .param {
-      display: grid;
-      gap: 8px;
+    .chart-card {
+      min-width: 0;
+      padding: 10px 0 0;
+      border-top: 1px solid var(--line);
+      cursor: pointer;
     }
 
-    .label {
-      color: var(--text-muted);
+    .chart-card.expanded {
+      grid-column: 1 / -1;
+    }
+
+    .chart-card.expanded .large-chart {
+      height: 280px;
+    }
+
+    .chart-card-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 6px;
+      color: var(--text-2);
       font-size: 11px;
-      font-weight: 500;
       letter-spacing: 0.08em;
       text-transform: uppercase;
     }
 
-    .control-field {
-      width: 100%;
-      height: 34px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-control);
-      background: var(--surface);
-      color: var(--text-primary);
-      padding: 0 9px;
-      outline: none;
-      font-family: var(--font-mono);
-      font-size: 14px;
+    .chart-card.active .chart-card-title {
+      color: var(--text-1);
+      font-weight: 400;
     }
 
-    .control-field:focus {
-      border-color: var(--accent);
-    }
-
-    select.control-field {
-      font-family: var(--font-body);
-      color: var(--text-primary);
-    }
-
-    input[type="range"] {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 14px;
-      background: transparent;
-      margin: 0;
-    }
-
-    input[type="range"]::-webkit-slider-runnable-track {
-      height: 2px;
-      background: var(--border-dark);
-      border-radius: 99px;
-    }
-
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 12px;
-      height: 12px;
-      margin-top: -5px;
-      border-radius: 50%;
-      border: 1px solid var(--accent);
-      background: var(--surface);
-    }
-
-    input[type="range"]::-moz-range-track {
-      height: 2px;
-      background: var(--border-dark);
-      border-radius: 99px;
-    }
-
-    input[type="range"]::-moz-range-thumb {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      border: 1px solid var(--accent);
-      background: var(--surface);
-    }
-
-    .ai-box {
-      background: var(--accent-light);
-      border: 1px solid #BFDBFE;
-      border-radius: 6px;
-      padding: 12px;
-      display: grid;
-      gap: 10px;
+    .gantt-chart {
+      height: 60px;
+      margin-top: 16px;
+      border-top: 1px solid var(--line);
     }
 
     .progress-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      grid-template-columns: auto minmax(120px, 1fr) auto auto;
+      gap: 12px;
       align-items: center;
+      margin-top: 18px;
+      color: var(--text-2);
     }
 
-    .progress {
+    .progress-track {
       height: 4px;
-      border-radius: 99px;
-      background: var(--border);
-      overflow: hidden;
+      background: var(--line);
     }
 
-    .progress > span {
-      display: block;
+    .progress-fill {
       height: 100%;
-      width: 87%;
+      width: 0;
       background: var(--accent);
-      border-radius: inherit;
+    }
+
+    .kv {
+      display: grid;
+    }
+
+    .kv-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 1fr) auto;
+      gap: 18px;
+      align-items: baseline;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .kv-row .k {
+      color: var(--text-2);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .kv-row .v {
+      font-family: var(--font-display);
+      font-size: 15px;
+      text-align: right;
+    }
+
+    .batch-heading {
+      margin-bottom: 18px;
+    }
+
+    .batch-id {
+      font-family: var(--font-display);
+      font-size: 28px;
+      line-height: 1.05;
     }
 
     .muted {
-      color: var(--text-muted);
+      color: var(--text-2);
     }
 
     .dim {
-      color: var(--text-dim);
+      color: var(--text-3);
+    }
+
+    .subgrid {
+      margin-top: 28px;
+    }
+
+    .program-layout {
+      display: grid;
+      gap: 34px;
+    }
+
+    .hint {
+      margin-bottom: 12px;
+      color: var(--text-2);
       font-size: 11px;
     }
 
-    .rec-head {
+    .timeline {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
+      min-height: 104px;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
     }
 
-    .rec-row {
+    .stage-block {
+      position: relative;
+      min-width: 72px;
+      padding: 12px 10px;
+      border-right: 1px solid var(--line);
+      background: var(--surface);
+      cursor: pointer;
+    }
+
+    .stage-block.active {
+      background: var(--accent-bg);
+    }
+
+    .stage-name {
+      font-weight: 400;
+    }
+
+    .stage-temp {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      color: var(--text-2);
+      font-size: 12px;
+    }
+
+    .stage-handle {
+      position: absolute;
+      top: 0;
+      right: -4px;
+      z-index: 2;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+    }
+
+    .stage-editor {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 190px;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px 24px;
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .field-line,
+    .table-input,
+    .textarea-line,
+    .select-line {
+      width: 100%;
+      min-height: 34px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+      outline: 0;
+      background: transparent;
+      padding: 4px 0;
+    }
+
+    .field-line:focus,
+    .table-input:focus,
+    .textarea-line:focus,
+    .select-line:focus {
+      border-bottom-color: var(--accent);
+    }
+
+    .textarea-line {
+      min-height: 70px;
+      resize: vertical;
+    }
+
+    .range-thin {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 14px;
+      margin: 0;
+      background: transparent;
+    }
+
+    .range-thin::-webkit-slider-runnable-track {
+      height: 2px;
+      background: var(--line);
+    }
+
+    .range-thin::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 11px;
+      height: 11px;
+      margin-top: -4.5px;
+      border-radius: 50%;
+      border: 1px solid var(--accent);
+      background: var(--bg);
+    }
+
+    .range-thin::-moz-range-track {
+      height: 2px;
+      background: var(--line);
+    }
+
+    .range-thin::-moz-range-thumb {
+      width: 11px;
+      height: 11px;
+      border: 1px solid var(--accent);
+      border-radius: 50%;
+      background: var(--bg);
+    }
+
+    .text-actions {
+      display: grid;
+      gap: 12px;
+      justify-items: start;
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 24px;
+      margin-top: 28px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .recipes-grid {
+      grid-template-columns: minmax(280px, 40fr) minmax(0, 60fr);
+    }
+
+    .recipe-row,
+    .alarm-row,
+    .log-line {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .recipe-row {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto auto;
-      gap: 8px;
+      gap: 16px;
+      padding: 14px 10px;
+      cursor: pointer;
+    }
+
+    .recipe-row.active {
+      background: var(--surface);
+    }
+
+    .recipe-name {
+      font-weight: 400;
+    }
+
+    .recipe-title-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
       align-items: baseline;
-      min-height: 30px;
-      border-bottom: 0.5px solid var(--border);
+      margin-bottom: 22px;
     }
 
-    .rec-row:last-of-type {
-      border-bottom: 0;
+    .recipe-title-input {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      background: transparent;
+      font-family: var(--font-display);
+      font-size: 20px;
+      outline: 0;
     }
 
-    .rec-name {
-      color: var(--text-muted);
-    }
-
-    .rec-value {
-      color: var(--accent);
-      font-family: var(--font-mono);
-      font-weight: 500;
-      white-space: nowrap;
-    }
-
-    .rec-value.success {
-      color: var(--success);
-    }
-
-    .rec-compare {
-      color: var(--text-muted);
-      font-size: 11px;
-      white-space: nowrap;
-    }
-
-    .history-table {
+    .plain-table {
       width: 100%;
       border-collapse: collapse;
     }
 
-    .history-table th {
-      color: var(--text-muted);
+    .plain-table th {
+      color: var(--text-2);
       font-size: 10px;
-      font-weight: 500;
+      font-weight: 300;
       letter-spacing: 0.08em;
-      text-transform: uppercase;
       text-align: left;
-      padding: 0 0 7px;
+      text-transform: uppercase;
+      padding: 0 10px 8px 0;
     }
 
-    .history-table td {
-      border-top: 0.5px solid var(--border);
-      padding: 8px 0;
-      color: var(--text-primary);
+    .plain-table td {
+      border-top: 1px solid var(--line);
+      padding: 10px 10px 10px 0;
+      vertical-align: middle;
+    }
+
+    .trend-small {
+      height: 160px;
+      margin-top: 14px;
+    }
+
+    .scatter-chart {
+      height: 180px;
+      margin-top: 22px;
+      border-top: 1px solid var(--line);
+    }
+
+    .chart-wrap {
+      position: relative;
+    }
+
+    .chart-tooltip {
+      position: fixed;
+      z-index: 90;
+      display: none;
+      max-width: 220px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--text-1);
       font-size: 12px;
-      white-space: nowrap;
+      line-height: 1.45;
+      pointer-events: none;
+      box-shadow: 0 8px 20px rgba(26, 24, 20, 0.08);
     }
 
-    .history-table tr.best td {
-      background: var(--success-bg);
-      color: var(--success);
-    }
-
-    .event-log {
-      height: 120px;
-      overflow-y: auto;
+    .materials-grid {
       display: grid;
-      align-content: start;
-      gap: 6px;
-      padding-right: 4px;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 36px;
+      align-items: start;
     }
 
-    .log-row {
+    .ratio-box {
+      position: sticky;
+      top: calc(var(--nav-h) + 28px);
+      padding: 20px 0;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .ratio-title {
+      font-family: var(--font-display);
+      font-size: 24px;
+      margin-bottom: 12px;
+    }
+
+    .product-grid {
       display: grid;
-      grid-template-columns: 58px minmax(0, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px 28px;
+      margin-top: 38px;
+    }
+
+    .product-grid .wide {
+      grid-column: 1 / -1;
+    }
+
+    .disabled-note {
+      grid-column: 1 / -1;
+      color: var(--text-3);
+      font-size: 12px;
+    }
+
+    .ai-stack {
+      display: grid;
+      gap: 34px;
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 16px 0;
+    }
+
+    .metric-number {
+      font-family: var(--font-display);
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    .bar-chart {
+      height: 200px;
+    }
+
+    .learn-chart {
+      height: 220px;
+    }
+
+    .ai-note {
+      margin-top: 8px;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+
+    .log-list {
+      margin-top: 16px;
+      display: grid;
+      color: var(--text-2);
+      line-height: 2;
+      font-size: 12px;
+    }
+
+    .recommend-box {
+      background: var(--accent-bg);
+      padding: 20px 24px;
+    }
+
+    .alarm-stats {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 30px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 18px;
+    }
+
+    .alarm-stat-row {
+      display: flex;
+      gap: 44px;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      display: flex;
       gap: 8px;
       align-items: baseline;
     }
 
-    .log-time {
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-      font-size: 10px;
+    .stat .num {
+      font-family: var(--font-display);
+      font-size: 28px;
     }
 
-    .log-text {
-      color: var(--text-primary);
+    .stat .caption {
+      color: var(--text-2);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .alarm-table {
+      display: grid;
+      border-top: 1px solid var(--line);
+    }
+
+    .alarm-row {
+      display: grid;
+      grid-template-columns: 86px 120px minmax(0, 1fr) 110px 110px;
+      align-items: stretch;
+      background: var(--bg);
+    }
+
+    .alarm-row.active-alarm {
+      background: var(--danger-bg);
+    }
+
+    .alarm-cell {
+      padding: 12px 12px 12px 0;
+      border-right: 1px solid var(--line);
+    }
+
+    .alarm-cell:last-child {
+      border-right: 0;
+      text-align: right;
+    }
+
+    .filters {
+      display: flex;
+      gap: 24px;
+      margin: 18px 0 12px;
+      color: var(--text-2);
+    }
+
+    .history-scroll {
+      max-height: 360px;
+      overflow-y: auto;
+    }
+
+    .alarm-distribution {
+      height: 80px;
+    }
+
+    .bigscreen {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: var(--bg);
+      color: var(--text-1);
+    }
+
+    .bigscreen[hidden] {
+      display: none;
+    }
+
+    .bigscreen-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 64px;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .bigscreen-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      height: 100%;
+    }
+
+    .big-tile {
+      min-width: 0;
+      padding: 32px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+
+    .big-tile.alarm {
+      background: var(--danger-bg);
+    }
+
+    .big-label {
+      margin-bottom: 14px;
+      color: var(--text-2);
       font-size: 12px;
-      line-height: 1.4;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .big-value {
+      font-family: var(--font-display);
+      font-size: clamp(42px, 5vw, 64px);
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .big-chart {
+      height: 200px;
+    }
+
+    .big-progress-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 180px;
+    }
+
+    .big-progress {
+      width: 140px;
+      height: 140px;
+    }
+
+    .export {
+      position: fixed;
+      right: 26px;
+      bottom: 22px;
+      z-index: 60;
+      text-align: right;
+    }
+
+    .export-trigger {
+      min-height: 36px;
+      padding: 0 12px;
+      color: var(--text-3);
+      font-size: 12px;
+    }
+
+    .export-menu {
+      display: none;
+      margin-bottom: 10px;
+      padding: 10px 0;
+      background: var(--bg);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .export.open .export-menu {
+      display: grid;
+      gap: 10px;
+    }
+
+    .export-menu button {
+      min-height: 36px;
+      padding: 0 12px;
+      color: var(--text-2);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    @media print {
+      .topbar,
+      .sidebar,
+      .export {
+        display: none;
+      }
+
+      .main {
+        margin: 0;
+        padding: 0;
+      }
+
+      .view {
+        display: block;
+      }
+
+      .view:not(.active) {
+        display: none;
+      }
     }
 
     @media (max-width: 1023px) {
-      .topbar {
-        position: static;
-        height: auto;
-        min-height: 48px;
-        grid-template-columns: 1fr;
-        padding: 10px 16px;
+      :root {
+        --side-w: 0px;
       }
 
-      .status-group,
-      .top-right {
+      .topbar {
+        height: auto;
+        min-height: var(--nav-h);
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 12px 18px;
+      }
+
+      .tabs {
+        justify-content: flex-start;
+        overflow-x: auto;
+        height: 34px;
+      }
+
+      .top-status {
         justify-content: flex-start;
         flex-wrap: wrap;
       }
 
-      .shell {
-        padding: 16px;
+      .sidebar {
+        position: fixed;
+        top: 116px;
+        left: 0;
+        right: 0;
+        bottom: auto;
+        width: auto;
+        height: 74px;
+        padding: 10px 18px;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
       }
 
-      .layout {
+      .sensor-list {
+        grid-template-columns: repeat(5, minmax(88px, 1fr));
+        gap: 14px;
+        overflow-x: auto;
+      }
+
+      .side-sensor {
+        padding: 0;
+        margin: 0;
+        border-bottom: 0;
+      }
+
+      .sensor-number {
+        font-size: 18px;
+      }
+
+      .mini-trend {
+        display: none;
+      }
+
+      .alarm-summary {
+        position: absolute;
+        right: 18px;
+        bottom: 8px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+      }
+
+      .main {
+        margin-left: 0;
+        padding: 218px 18px 72px;
+      }
+
+      .monitor-grid,
+      .recipes-grid,
+      .materials-grid,
+      .stage-editor,
+      .fields,
+      .product-grid,
+      .overview-grid,
+      .monitor-chart-grid,
+      .bigscreen-grid {
         grid-template-columns: 1fr;
       }
-    }
 
-    @media (max-width: 640px) {
-      .ops-grid,
-      .result-grid {
+      .bigscreen-grid {
+        grid-template-rows: none;
+        overflow-y: auto;
+      }
+
+      .big-tile {
+        min-height: 240px;
+      }
+
+      .alarm-row {
+        grid-template-columns: 70px 94px minmax(0, 1fr);
+      }
+
+      .alarm-row .alarm-cell:nth-child(4),
+      .alarm-row .alarm-cell:nth-child(5) {
+        grid-column: span 1;
+      }
+
+      .progress-row {
         grid-template-columns: 1fr;
       }
 
-      .param-grid {
-        grid-template-columns: 1fr;
-      }
-
-      .sensor-row {
-        grid-template-columns: 18px minmax(0, 1fr);
-      }
-
-      .sensor-value-wrap {
-        grid-column: 2;
-        justify-items: start;
+      .ratio-box {
+        position: static;
       }
     }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <div class="logo">ReactorOS</div>
-      <div class="divider"></div>
-      <div id="batchLabel" class="batch-label">Batch --</div>
-    </div>
-    <div class="status-group">
-      <div id="systemPill" class="pill success"><span class="status-dot"></span><span id="systemText">系统运行中</span></div>
-      <div id="sensorPill" class="pill warning"><span class="status-dot"></span><span id="sensorText">等待数据</span></div>
-      <div id="aiPill" class="pill accent"><span class="status-dot"></span><span id="aiText">AI 引擎就绪</span></div>
-    </div>
-    <div class="top-right">
-      <span id="runClock" class="mono">01:24:37</span>
-      <span class="divider"></span>
+    <div class="brand">ReactorOS</div>
+    <nav class="tabs" aria-label="主导航">
+      <button class="tab-btn active" type="button" data-tab="monitor">监控</button>
+      <button class="tab-btn" type="button" data-tab="program">程序</button>
+      <button class="tab-btn" type="button" data-tab="recipes">配方</button>
+      <button class="tab-btn" type="button" data-tab="materials">原料</button>
+      <button class="tab-btn" type="button" data-tab="ai">AI</button>
+      <button class="tab-btn" type="button" data-tab="alarms">报警</button>
+    </nav>
+    <div class="top-status">
+      <span id="runDot" class="state-dot"></span>
+      <span id="runState">Running</span>
+      <span class="sep">·</span>
+      <span id="runClock" class="mono">00:00:00</span>
+      <span class="sep">·</span>
       <span id="wallClock">--:--:--</span>
+      <button id="bigScreenBtn" class="secondary-btn icon-btn" type="button" aria-label="大屏总览">⊞</button>
     </div>
   </header>
 
-  <main class="shell">
-    <div class="layout">
-      <aside class="column">
-        <section>
-          <h2 class="section-title">Sensors</h2>
-          <div id="sensorList" class="sensor-list"></div>
-        </section>
-      </aside>
+  <aside class="sidebar">
+    <div id="sideSensors" class="sensor-list"></div>
+    <button id="alarmSummary" class="alarm-summary" type="button">⚠ 2 active alarms</button>
+  </aside>
 
-      <section class="column">
-        <section class="panel chart-panel">
-          <div class="chart-header">
-            <h2 class="section-title">Temperature Trend</h2>
-            <div class="chart-legend">
-              <div class="legend-item"><span class="legend-line" style="--line:#1D4ED8"></span><span>实测温度</span></div>
-              <div class="legend-item"><span class="legend-line dash" style="--line:#6B7385"></span><span>目标温度</span></div>
-              <div class="legend-item"><span class="legend-line dot" style="--line:#D97706"></span><span>AI 推荐曲线</span></div>
+  <main class="main">
+    <section id="view-monitor" class="view active">
+      <div class="monitor-grid">
+        <section class="panel">
+          <div class="chart-tabs" id="chartTabs">
+            <button class="chart-tab active" type="button" data-chart="temperature">温度</button>
+            <button class="chart-tab" type="button" data-chart="pressure">压力</button>
+            <button class="chart-tab" type="button" data-chart="rpm">转速</button>
+            <button class="chart-tab" type="button" data-chart="concentration">产物浓度</button>
+          </div>
+          <div id="monitorCharts" class="monitor-chart-grid">
+            <div class="chart-card active" data-chart-card="temperature">
+              <div class="chart-card-title"><span>Temperature</span><span>°C</span></div>
+              <canvas id="mainChart" class="large-chart" data-chart="temperature" height="140"></canvas>
+            </div>
+            <div class="chart-card" data-chart-card="pressure">
+              <div class="chart-card-title"><span>Pressure</span><span>MPa</span></div>
+              <canvas id="pressureChart" class="large-chart" data-chart="pressure" height="140"></canvas>
+            </div>
+            <div class="chart-card" data-chart-card="rpm">
+              <div class="chart-card-title"><span>Stirrer RPM</span><span>RPM</span></div>
+              <canvas id="rpmChart" class="large-chart" data-chart="rpm" height="140"></canvas>
+            </div>
+            <div class="chart-card" data-chart-card="concentration">
+              <div class="chart-card-title"><span>Concentration</span><span>%</span></div>
+              <canvas id="concentrationChart" class="large-chart" data-chart="concentration" height="140"></canvas>
             </div>
           </div>
-          <canvas id="temperatureChart" class="main-chart" width="860" height="220"></canvas>
+          <div class="progress-row">
+            <span id="stageProgressLabel">升温阶段</span>
+            <div class="progress-track"><div id="stageProgressFill" class="progress-fill"></div></div>
+            <span id="stageProgressPercent" class="mono">--%</span>
+            <span id="stageProgressTime">已用 --:-- / 预计 --:--</span>
+          </div>
+          <canvas id="stageGantt" class="gantt-chart" height="60"></canvas>
         </section>
 
-        <section class="panel panel-pad">
-          <div class="parameter-head">
-            <h2 class="section-title" style="margin:0">Parameters</h2>
-            <div class="button-row">
-              <button id="startBtn" class="btn" type="button" hidden>启动反应</button>
-              <button id="stopBtn" class="btn danger" type="button">停止</button>
-            </div>
+        <section class="panel">
+          <div class="batch-heading">
+            <div id="batchId" class="batch-id">Batch 043</div>
+            <div class="muted">Started <span id="batchStart">14:15:02</span></div>
           </div>
-          <div class="ops-grid">
-            <button id="autoBtn" class="btn" type="button">自动控制：关闭</button>
-            <button id="estopBtn" class="btn danger" type="button">急停</button>
-            <button id="resetEstopBtn" class="btn" type="button">复位急停</button>
-          </div>
-          <div class="param-grid">
-            <div class="param">
-              <label class="label" for="targetTempInput">目标温度</label>
-              <input id="targetTempInput" class="control-field" type="number" min="50" max="280" value="175">
-              <input id="targetTempRange" type="range" min="50" max="280" value="175">
-            </div>
-            <div class="param">
-              <label class="label" for="heatMinutesInput">加热时长</label>
-              <input id="heatMinutesInput" class="control-field" type="number" min="5" max="180" value="120">
-              <input id="heatMinutesRange" type="range" min="5" max="180" value="120">
-            </div>
-            <div class="param">
-              <label class="label" for="stirMinutesInput">搅拌时长</label>
-              <input id="stirMinutesInput" class="control-field" type="number" min="0" max="120" value="60">
-              <input id="stirMinutesRange" type="range" min="0" max="120" value="60">
-            </div>
-            <div class="param">
-              <label class="label" for="stirRpmInput">搅拌转速</label>
-              <input id="stirRpmInput" class="control-field" type="number" min="100" max="1000" value="450">
-              <input id="stirRpmRange" type="range" min="100" max="1000" value="450">
-            </div>
-            <div class="param">
-              <label class="label" for="coolingMode">冷却方式</label>
-              <select id="coolingMode" class="control-field">
-                <option>自然冷却</option>
-                <option>强制风冷</option>
-                <option>水冷</option>
-              </select>
-            </div>
-          </div>
-          <div class="result-grid">
-            <input id="yieldInput" class="control-field" type="number" min="0" max="100" step="0.1" value="78.6" aria-label="产率百分比">
-            <input id="ratioInput" class="control-field" type="number" min="0" max="1" step="0.01" value="0.82" aria-label="产物比例">
-            <input id="notesInput" class="control-field" type="text" value="lab verification" aria-label="结果备注">
-            <button id="saveResultBtn" class="btn" type="button">录入结果</button>
-            <div id="operatorNote" class="inline-note">数据来自后端采集快照；本地断线时保留最后一次读数。</div>
+          <div class="kv" id="batchSummary"></div>
+          <div class="subgrid">
+            <h2 class="section-title">Feed Ratio</h2>
+            <div class="kv" id="feedSummary"></div>
           </div>
         </section>
+      </div>
+    </section>
+
+    <section id="view-program" class="view">
+      <h1 class="view-title">Program</h1>
+      <section class="program-layout">
+        <div>
+          <div class="hint">拖动边界调整时长，点击阶段编辑参数</div>
+          <div id="timeline" class="timeline"></div>
+        </div>
+        <div class="stage-editor">
+          <div class="fields" id="stageFields"></div>
+          <div class="text-actions">
+            <button id="addStageBtn" class="text-btn" type="button">+ 添加阶段</button>
+            <button id="deleteStageBtn" class="primary-btn danger" type="button">■ 删除此阶段</button>
+          </div>
+        </div>
+        <div class="action-row">
+          <button id="saveRecipeBtn" class="text-btn" type="button">另存为配方…</button>
+          <button id="loadRecipeBtn" class="text-btn" type="button">加载配方…</button>
+          <button id="startProgramBtn" class="primary-btn" type="button">▶ 启动此程序</button>
+        </div>
       </section>
+    </section>
 
-      <aside class="column">
-        <section class="panel panel-pad">
-          <h2 class="section-title">AI Optimization</h2>
-          <div class="ai-box">
-            <div>已学习 <strong id="learnedBatches">--</strong> 批次</div>
-            <div class="progress-row">
-              <div class="progress"><span id="confidenceBar"></span></div>
-              <span id="confidenceText" class="mono">--%</span>
-            </div>
-            <div class="dim">上次更新 <span id="aiUpdateTime">14:31:05</span></div>
-            <div class="dim" id="memorySummary">记忆文件：等待加载</div>
-          </div>
+    <section id="view-recipes" class="view">
+      <h1 class="view-title">Recipes</h1>
+      <div class="recipes-grid">
+        <section>
+          <div id="recipeList"></div>
+          <button id="newRecipeBtn" class="text-btn" type="button" style="margin-top:16px">+ 新建配方</button>
         </section>
+        <section id="recipeDetail"></section>
+      </div>
+    </section>
 
-        <section class="panel panel-pad">
-          <div class="rec-head">
-            <h2 class="section-title" style="margin:0">Recommended</h2>
-            <span class="pill accent" style="height:20px;color:white;background:var(--accent);border-color:var(--accent)">AI</span>
-          </div>
-          <div class="rec-row">
-            <span class="rec-name">目标温度</span>
-            <span class="rec-value" id="recTemp">192 °C</span>
-            <span class="rec-compare" id="recTempCompare">↑ +17 vs 当前</span>
-          </div>
-          <div class="rec-row">
-            <span class="rec-name">加热时长</span>
-            <span class="rec-value" id="recHeat">95 min</span>
-            <span class="rec-compare" id="recHeatCompare">↓ -25 vs 当前</span>
-          </div>
-          <div class="rec-row">
-            <span class="rec-name">搅拌时长</span>
-            <span class="rec-value" id="recStir">60 min</span>
-            <span class="rec-compare" id="recStirCompare">→ 持平</span>
-          </div>
-          <div class="rec-row" style="margin-bottom:12px">
-            <span class="rec-name">预期产率</span>
-            <span class="rec-value success" id="recYield">--</span>
-            <span class="rec-compare" id="recRationale">等待批次结果</span>
-          </div>
-          <button id="applyRecommended" class="btn full" type="button">应用推荐参数</button>
-        </section>
-
-        <section class="panel panel-pad">
-          <h2 class="section-title">History</h2>
-          <table class="history-table">
+    <section id="view-materials" class="view">
+      <h1 class="view-title">Materials</h1>
+      <div class="materials-grid">
+        <section>
+          <h2 class="section-title">Batch Inputs</h2>
+          <table class="plain-table">
             <thead>
-              <tr><th>批次</th><th>温度</th><th>产率</th><th>状态</th></tr>
+              <tr>
+                <th>名称</th>
+                <th>批号</th>
+                <th>投入量 g/mL</th>
+                <th>纯度 %</th>
+                <th></th>
+              </tr>
             </thead>
-            <tbody id="historyRows"></tbody>
+            <tbody id="materialRows"></tbody>
           </table>
+          <button id="addMaterialBtn" class="text-btn" type="button" style="margin-top:14px">+ 添加原料</button>
         </section>
+        <aside class="ratio-box">
+          <div class="ratio-title">A : B : C</div>
+          <div id="ratioRaw" class="mono" style="font-size:22px"></div>
+          <div id="ratioNormalized" class="muted" style="margin-top:8px"></div>
+        </aside>
+      </div>
 
-        <section class="panel panel-pad">
-          <h2 class="section-title">Event Log</h2>
-          <div id="eventLog" class="event-log"></div>
+      <section class="product-grid" id="productForm">
+        <div class="wide">
+          <h2 class="section-title">Product Tracking</h2>
+        </div>
+        <div class="field"><label class="label" for="productName">产物名称</label><input id="productName" class="field-line" value="Light fraction"></div>
+        <div class="field"><label class="label" for="productMass">产出质量 g</label><input id="productMass" class="field-line" type="number" step="0.01" value="32.40"></div>
+        <div class="field"><label class="label" for="sampleTime">取样时间</label><input id="sampleTime" class="field-line" value="15:42:00"></div>
+        <div class="field"><label class="label" for="appearance">外观描述</label><input id="appearance" class="field-line" value="Clear pale liquid"></div>
+        <div class="field"><label class="label">实测产率</label><div id="computedYield" class="field-line mono">--%</div></div>
+        <div class="field"><label class="label" for="theoreticalMass">理论最大产出 g</label><input id="theoreticalMass" class="field-line" type="number" step="0.01" value="45.00"></div>
+        <div class="field wide"><label class="label" for="productNotes">备注</label><textarea id="productNotes" class="textarea-line">Manual sample after cool-down.</textarea></div>
+        <div id="productLockNote" class="disabled-note">运行中：批次结束后可编辑产物追踪。</div>
+        <div class="action-row wide">
+          <button id="finishBatchBtn" class="primary-btn danger" type="button">■ 结束当前批次</button>
+          <button id="saveProductBtn" class="primary-btn" type="button">✓ 保存产物记录</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="view-ai" class="view">
+      <h1 class="view-title">AI</h1>
+      <div class="ai-stack">
+        <section>
+          <h2 class="section-title">Learning State</h2>
+          <div class="overview-grid" id="aiOverview"></div>
         </section>
-      </aside>
-    </div>
+        <section>
+          <h2 class="section-title" style="margin-bottom:4px">Parameter Sensitivity</h2>
+          <div class="dim">Based on backend batch results</div>
+          <div class="chart-wrap">
+            <canvas id="sensitivityChart" class="bar-chart" height="200"></canvas>
+          </div>
+          <div class="ai-note">正值表示增大该参数有助于提高产率，数据来自历史批次线性回归。点击参数名查看该参数与产率的散点分布。</div>
+          <button id="resetSensitivityBtn" class="text-btn" type="button" hidden>返回参数影响条形图</button>
+        </section>
+        <section>
+          <h2 class="section-title">Learning History</h2>
+          <canvas id="learningChart" class="learn-chart" height="220"></canvas>
+          <div id="aiLogList" class="log-list"></div>
+        </section>
+        <section class="recommend-box">
+          <div class="recipe-title-line">
+            <div>
+              <div class="section-title" style="margin-bottom:6px">推荐配置</div>
+              <div class="batch-id" style="font-size:24px">Batch 042</div>
+            </div>
+            <button id="applyAiBtn" class="primary-btn" type="button">✓ 应用此推荐</button>
+          </div>
+          <div class="kv" id="aiRecommendation"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-alarms" class="view">
+      <h1 class="view-title">Alarms</h1>
+      <div class="alarm-stats" id="alarmStats"></div>
+      <section>
+        <h2 class="section-title">Active Alarms</h2>
+        <div id="activeAlarmRows" class="alarm-table"></div>
+      </section>
+      <section style="margin-top:34px">
+        <h2 class="section-title">Alarm History</h2>
+        <div class="filters">
+          <span>时间范围：今日 ▾</span>
+          <span>类型：全部 ▾</span>
+          <span>状态：全部 ▾</span>
+        </div>
+        <div id="alarmHistoryRows" class="alarm-table history-scroll"></div>
+      </section>
+    </section>
   </main>
 
+  <div id="exportBox" class="export">
+    <div class="export-menu">
+      <button type="button" data-export="pdf">批次报告 PDF（当前批次）</button>
+      <button type="button" data-export="batches">历史数据 CSV（全部批次）</button>
+      <button type="button" data-export="alarms">报警记录 CSV</button>
+    </div>
+    <button id="exportTrigger" class="export-trigger" type="button">Export ↑</button>
+  </div>
+
+  <section id="bigScreen" class="bigscreen" hidden aria-label="大屏总览">
+    <div class="bigscreen-head">
+      <div class="brand">ReactorOS Overview</div>
+      <button id="bigScreenClose" class="secondary-btn icon-btn" type="button" aria-label="退出大屏">×</button>
+    </div>
+    <div class="bigscreen-grid">
+      <div class="big-tile">
+        <div class="big-label">Current Temp</div>
+        <div id="bigTempValue" class="big-value">-- °C</div>
+      </div>
+      <div class="big-tile">
+        <div class="big-label">Current Yield</div>
+        <div id="bigYieldValue" class="big-value">--%</div>
+      </div>
+      <div class="big-tile">
+        <div class="big-label">Batch Progress</div>
+        <div class="big-progress-wrap"><canvas id="bigProgress" class="big-progress" width="140" height="140"></canvas></div>
+      </div>
+      <div class="big-tile">
+        <div class="big-label">Temperature Trend</div>
+        <canvas id="bigTempChart" class="big-chart" height="200"></canvas>
+      </div>
+      <div class="big-tile">
+        <div class="big-label">AI Recommendation</div>
+        <div id="bigAiSummary" class="metric-number">Waiting for model</div>
+      </div>
+      <div id="bigAlarmTile" class="big-tile">
+        <div class="big-label">Active Alarms</div>
+        <div id="bigAlarmValue" class="big-value">0</div>
+      </div>
+    </div>
+  </section>
+
+  <div id="chartTooltip" class="chart-tooltip"></div>
+
   <script>
-    const sensors = [
-      { key: "temp", field: "temperature_c", icon: "T", name: "反应釜温度", value: 0, unit: "°C", min: 0, max: 300, normal: [0, 250], decimals: 1 },
-      { key: "pressure", field: "pressure_mpa", icon: "P", name: "釜内压力", value: 0, unit: "MPa", min: 0, max: 10, normal: [0, 1.0], decimals: 2 },
-      { key: "rpm", field: "stirrer_rpm", icon: "R", name: "搅拌转速", value: 0, unit: "RPM", min: 0, max: 1200, normal: [0, 1000], decimals: 0 },
-      { key: "shake", field: "shake_speed_cpm", icon: "S", name: "摇罐速度", value: 30, unit: "次/分", min: 0, max: 60, normal: [0, 55], decimals: 0 },
-      { key: "flow", field: "flow_rate_l_min", icon: "F", name: "流量", value: 2.5, unit: "L/min", min: 0, max: 10, normal: [0, 8], decimals: 1 }
-    ];
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const toNumber = (value) => value === null || value === undefined || value === "" ? null : (Number.isFinite(Number(value)) ? Number(value) : null);
+    const fmtValue = (value, decimals = 2, empty = "--") => {
+      const next = toNumber(value);
+      return next === null ? empty : next.toFixed(decimals);
+    };
+    const pad2 = (value) => String(value).padStart(2, "0");
+    const nowTime = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    const API_DEVICE_ID = "reactor_001";
 
-    const controlMap = {
-      targetTemp: { input: "targetTempInput", range: "targetTempRange", value: 60, min: 50, max: 280 },
-      heatMinutes: { input: "heatMinutesInput", range: "heatMinutesRange", value: 120, min: 5, max: 180 },
-      stirMinutes: { input: "stirMinutesInput", range: "stirMinutesRange", value: 60, min: 0, max: 120 },
-      stirRpm: { input: "stirRpmInput", range: "stirRpmRange", value: 300, min: 100, max: 1000 }
+    const state = {
+      activeTab: "monitor",
+      chartMode: "temperature",
+      selectedStage: 0,
+      selectedRecipe: 0,
+      backendOnline: false,
+      dataReady: false,
+      backendError: null,
+      lastSampleAt: null,
+      running: false,
+      elapsedSeconds: 0,
+      programElapsed: 0,
+      activeBatchId: null,
+      completedBatchId: null,
+      batchNo: null,
+      batchStart: "--:--:--",
+      lastAlarmAt: {},
+      sensors: [
+        { key: "temperature", label: "TEMP", name: "Temperature", value: null, target: null, ai: null, unit: "°C", min: 0, max: 300, normal: [50, 240], decimals: 2 },
+        { key: "pressure", label: "PRESSURE", name: "Pressure", value: null, target: null, ai: null, unit: "MPa", min: 0, max: 1, normal: [0.05, 0.4], decimals: 2 },
+        { key: "rpm", label: "RPM", name: "Stirrer RPM", value: null, target: null, ai: null, unit: "RPM", min: 0, max: 1200, normal: [100, 900], decimals: 2 },
+        { key: "concentration", label: "CONC", name: "Concentration", value: null, target: null, ai: null, unit: "%", min: 0, max: 100, normal: [0, 100], decimals: 2 },
+        { key: "ph", label: "PH", name: "pH", value: null, target: null, ai: null, unit: "", min: 0, max: 14, normal: [4, 10], decimals: 2 }
+      ],
+      histories: { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] },
+      targetHistories: { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] },
+      aiHistories: { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] },
+      stages: [
+        { name: "Heat-up", temp: 120, rate: 8, duration: 21, rpm: 500, cooling: "自然" },
+        { name: "Hold", temp: 120, rate: 0, duration: 95, rpm: 500, cooling: "自然" },
+        { name: "Cool-down", temp: 60, rate: 0, duration: 34, rpm: 300, cooling: "风冷" }
+      ],
+      recipes: [],
+      ingredients: [
+        { name: "Reactant A", lot: "LOT-2024-08", amount: 45.0, purity: 99.2 },
+        { name: "Reactant B", lot: "LOT-2024-07", amount: 12.5, purity: 98.7 },
+        { name: "Catalyst", lot: "LOT-2024-09", amount: 0.8, purity: 97.0 }
+      ],
+      batches: [],
+      alarms: [],
+      acknowledgedAlarmIds: new Set(),
+      coefficients: [],
+      aiLogs: [],
+      aiProvider: null,
+      aiMemory: null,
+      aiRecommendation: null,
+      expandedChart: null,
+      aiSensitivityParam: null,
+      sensitivityHitboxes: []
     };
 
-    const recommendation = {
-      targetTemp: 87.5,
-      heatMinutes: 127.5,
-      stirMinutes: 127.5,
-      stirRpm: 550,
-      expectedScore: 0,
-      rationale: "等待批次结果"
-    };
-
-    const tempPoints = [];
-    const targetPoints = [];
-    const aiPoints = [];
-    const maxPoints = 480;
-    const deviceId = "reactor_001";
-    const seenEvents = new Set();
-    let running = false;
-    let alarm = false;
-    let backendOnline = false;
-    let lastLive = null;
-    let elapsedSeconds = 0;
-    let operatorEditing = false;
-    let pollInFlight = false;
-    let operatorNoteStickyUntil = 0;
-
-    function $(id) {
-      return document.getElementById(id);
+    function seedData() {
+      state.recipes = [];
+      state.batches = [];
+      state.alarms = [];
+      state.aiLogs = [];
     }
 
-    function clamp(value, min, max) {
-      return Math.max(min, Math.min(max, value));
-    }
-
-    function round(value, decimals = 0) {
-      const factor = Math.pow(10, decimals);
-      return Math.round(value * factor) / factor;
-    }
-
-    function formatSensor(sensor) {
-      return Number(sensor.value || 0).toFixed(sensor.decimals);
-    }
-
-    function setPill(id, textId, kind, label) {
-      const pill = $(id);
-      const text = $(textId);
-      pill.classList.remove("success", "warning", "danger", "accent");
-      pill.classList.add(kind);
-      text.textContent = label;
-    }
-
-    function statusFor(sensor) {
-      if (sensor.value < sensor.normal[0] || sensor.value > sensor.normal[1]) {
-        const farLow = sensor.normal[0] > 0 && sensor.value < sensor.normal[0] * 0.85;
-        const farHigh = sensor.value > sensor.normal[1] * 1.08;
-        return farLow || farHigh ? ["异常", "danger"] : ["偏高", "warning"];
-      }
-      return ["正常", "success"];
-    }
-
-    function renderSensors() {
-      const list = $("sensorList");
-      list.innerHTML = "";
-      sensors.forEach(sensor => {
-        sensor.history = Array.from({ length: 60 }, () => sensor.value);
-        const row = document.createElement("div");
-        row.className = "sensor-row";
-        row.id = `row-${sensor.key}`;
-        const [label, kind] = statusFor(sensor);
-        row.innerHTML = `
-          <div class="sensor-icon">${sensor.icon}</div>
-          <div class="sensor-main">
-            <div class="sensor-name">${sensor.name}</div>
-            <div class="sensor-sub">
-              <span id="status-${sensor.key}" class="pill ${kind}">${label}</span>
-              <canvas id="mini-${sensor.key}" class="mini-chart" width="60" height="24"></canvas>
-            </div>
-          </div>
-          <div class="sensor-value-wrap">
-            <div id="value-${sensor.key}" class="sensor-value">${formatSensor(sensor)}<span class="unit">${sensor.unit}</span></div>
-          </div>
-        `;
-        list.appendChild(row);
-      });
-    }
-
-    function updateSensorValue(sensor, value, animate = true) {
-      const next = clamp(Number(value) || 0, sensor.min, sensor.max);
-      const changed = Math.abs(next - sensor.value) > Math.pow(10, -sensor.decimals);
-      sensor.value = next;
-      sensor.history.push(next);
-      if (sensor.history.length > 60) sensor.history.shift();
-
-      const valueEl = $(`value-${sensor.key}`);
-      if (changed && animate) valueEl.classList.add("fade");
-      window.setTimeout(() => {
-        valueEl.innerHTML = `${formatSensor(sensor)}<span class="unit">${sensor.unit}</span>`;
-        valueEl.classList.remove("fade");
-      }, changed && animate ? 120 : 0);
-
-      const [label, kind] = statusFor(sensor);
-      const status = $(`status-${sensor.key}`);
-      status.className = `pill ${kind}`;
-      status.textContent = label;
-      valueEl.classList.toggle("danger", kind === "danger");
-      drawMini(sensor);
-    }
-
-    function drawMini(sensor) {
-      const canvas = $(`mini-${sensor.key}`);
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = "#1D4ED8";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      sensor.history.forEach((value, index) => {
-        const x = index / Math.max(1, sensor.history.length - 1) * canvas.width;
-        const y = canvas.height - ((value - sensor.min) / (sensor.max - sensor.min)) * canvas.height;
-        if (index === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    }
-
-    function setControl(key, value, animate = false, silent = false) {
-      const control = controlMap[key];
-      const target = clamp(Number(value), control.min, control.max);
-      if (!animate) {
-        control.value = target;
-        $(control.input).value = Math.round(target);
-        $(control.range).value = Math.round(target);
-        if (!silent) updateRecommendationComparison();
-        return;
-      }
-
-      const start = control.value;
-      const startTime = performance.now();
-      const duration = 520;
-      function step(now) {
-        const t = Math.min(1, (now - startTime) / duration);
-        const eased = 1 - Math.pow(1 - t, 3);
-        const current = start + (target - start) * eased;
-        control.value = current;
-        $(control.input).value = Math.round(current);
-        $(control.range).value = Math.round(current);
-        if (t < 1) requestAnimationFrame(step);
-        else if (!silent) updateRecommendationComparison();
-      }
-      requestAnimationFrame(step);
-    }
-
-    function bindControls() {
-      Object.entries(controlMap).forEach(([key, control]) => {
-        const input = $(control.input);
-        const range = $(control.range);
-        function sync(value) {
-          operatorEditing = true;
-          setControl(key, value);
-          window.clearTimeout(sync.timer);
-          sync.timer = window.setTimeout(() => {
-            operatorEditing = false;
-            pushTargets();
-          }, 450);
-        }
-        input.addEventListener("input", () => sync(input.value));
-        range.addEventListener("input", () => sync(range.value));
-      });
-
-      $("startBtn").addEventListener("click", startBatch);
-      $("stopBtn").addEventListener("click", stopBatch);
-      $("autoBtn").addEventListener("click", toggleAuto);
-      $("estopBtn").addEventListener("click", emergencyStop);
-      $("resetEstopBtn").addEventListener("click", resetEmergencyStop);
-      $("saveResultBtn").addEventListener("click", saveProductResult);
-      $("applyRecommended").addEventListener("click", applyRecommendation);
-    }
-
-    async function api(path, options = {}) {
-      const response = await fetch(path, {
-        headers: { "Content-Type": "application/json" },
-        ...options
-      });
-      if (!response.ok) {
-        const body = await response.text();
-        let message = body || `${response.status} ${response.statusText}`;
-        try {
-          const parsed = JSON.parse(body);
-          message = parsed.message || parsed.data?.error || message;
-        } catch (_) {
-          // Keep the raw response text when the backend does not return JSON.
-        }
-        throw new Error(message);
-      }
-      if (response.status === 204) return null;
-      return response.json();
-    }
-
-    async function pollLive() {
-      if (pollInFlight) return;
-      pollInFlight = true;
-      try {
-        const [live, realtime] = await Promise.all([
-          api("/api/live"),
-          api(`/api/v1/reactor/${deviceId}/realtime`)
-        ]);
-        backendOnline = true;
-        live.v1_realtime = realtime;
-        lastLive = live;
-        applyLive(live);
-      } catch (error) {
-        backendOnline = false;
-        setOperatorNote(`后端连接失败：${error.message}`);
-        setSystemStatus();
-      } finally {
-        pollInFlight = false;
-      }
-    }
-
-    function applyLive(live) {
-      const runtime = live.runtime || {};
-      const sample = normalizeV1Realtime(live.v1_realtime, runtime.latest_sample);
-      running = Boolean(runtime.active_batch_id);
-      alarm = Boolean(runtime.emergency_stop || runtime.last_control_error);
-
-      if (sample) {
-        sensors.forEach(sensor => updateSensorValue(sensor, sample[sensor.field], true));
-        rebuildCharts(live.recent_samples || [], runtime.targets || {}, live.latest_recommendation);
-      }
-
-      if (runtime.targets && !operatorEditing) {
-        setControl("targetTemp", runtime.targets.temperature_c, false, true);
-        setControl("stirRpm", runtime.targets.stirrer_rpm, false, true);
-      }
-
-      applyRecommendationSnapshot(live.latest_recommendation);
-      renderMemorySummary(live.ai_memory);
-      renderHistory(live.recent_outcomes || [], live.recent_batches || []);
-      renderRecentEvents(live.recent_events || []);
-      setRuntimeButtons(runtime);
-      setSystemStatus(runtime, sample);
-      updateRecommendationComparison();
-      if (runtime.last_control_error) {
-        setOperatorNote(runtime.last_control_error, "danger", 8000);
-      } else if (Date.now() > operatorNoteStickyUntil) {
-        setOperatorNote("数据来自 ESP32/模拟采集管线，经后端安全限幅后显示。", "", 0);
-      }
-    }
-
-    function renderMemorySummary(memory) {
-      if (!memory) {
-        $("memorySummary").textContent = "记忆文件：未加载";
-        return;
-      }
-      const status = memory.enabled ? "已启用" : "未启用";
-      $("memorySummary").textContent =
-        `记忆文件：${memory.profile_name} v${memory.profile_version}，${status}，参考 ${memory.reference_batch_count} 批，禁区 ${memory.forbidden_zone_count} 个，阈值 ${memory.sensor_limit_count} 项`;
-    }
-
-    function normalizeV1Realtime(realtime, fallback) {
-      if (!realtime || !realtime.data) return fallback;
+    function recipe(name, runs, best, avg, low, bestBatch, lowBatch, trend) {
       return {
-        temperature_c: Number(realtime.data.current_temp ?? fallback?.temperature_c ?? 0),
-        pressure_mpa: Number(realtime.data.current_pressure ?? fallback?.pressure_mpa ?? 0),
-        stirrer_rpm: Number(realtime.data.stir_speed ?? fallback?.stirrer_rpm ?? 0),
-        shake_speed_cpm: Number(realtime.data.shake_speed ?? fallback?.shake_speed_cpm ?? 0),
-        flow_rate_l_min: Number(realtime.data.flow_rate ?? fallback?.flow_rate_l_min ?? 0),
-        product_concentration_percent: Number(realtime.data.progress ?? fallback?.product_concentration_percent ?? 0),
-        ph: Number(fallback?.ph ?? 7),
-        captured_at: realtime.timestamp || fallback?.captured_at || new Date().toISOString()
+        name,
+        created: "2026-05-22 09:30",
+        runs,
+        best,
+        avg,
+        low,
+        bestBatch,
+        lowBatch,
+        trend,
+        stages: state.stages.map((stage) => ({ ...stage }))
       };
     }
 
-    function setRuntimeButtons(runtime) {
-      const active = Boolean(runtime.active_batch_id);
-      $("startBtn").hidden = active;
-      $("stopBtn").hidden = !active;
-      $("autoBtn").textContent = `自动控制：${runtime.auto_enabled ? "开启" : "关闭"}`;
-      $("autoBtn").classList.toggle("accent", Boolean(runtime.auto_enabled));
-      $("resetEstopBtn").disabled = !runtime.emergency_stop;
-      $("estopBtn").disabled = Boolean(runtime.emergency_stop);
-      $("batchLabel").textContent = active ? `Batch #${String(runtime.active_batch_id).padStart(3, "0")}` : "Batch --";
-    }
-
-    function setSystemStatus(runtime = {}, sample = null) {
-      const sampleAgeMs = sample ? Date.now() - Date.parse(sample.captured_at) : Number.POSITIVE_INFINITY;
-      const sensorOk = backendOnline && sample && sampleAgeMs < 8000;
-      const tempSensor = sensors.find(sensor => sensor.key === "temp");
-      const valueAlarm = sensors.some(sensor => statusFor(sensor)[1] === "danger");
-      const runtimeAlarm = Boolean(runtime.emergency_stop || runtime.last_control_error);
-      alarm = runtimeAlarm || valueAlarm || (tempSensor && tempSensor.value > 250);
-
-      if (alarm) {
-        setPill("systemPill", "systemText", "danger", runtime.emergency_stop ? "急停已触发" : "⚠ 参数异常");
-      } else if (runtime.active_batch_id) {
-        setPill("systemPill", "systemText", "success", "系统运行中");
-      } else {
-        setPill("systemPill", "systemText", "warning", "系统待机");
-      }
-
-      if (sensorOk) {
-        setPill("sensorPill", "sensorText", "success", "传感器已连接");
-      } else if (backendOnline) {
-        setPill("sensorPill", "sensorText", "warning", "等待传感器");
-      } else {
-        setPill("sensorPill", "sensorText", "danger", "后端离线");
-      }
-
-      if (runtime.last_control_error) {
-        setPill("aiPill", "aiText", "warning", "控制待检查");
-      } else {
-        setPill("aiPill", "aiText", "accent", "AI 引擎就绪");
-      }
-    }
-
-    function applyRecommendationSnapshot(rec) {
-      if (!rec) return;
-      recommendation.targetTemp = rec.target_temperature_c;
-      recommendation.stirRpm = rec.target_stirrer_rpm;
-      recommendation.heatMinutes = rec.heating_minutes;
-      recommendation.stirMinutes = rec.stirring_minutes;
-      recommendation.expectedScore = rec.expected_score;
-      recommendation.rationale = rec.rationale;
-
-      $("recTemp").textContent = `${round(rec.target_temperature_c, 1)} °C`;
-      $("recHeat").textContent = `${round(rec.heating_minutes, 1)} min`;
-      $("recStir").textContent = `${round(rec.stirring_minutes, 1)} min`;
-      $("recYield").textContent = rec.expected_score > 0 ? `${round(rec.expected_score, 1)} 分` : "待学习";
-      $("recRationale").textContent = rec.rationale.length > 18 ? `${rec.rationale.slice(0, 18)}...` : rec.rationale;
-      $("learnedBatches").textContent = rec.based_on_batch_count;
-      const confidence = clamp(45 + rec.based_on_batch_count * 10, 45, 95);
-      $("confidenceBar").style.width = `${confidence}%`;
-      $("confidenceText").textContent = `${confidence}%`;
-    }
-
-    function updateRecommendationComparison() {
-      setCompare("recTempCompare", recommendation.targetTemp, controlMap.targetTemp.value, "vs 当前");
-      setCompare("recHeatCompare", recommendation.heatMinutes, controlMap.heatMinutes.value, "vs 当前");
-      const stirDiff = recommendation.stirMinutes - controlMap.stirMinutes.value;
-      $("recStirCompare").textContent = Math.abs(stirDiff) < 1 ? "→ 持平" : `${stirDiff > 0 ? "↑" : "↓"} ${Math.round(stirDiff)} vs 当前`;
-    }
-
-    function setCompare(id, recommended, current, suffix) {
-      const diff = Math.round(recommended - current);
-      if (Math.abs(diff) < 1) {
-        $(id).textContent = "→ 持平";
-      } else {
-        $(id).textContent = `${diff > 0 ? "↑" : "↓"} ${diff > 0 ? "+" : ""}${diff} ${suffix}`;
-      }
-    }
-
-    function rebuildCharts(samples, targets, rec) {
-      if (!samples.length) return;
-      tempPoints.length = 0;
-      targetPoints.length = 0;
-      aiPoints.length = 0;
-      const slice = samples.slice(-maxPoints);
-      slice.forEach(sample => {
-        tempPoints.push(sample.temperature_c);
-        targetPoints.push(targets.temperature_c || controlMap.targetTemp.value);
-        aiPoints.push(rec ? rec.target_temperature_c : recommendation.targetTemp);
+    function renderTabs() {
+      $$(".tab-btn").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === state.activeTab);
       });
-      while (tempPoints.length < maxPoints) {
-        tempPoints.unshift(tempPoints[0]);
-        targetPoints.unshift(targetPoints[0]);
-        aiPoints.unshift(aiPoints[0]);
+      $$(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${state.activeTab}`));
+      requestAnimationFrame(drawAll);
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      renderTabs();
+    }
+
+    async function apiJson(path, options = {}) {
+      const init = {
+        method: options.method || "GET",
+        headers: { ...(options.headers || {}) },
+        body: options.body,
+        cache: "no-store"
+      };
+      if (options.json !== undefined) {
+        init.headers["Content-Type"] = "application/json";
+        init.body = JSON.stringify(options.json);
       }
-      drawMainChart();
+      const response = await fetch(path, init);
+      if (response.status === 204) return null;
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (_) {
+        payload = null;
+      }
+      if (!response.ok || (payload && Number.isFinite(Number(payload.code)) && Number(payload.code) !== 0)) {
+        const code = payload?.code || response.status;
+        const message = payload?.message || response.statusText || "request failed";
+        const error = new Error(message);
+        error.code = code;
+        error.payload = payload;
+        throw error;
+      }
+      return payload;
+    }
+
+    async function pollBackend() {
+      try {
+        let live = await apiJson("/api/live");
+        if (!live.runtime?.latest_sample) {
+          await wait(2100);
+          live = await apiJson("/api/live");
+        }
+        let realtime = null;
+        try {
+          realtime = await apiJson(`/api/v1/reactor/${API_DEVICE_ID}/realtime`);
+        } catch (err) {
+          realtime = null;
+        }
+        applyBackendLive(live, realtime);
+        state.backendOnline = true;
+        state.dataReady = true;
+        state.backendError = null;
+      } catch (err) {
+        state.backendOnline = false;
+        state.dataReady = false;
+        state.backendError = {
+          code: err.code || 500,
+          message: err.message || "backend unavailable"
+        };
+        applyPipelineError();
+      }
+      renderPassive();
+      window.__reactorState = state;
+    }
+
+    function wait(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function applyBackendLive(live, realtime) {
+      const runtime = live.runtime || {};
+      const sample = runtime.latest_sample;
+      if (!sample) throw Object.assign(new Error("sensor data unavailable"), { code: 503 });
+      const targets = runtime.targets || {};
+      const rec = live.latest_recommendation;
+      state.aiProvider = live.ai_provider || null;
+      state.aiMemory = live.ai_memory || null;
+      state.lastSampleAt = sample.captured_at || realtime?.timestamp || null;
+      state.activeBatchId = runtime.active_batch_id;
+      state.running = Boolean(runtime.active_batch_id);
+      if (state.activeBatchId) state.completedBatchId = state.activeBatchId;
+
+      const recentBatches = Array.isArray(live.recent_batches) ? live.recent_batches : [];
+      const activeBatch = recentBatches.find((batch) => batch.id === runtime.active_batch_id) || recentBatches[0];
+      if (activeBatch) {
+        state.batchNo = activeBatch.id;
+        state.batchStart = timeLabel(activeBatch.started_at);
+        state.elapsedSeconds = elapsedSecondsSince(activeBatch.started_at);
+        if (activeBatch.finished_at) state.completedBatchId = activeBatch.id;
+      } else if (!state.batchNo) {
+        state.batchNo = runtime.active_batch_id;
+        state.batchStart = "--:--:--";
+      }
+      state.programElapsed = state.running ? state.elapsedSeconds : state.programElapsed;
+
+      setSensor("temperature", sample.temperature_c, targets.temperature_c, rec?.target_temperature_c);
+      setSensor("pressure", sample.pressure_mpa, targets.target_pressure_mpa, targets.target_pressure_mpa);
+      setSensor("rpm", sample.stirrer_rpm, targets.stirrer_rpm, rec?.target_stirrer_rpm);
+      setSensor("concentration", sample.product_concentration_percent ?? realtime?.data?.progress, null, null);
+      setSensor("ph", sample.ph, null, null);
+
+      mapHistories(live.recent_samples || [], targets, rec);
+      mapRecommendation(rec, live.recent_outcomes || []);
+      mapBatches(live.recent_batches || [], live.recent_outcomes || []);
+      mapCoefficients(live.recent_outcomes || []);
+      mapEvents(live.recent_events || []);
+      mapAlarms(realtime?.alarms || [], runtime);
+      syncProgramFromTargets(targets);
+    }
+
+    function applyPipelineError() {
+      for (const item of state.sensors) item.value = null;
+      state.running = false;
+      state.histories = { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] };
+      state.targetHistories = { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] };
+      state.aiHistories = { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] };
+      state.alarms = [{
+        id: `PIPELINE-${state.backendError?.code || 500}`,
+        time: nowTime(),
+        sensor: "Data Pipeline",
+        description: `接口错误 code=${state.backendError?.code || 500}: ${state.backendError?.message || "数据不可用"}`,
+        value: "--",
+        active: true,
+        acknowledged: false
+      }];
+    }
+
+    function renderPassive() {
+      renderSidebar();
+      renderMonitor();
+      renderProductLock();
+      renderRecipes();
+      renderAI();
+      renderAlarms();
+      drawAll();
+    }
+
+    function setSensor(key, value, target, ai) {
+      const item = sensor(key);
+      if (!item) return;
+      item.value = toNumber(value);
+      item.target = toNumber(target) ?? item.target;
+      item.ai = toNumber(ai) ?? item.ai;
+    }
+
+    function mapHistories(samples, targets, rec) {
+      const next = { temperature: [], pressure: [], rpm: [], concentration: [], ph: [] };
+      for (const sample of samples.slice(-600)) {
+        const temp = toNumber(sample.temperature_c);
+        const pressure = toNumber(sample.pressure_mpa);
+        const rpm = toNumber(sample.stirrer_rpm);
+        const concentration = toNumber(sample.product_concentration_percent);
+        const ph = toNumber(sample.ph);
+        if (temp !== null) next.temperature.push(temp);
+        if (pressure !== null) next.pressure.push(pressure);
+        if (rpm !== null) next.rpm.push(rpm);
+        if (concentration !== null) next.concentration.push(concentration);
+        if (ph !== null) next.ph.push(ph);
+      }
+      for (const key of Object.keys(next)) {
+        state.histories[key] = next[key];
+        const fallbackTarget = sensor(key)?.target;
+        const fallbackAi = sensor(key)?.ai ?? fallbackTarget;
+        state.targetHistories[key] = state.histories[key].map(() => targetForChart(key, targets, fallbackTarget));
+        state.aiHistories[key] = state.histories[key].map(() => aiForChart(key, rec, fallbackAi));
+      }
+    }
+
+    function targetForChart(key, targets, fallback) {
+      let value = fallback;
+      if (key === "temperature") value = targets.temperature_c ?? fallback;
+      if (key === "pressure") value = targets.target_pressure_mpa ?? fallback;
+      if (key === "rpm") value = targets.stirrer_rpm ?? fallback;
+      return toNumber(value) ?? 0;
+    }
+
+    function aiForChart(key, rec, fallback) {
+      let value = fallback;
+      if (key === "temperature") value = rec?.target_temperature_c ?? fallback;
+      if (key === "rpm") value = rec?.target_stirrer_rpm ?? fallback;
+      return toNumber(value) ?? 0;
+    }
+
+    function mapRecommendation(rec, outcomes) {
+      if (!rec) {
+        state.aiRecommendation = null;
+        return;
+      }
+      const latestYield = toNumber(outcomes[0]?.yield_percent);
+      const expectedScore = toNumber(rec.expected_score) ?? 0;
+      const lift = latestYield === null ? expectedScore : Math.max(0, expectedScore - latestYield);
+      state.aiRecommendation = {
+        temp: toNumber(rec.target_temperature_c),
+        hold: toNumber(rec.heating_minutes),
+        stir: toNumber(rec.stirring_minutes),
+        rpm: toNumber(rec.target_stirrer_rpm),
+        ratio: 4.0,
+        lift,
+        basedOn: toNumber(rec.based_on_batch_count) ?? 0,
+        rationale: rec.rationale || ""
+      };
+    }
+
+    function mapBatches(batches, outcomes) {
+      const outcomeById = new Map(outcomes.map((item) => [item.batch_id, item]));
+      const mapped = batches.map((batch) => {
+        const outcome = outcomeById.get(batch.id);
+        return {
+          id: batch.id,
+          temp: batch.target_temperature_c,
+          hold: batch.heating_minutes,
+          stir: batch.stirring_minutes,
+          rpm: batch.target_stirrer_rpm,
+          yield: outcome?.yield_percent ?? null,
+          ratio: outcome?.product_ratio ?? null,
+          startedAt: batch.started_at,
+          finishedAt: batch.finished_at
+        };
+      }).sort((a, b) => a.id - b.id);
+      state.batches = mapped;
+      const latestFinished = mapped.filter((batch) => batch.finishedAt).at(-1);
+      if (!state.running && latestFinished) state.completedBatchId = latestFinished.id;
+    }
+
+    function mapCoefficients(outcomes) {
+      if (!Array.isArray(outcomes) || outcomes.length < 2) {
+        state.coefficients = [];
+        return;
+      }
+      const rows = outcomes.slice().reverse();
+      const corr = (xKey) => {
+        const xs = rows.map((row) => toNumber(row[xKey])).filter((value) => value !== null);
+        const ys = rows.map((row) => toNumber(row.yield_percent)).filter((value) => value !== null);
+        if (xs.length !== ys.length || xs.length < 2) return 0;
+        const meanX = xs.reduce((sum, value) => sum + value, 0) / xs.length;
+        const meanY = ys.reduce((sum, value) => sum + value, 0) / ys.length;
+        const numerator = xs.reduce((sum, value, index) => sum + (value - meanX) * (ys[index] - meanY), 0);
+        const denomX = Math.sqrt(xs.reduce((sum, value) => sum + (value - meanX) ** 2, 0));
+        const denomY = Math.sqrt(ys.reduce((sum, value) => sum + (value - meanY) ** 2, 0));
+        return denomX && denomY ? numerator / (denomX * denomY) : 0;
+      };
+      state.coefficients = [
+        ["Temperature", corr("target_temperature_c")],
+        ["Hold Duration", corr("heating_minutes")],
+        ["Stirrer RPM", corr("target_stirrer_rpm")],
+        ["Reactant Ratio", corr("product_ratio")]
+      ];
+    }
+
+    function mapEvents(events) {
+      state.aiLogs = events.slice(0, 8).map((event) => {
+        const batch = event.batch_id ? `Batch ${pad2(event.batch_id).padStart(3, "0")}` : "System";
+        return `${batch}  ${event.event_type} · ${event.reason || ""}`;
+      });
+    }
+
+    function mapAlarms(realtimeAlarms, runtime) {
+      const alarms = realtimeAlarms.map((alarm, index) => {
+        const id = `${alarm.type || "alarm"}-${alarm.current_value ?? index}`;
+        return {
+          id,
+          time: nowTime(),
+          sensor: alarm.type || "System",
+          description: alarm.message || "Alarm",
+          value: fmtValue(alarm.current_value, 2),
+          active: !state.acknowledgedAlarmIds.has(id),
+          acknowledged: state.acknowledgedAlarmIds.has(id)
+        };
+      });
+      if (runtime?.last_control_error) {
+        alarms.unshift({
+          id: "runtime-control-error",
+          time: nowTime(),
+          sensor: "Controller",
+          description: runtime.last_control_error,
+          value: "--",
+          active: !state.acknowledgedAlarmIds.has("runtime-control-error"),
+          acknowledged: state.acknowledgedAlarmIds.has("runtime-control-error")
+        });
+      }
+      if (runtime?.emergency_stop) {
+        alarms.unshift({
+          id: "runtime-emergency-stop",
+          time: nowTime(),
+          sensor: "Emergency Stop",
+          description: "manual emergency stop is active",
+          value: "--",
+          active: !state.acknowledgedAlarmIds.has("runtime-emergency-stop"),
+          acknowledged: state.acknowledgedAlarmIds.has("runtime-emergency-stop")
+        });
+      }
+      state.alarms = alarms;
+    }
+
+    function syncProgramFromTargets(targets) {
+      if (!targets) return;
+      const heat = state.stages.find((stage) => stage.name.toLowerCase().includes("heat")) || state.stages[0];
+      const hold = state.stages.find((stage) => stage.name.toLowerCase().includes("hold")) || state.stages[0];
+      const cool = state.stages.find((stage) => stage.name.toLowerCase().includes("cool")) || state.stages.at(-1);
+      const targetTemp = toNumber(targets.temperature_c);
+      const heatTime = toNumber(targets.heat_time_s);
+      const holdTime = toNumber(targets.hold_time_s);
+      const coolTime = toNumber(targets.cool_time_s);
+      const stirrer = toNumber(targets.stirrer_rpm);
+      if (targetTemp !== null) {
+        heat.temp = targetTemp;
+        hold.temp = targetTemp;
+      }
+      if (heatTime !== null) heat.duration = heatTime / 60;
+      if (holdTime !== null) hold.duration = holdTime / 60;
+      if (coolTime !== null && cool) cool.duration = coolTime / 60;
+      if (stirrer !== null) {
+        heat.rpm = stirrer;
+        hold.rpm = stirrer;
+      }
+    }
+
+    function timeLabel(iso) {
+      if (!iso) return "--:--:--";
+      const date = new Date(iso);
+      return Number.isNaN(date.getTime()) ? "--:--:--" : date.toLocaleTimeString("zh-CN", { hour12: false });
+    }
+
+    function elapsedSecondsSince(iso) {
+      const started = new Date(iso).getTime();
+      if (!Number.isFinite(started)) return 0;
+      return Math.max(0, Math.floor((Date.now() - started) / 1000));
+    }
+
+    function activeRecommendation() {
+      return state.aiRecommendation || {
+        temp: sensor("temperature").target ?? currentStage().temp,
+        hold: currentStage().duration,
+        stir: currentStage().duration,
+        rpm: sensor("rpm").target ?? currentStage().rpm,
+        ratio: 0,
+        lift: 0,
+        basedOn: 0,
+        rationale: ""
+      };
+    }
+
+    function latestKnownBatchId() {
+      return state.completedBatchId || state.activeBatchId || state.batches.at(-1)?.id || null;
+    }
+
+    async function latestFinishedBatchId() {
+      const current = latestKnownBatchId();
+      try {
+        const live = await apiJson("/api/live");
+        const batches = Array.isArray(live.recent_batches) ? live.recent_batches : [];
+        const finished = batches.filter((batch) => batch.finished_at).sort((a, b) => a.id - b.id).at(-1);
+        if (finished?.id) {
+          state.completedBatchId = finished.id;
+          return finished.id;
+        }
+      } catch (_) {
+        return current;
+      }
+      return current;
+    }
+
+    function renderSidebar() {
+      $("#sideSensors").innerHTML = state.sensors.map((sensor) => {
+        const out = isSensorOut(sensor);
+        return `
+          <div class="side-sensor">
+            <div class="sensor-label">${sensor.label}</div>
+            <div class="sensor-number ${out ? "danger" : ""}">${fmtValue(sensor.value, sensor.decimals)} ${sensor.unit}</div>
+            <canvas class="mini-trend" data-mini="${sensor.key}" height="48"></canvas>
+          </div>
+        `;
+      }).join("");
+      const active = activeAlarms().length;
+      $("#alarmSummary").textContent = `⚠ ${active} active alarms`;
+      $("#runDot").classList.toggle("danger", active > 0 || !state.dataReady);
+      $("#runState").textContent = state.backendError ? `Error ${state.backendError.code}` : active > 0 ? "Alarm" : state.running ? "Running" : "Idle";
+    }
+
+    function isSensorOut(sensor) {
+      if (toNumber(sensor.value) === null) return false;
+      if (sensor.key === "concentration") return false;
+      return sensor.value < sensor.normal[0] || sensor.value > sensor.normal[1];
+    }
+
+    function activeAlarms() {
+      return state.alarms.filter((alarm) => alarm.active && !alarm.acknowledged);
+    }
+
+    function renderMonitor() {
+      const rec = activeRecommendation();
+      $("#batchId").textContent = state.batchNo ? `Batch ${pad2(state.batchNo).padStart(3, "0")}` : "Batch ---";
+      $("#batchStart").textContent = state.batchStart;
+      const stage = currentStage();
+      const progress = stageProgress();
+      const temp = sensor("temperature");
+      const actualTemp = toNumber(temp.value);
+      const targetTemp = toNumber(rec.temp);
+      const delta = actualTemp === null || targetTemp === null ? null : actualTemp - targetTemp;
+      $("#batchSummary").innerHTML = rows([
+        ["Stage", stage.name],
+        ["Progress", `${fmtValue(progress, 2)}%`],
+        ["Duration", `${formatDuration(state.programElapsed)} / ${formatDuration(stage.duration * 60)}`],
+        ["Target Temp", `${fmtValue(rec.temp, 2)} °C`],
+        ["Actual Temp", `${fmtValue(temp.value, 2)} °C`],
+        ["Δ", delta === null ? "-- °C" : `${delta >= 0 ? "+" : "−"}${fmtValue(Math.abs(delta), 2)} °C`]
+      ]);
+      $("#feedSummary").innerHTML = rows(feedRows());
+      $("#stageProgressLabel").textContent = `${stage.name === "Heat-up" ? "升温阶段" : stage.name}`;
+      $("#stageProgressPercent").textContent = `${fmtValue(progress, 2)}%`;
+      $("#stageProgressTime").textContent = `已用 ${formatDuration(state.programElapsed)} / 预计 ${formatDuration(stage.duration * 60)}`;
+      $("#stageProgressFill").style.width = `${progress}%`;
+      updateBigScreenText();
+    }
+
+    function rows(items) {
+      return items.map(([k, v]) => `<div class="kv-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+    }
+
+    function feedRows() {
+      const a = state.ingredients[0]?.amount || 0;
+      const b = state.ingredients[1]?.amount || 1;
+      return [
+        [state.ingredients[0]?.name || "Reactant A", `${fmtValue(a, 2)} g`],
+        [state.ingredients[1]?.name || "Reactant B", `${fmtValue(b, 2)} g`],
+        [state.ingredients[2]?.name || "Catalyst", `${fmtValue(state.ingredients[2]?.amount || 0, 2)} g`],
+        ["A : B ratio", `${fmtValue(a / b, 2)} : 1`]
+      ];
+    }
+
+    function sensor(key) {
+      return state.sensors.find((item) => item.key === key);
+    }
+
+    function currentStage() {
+      return state.stages[Math.min(state.selectedStage, state.stages.length - 1)];
+    }
+
+    function stageProgress() {
+      const duration = currentStage().duration * 60;
+      if (!duration) return 0;
+      return clamp((state.programElapsed / duration) * 100, 0, 100);
+    }
+
+    function formatDuration(seconds) {
+      if (!Number.isFinite(Number(seconds))) return "--:--";
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${pad2(mins)}:${pad2(secs)}`;
+    }
+
+    function renderProgram() {
+      const total = state.stages.reduce((sum, stage) => sum + stage.duration, 0);
+      $("#timeline").innerHTML = state.stages.map((stage, index) => `
+        <div class="stage-block ${index === state.selectedStage ? "active" : ""}" data-stage="${index}" style="flex:${stage.duration / total}">
+          <div class="stage-name">${stage.name}</div>
+          <div class="muted">${fmtValue(stage.duration, 2)} min</div>
+          <div class="stage-temp">${fmtValue(stage.temp, 2)} °C</div>
+          ${index < state.stages.length - 1 ? `<div class="stage-handle" data-handle="${index}"></div>` : ""}
+        </div>
+      `).join("");
+      renderStageFields();
+      bindTimeline();
+    }
+
+    function renderStageFields() {
+      const stage = currentStage();
+      $("#stageFields").innerHTML = `
+        <div class="field"><label class="label" for="stageName">阶段名称</label><input id="stageName" class="field-line" value="${stage.name}"></div>
+        <div class="field"><label class="label" for="stageTemp">目标温度</label><input id="stageTemp" class="field-line" type="number" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"><input id="stageTempRange" class="range-thin" type="range" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"></div>
+        ${stage.name.toLowerCase().includes("heat") ? `<div class="field"><label class="label" for="stageRate">升温速率</label><input id="stageRate" class="field-line" type="number" min="1" max="20" step="0.01" value="${fmtValue(stage.rate, 2)}"><input id="stageRateRange" class="range-thin" type="range" min="1" max="20" step="0.01" value="${fmtValue(stage.rate, 2)}"></div>` : ""}
+        <div class="field"><label class="label" for="stageDuration">保持时长</label><input id="stageDuration" class="field-line" type="number" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"><input id="stageDurationRange" class="range-thin" type="range" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"></div>
+        <div class="field"><label class="label" for="stageRpm">搅拌转速</label><input id="stageRpm" class="field-line" type="number" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"><input id="stageRpmRange" class="range-thin" type="range" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"></div>
+        <div class="field"><label class="label" for="stageCooling">冷却方式</label><select id="stageCooling" class="select-line"><option ${stage.cooling === "自然" ? "selected" : ""}>自然</option><option ${stage.cooling === "风冷" ? "selected" : ""}>风冷</option><option ${stage.cooling === "水冷" ? "selected" : ""}>水冷</option></select></div>
+      `;
+      bindStageFields();
+    }
+
+    function bindStageFields() {
+      const stage = currentStage();
+      $("#stageName").addEventListener("input", (event) => { stage.name = event.target.value; renderProgram(); });
+      bindNumeric("stageTemp", "stageTempRange", 50, 280, (value) => { stage.temp = value; renderProgram(); });
+      if ($("#stageRate")) bindNumeric("stageRate", "stageRateRange", 1, 20, (value) => { stage.rate = value; });
+      bindNumeric("stageDuration", "stageDurationRange", 5, 240, (value) => { stage.duration = value; renderProgram(); });
+      bindNumeric("stageRpm", "stageRpmRange", 100, 1000, (value) => { stage.rpm = value; });
+      $("#stageCooling").addEventListener("change", (event) => { stage.cooling = event.target.value; });
+    }
+
+    function bindNumeric(inputId, rangeId, min, max, assign) {
+      const input = $(`#${inputId}`);
+      const range = $(`#${rangeId}`);
+      const sync = (value, source) => {
+        const parsed = toNumber(value);
+        const next = clamp(parsed === null ? min : parsed, min, max);
+        input.value = fmtValue(next, 2);
+        range.value = fmtValue(next, 2);
+        assign(next, source);
+      };
+      input.addEventListener("change", () => sync(input.value, "input"));
+      range.addEventListener("input", () => sync(range.value, "range"));
+    }
+
+    function bindTimeline() {
+      $$(".stage-block").forEach((block) => {
+        block.addEventListener("click", (event) => {
+          if (event.target.classList.contains("stage-handle")) return;
+          state.selectedStage = Number(block.dataset.stage);
+          renderProgram();
+          drawAll();
+        });
+      });
+      $$(".stage-handle").forEach((handle) => {
+        handle.addEventListener("mousedown", startResizeStage);
+      });
+    }
+
+    function startResizeStage(event) {
+      event.preventDefault();
+      const index = Number(event.target.dataset.handle);
+      const startX = event.clientX;
+      const leftStart = state.stages[index].duration;
+      const rightStart = state.stages[index + 1].duration;
+      const onMove = (moveEvent) => {
+        const delta = (moveEvent.clientX - startX) / 5;
+        const left = clamp(leftStart + delta, 5, 240);
+        const right = clamp(rightStart - delta, 5, 240);
+        if (left + right !== leftStart + rightStart) return;
+        state.stages[index].duration = left;
+        state.stages[index + 1].duration = right;
+        renderProgram();
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    }
+
+    function renderRecipes() {
+      if (!state.recipes.length) {
+        $("#recipeList").innerHTML = `<div class="muted">暂无配方记录</div>`;
+        $("#recipeDetail").innerHTML = `<div class="muted">从程序页另存为配方后将在此显示。</div>`;
+        return;
+      }
+      $("#recipeList").innerHTML = state.recipes.map((recipeItem, index) => `
+        <div class="recipe-row ${index === state.selectedRecipe ? "active" : ""}" data-recipe="${index}">
+          <span class="recipe-name">${recipeItem.name}</span>
+          <span class="muted">已运行 ${recipeItem.runs} 次</span>
+          <span class="muted">最高产率 ${fmtValue(recipeItem.best, 2)}%</span>
+        </div>
+      `).join("");
+      $$(".recipe-row").forEach((row) => row.addEventListener("click", () => {
+        state.selectedRecipe = Number(row.dataset.recipe);
+        renderRecipes();
+      }));
+      renderRecipeDetail();
+    }
+
+    function renderRecipeDetail() {
+      const recipeItem = state.recipes[state.selectedRecipe];
+      if (!recipeItem) return;
+      $("#recipeDetail").innerHTML = `
+        <div class="recipe-title-line">
+          <input id="recipeNameInput" class="recipe-title-input" value="${recipeItem.name}">
+          <span class="dim">Created ${recipeItem.created}</span>
+        </div>
+        <h2 class="section-title">Stages</h2>
+        <table class="plain-table">
+          <thead><tr><th>Stage</th><th>Temp</th><th>Duration</th><th>RPM</th><th>Cooling</th></tr></thead>
+          <tbody>${recipeItem.stages.map((stage) => `<tr><td>${stage.name}</td><td class="mono">${fmtValue(stage.temp, 2)} °C</td><td class="mono">${fmtValue(stage.duration, 2)} min</td><td class="mono">${fmtValue(stage.rpm, 2)}</td><td>${stage.cooling}</td></tr>`).join("")}</tbody>
+        </table>
+        <div style="margin-top:26px">
+          <h2 class="section-title">Run Statistics</h2>
+          <div class="kv">${rows([
+            ["运行次数", recipeItem.runs],
+            ["平均产率", `${fmtValue(recipeItem.avg, 2)}%`],
+            ["最高产率", `${fmtValue(recipeItem.best, 2)}%  (Batch ${pad2(recipeItem.bestBatch).padStart(3, "0")})`],
+            ["最低产率", `${fmtValue(recipeItem.low, 2)}%  (Batch ${pad2(recipeItem.lowBatch).padStart(3, "0")})`]
+          ])}</div>
+        </div>
+        <canvas id="recipeTrend" class="trend-small" height="160"></canvas>
+        <canvas id="recipeScatter" class="scatter-chart" height="180"></canvas>
+        <div class="action-row">
+          <button id="loadRecipeToProgram" class="text-btn" type="button">加载到程序</button>
+          <button id="exportRecipeJson" class="text-btn" type="button">导出配方 JSON</button>
+          <button id="deleteRecipe" class="text-btn danger" type="button">删除</button>
+        </div>
+      `;
+      $("#recipeNameInput").addEventListener("input", (event) => {
+        recipeItem.name = event.target.value;
+        renderRecipes();
+      });
+      $("#loadRecipeToProgram").addEventListener("click", () => {
+        state.stages = recipeItem.stages.map((stage) => ({ ...stage }));
+        switchTab("program");
+        renderProgram();
+      });
+      $("#exportRecipeJson").addEventListener("click", () => downloadText(`${recipeItem.name}.json`, JSON.stringify(recipeItem, null, 2), "application/json"));
+      $("#deleteRecipe").addEventListener("click", () => confirmDanger($("#deleteRecipe"), "确认删除", () => {
+        state.recipes.splice(state.selectedRecipe, 1);
+        state.selectedRecipe = 0;
+        renderRecipes();
+      }));
+      requestAnimationFrame(() => {
+        drawRecipeTrend();
+        drawRecipeScatter();
+      });
+    }
+
+    function renderMaterials() {
+      $("#materialRows").innerHTML = state.ingredients.map((item, index) => `
+        <tr data-material="${index}">
+          <td><input class="table-input" data-field="name" value="${item.name}"></td>
+          <td><input class="table-input" data-field="lot" value="${item.lot}"></td>
+          <td><input class="table-input" data-field="amount" type="number" step="0.01" value="${fmtValue(item.amount, 2)}"></td>
+          <td><input class="table-input" data-field="purity" type="number" step="0.01" value="${fmtValue(item.purity, 2)}"></td>
+          <td><button class="text-btn material-remove" type="button">×</button></td>
+        </tr>
+      `).join("");
+      $$("#materialRows tr").forEach((row) => {
+        const index = Number(row.dataset.material);
+        row.querySelectorAll("input").forEach((input) => {
+          input.addEventListener("input", () => {
+            const field = input.dataset.field;
+            state.ingredients[index][field] = ["amount", "purity"].includes(field) ? toNumber(input.value) ?? 0 : input.value;
+            renderRatio();
+            renderMonitor();
+          });
+        });
+        row.querySelector(".material-remove").addEventListener("click", () => {
+          state.ingredients.splice(index, 1);
+          renderMaterials();
+          renderMonitor();
+        });
+      });
+      renderRatio();
+      renderProductLock();
+    }
+
+    function renderRatio() {
+      const amounts = state.ingredients.map((item) => toNumber(item.amount) ?? 0);
+      const positive = amounts.filter((amount) => amount > 0);
+      const min = positive.length ? Math.min(...positive) : 1;
+      $("#ratioRaw").textContent = amounts.map((amount) => fmtValue(amount, 2)).join(" : ");
+      $("#ratioNormalized").textContent = `= ${amounts.map((amount) => fmtValue(amount / min, 2)).join(" : ")}（归一化）`;
+      computeYield();
+    }
+
+    function computeYield() {
+      const mass = toNumber($("#productMass")?.value) ?? 0;
+      const theoretical = toNumber($("#theoreticalMass")?.value) ?? 1;
+      if ($("#computedYield")) $("#computedYield").textContent = `${fmtValue((mass / theoretical) * 100, 2)}%`;
+    }
+
+    function renderProductLock() {
+      const disabled = state.running;
+      ["productName", "productMass", "sampleTime", "appearance", "theoreticalMass", "productNotes", "saveProductBtn"].forEach((id) => {
+        const el = $(`#${id}`);
+        if (el) el.disabled = disabled;
+      });
+      if ($("#finishBatchBtn")) $("#finishBatchBtn").disabled = !state.running;
+      if (!state.dataReady) $("#productLockNote").textContent = `数据管线不可用：code=${state.backendError?.code || 503}`;
+      else $("#productLockNote").textContent = disabled ? "运行中：批次结束后可编辑产物追踪。" : "批次已结束：可保存产物追踪。";
+    }
+
+    function renderAI() {
+      const learned = state.aiRecommendation?.basedOn ?? state.aiMemory?.reference_batch_count ?? state.batches.filter((batch) => batch.yield !== null).length;
+      const modelName = state.aiProvider?.model || "local-tpe-lite";
+      const confidence = clamp(((toNumber(learned) ?? 0) / 50) * 100, 0, 99);
+      const latestLog = state.aiLogs[0] || "等待批次结果录入";
+      const aiSubtitle = document.querySelector("#view-ai .dim");
+      if (aiSubtitle) aiSubtitle.textContent = `Based on ${fmtValue(learned, 2)} backend batches`;
+      $("#aiOverview").innerHTML = [
+        ["已学习批次", fmtValue(learned, 2)],
+        ["当前模型版本", modelName],
+        ["上次更新", latestLog.slice(0, 26)],
+        ["置信度", `${fmtValue(confidence, 2)}%`]
+      ].map(([label, value], index) => `
+        <div>
+          <div class="label">${label}</div>
+          <div class="metric-number">${value}</div>
+          ${index === 3 ? `<div class="progress-track" style="margin-top:8px"><div class="progress-fill" style="width:${confidence}%"></div></div>` : ""}
+        </div>
+      `).join("");
+      $("#aiLogList").innerHTML = state.aiLogs.length ? state.aiLogs.map((log) => `<div class="log-line">${log}</div>`).join("") : `<div class="log-line">等待后端控制事件和批次结果</div>`;
+      const rec = activeRecommendation();
+      const currentRatio = (state.ingredients[0]?.amount || 0) / (state.ingredients[1]?.amount || 1);
+      const recTemp = toNumber(rec.temp);
+      const actualTemp = toNumber(sensor("temperature").value);
+      const recRpm = toNumber(rec.rpm);
+      const actualRpm = toNumber(sensor("rpm").value);
+      const tempDelta = recTemp === null || actualTemp === null ? null : recTemp - actualTemp;
+      const rpmDelta = recRpm === null || actualRpm === null ? null : recRpm - actualRpm;
+      $("#aiRecommendation").innerHTML = rows([
+        ["目标温度", `${fmtValue(rec.temp, 2)} °C    （当前 ${fmtValue(sensor("temperature").value, 2)} °C，${tempDelta === null ? "--" : `${tempDelta >= 0 ? "↑ +" : "↓ −"}${fmtValue(Math.abs(tempDelta), 2)}`}）`],
+        ["保持时长", `${fmtValue(rec.hold, 2)} min    （当前 ${fmtValue(currentStage().duration, 2)} min）`],
+        ["搅拌转速", `${fmtValue(rec.rpm, 2)} RPM   （当前 ${fmtValue(sensor("rpm").value, 2)} RPM，${rpmDelta === null ? "--" : `${rpmDelta >= 0 ? "↑ +" : "↓ −"}${fmtValue(Math.abs(rpmDelta), 2)}`}）`],
+        ["A : B 比例", `${fmtValue(rec.ratio, 2)} : 1   （当前 ${fmtValue(currentRatio, 2)} : 1）`],
+        ["预期产率提升", `+${fmtValue(rec.lift, 2)}%`]
+      ]);
+    }
+
+    function renderAlarms() {
+      const active = activeAlarms();
+      const total = state.alarms.length;
+      const unack = state.alarms.filter((alarm) => !alarm.acknowledged).length;
+      const stats = [
+        [active.length, "Active"],
+        [total, "Total today"],
+        [unack, "Unacknowledged"]
+      ].map(([num, label]) => `<div class="stat"><span class="num">${num}</span><span class="caption">${label}</span></div>`).join("");
+      $("#alarmStats").innerHTML = `<div class="alarm-stat-row">${stats}</div><canvas id="alarmDistribution" class="alarm-distribution" height="80"></canvas>`;
+      $("#activeAlarmRows").innerHTML = active.map(alarmRow).join("") || `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">No active alarms</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
+      $("#alarmHistoryRows").innerHTML = state.alarms.length ? state.alarms.slice(0, 50).map((alarm) => alarmRow(alarm, true)).join("") : `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">No alarm history</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
+      $$(".ack-btn").forEach((button) => button.addEventListener("click", () => {
+        const alarm = state.alarms.find((item) => item.id === button.dataset.ack);
+        if (!alarm) return;
+        state.acknowledgedAlarmIds.add(alarm.id);
+        alarm.acknowledged = true;
+        alarm.active = false;
+        renderPassive();
+      }));
+    }
+
+    function alarmRow(alarm, history = false) {
+      const active = alarm.active && !alarm.acknowledged && !history;
+      return `
+        <div class="alarm-row ${active ? "active-alarm" : ""}">
+          <div class="alarm-cell">${alarm.time}</div>
+          <div class="alarm-cell">${alarm.sensor}</div>
+          <div class="alarm-cell">${alarm.description}</div>
+          <div class="alarm-cell mono">${alarm.value}</div>
+          <div class="alarm-cell">${active ? `<button class="ack-btn" type="button" data-ack="${alarm.id}">Acknowledge</button>` : `<span class="dim">Acknowledged</span>`}</div>
+        </div>
+      `;
+    }
+
+    function tick() {
+      if (state.running) {
+        state.elapsedSeconds += 1;
+        state.programElapsed += 1;
+      }
+      $("#runClock").textContent = [Math.floor(state.elapsedSeconds / 3600), Math.floor((state.elapsedSeconds % 3600) / 60), state.elapsedSeconds % 60].map(pad2).join(":");
+      $("#wallClock").textContent = nowTime();
+      renderMonitor();
+      requestAnimationFrame(drawAll);
+    }
+
+    function drawAll() {
+      drawMiniTrends();
+      if (state.activeTab === "monitor") {
+        drawMainChart();
+        drawStageGantt();
+      }
+      if (state.activeTab === "recipes") {
+        drawRecipeTrend();
+        drawRecipeScatter();
+      }
+      if (state.activeTab === "ai") {
+        drawSensitivity();
+        drawLearning();
+      }
+      if (state.activeTab === "alarms") drawAlarmDistribution();
+      drawBigScreen();
+    }
+
+    function fitCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width * ratio));
+      const height = Math.max(1, Math.floor(rect.height * ratio));
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      return { ctx, w: rect.width, h: rect.height };
     }
 
     function drawMainChart() {
-      const canvas = $("temperatureChart");
-      const ctx = canvas.getContext("2d");
-      const w = canvas.width;
-      const h = canvas.height;
-      const pad = { l: 42, r: 92, t: 14, b: 24 };
-      const all = tempPoints.concat(targetPoints, aiPoints).filter(Number.isFinite);
-      const minY = Math.max(0, Math.floor((Math.min(...all, 20) - 10) / 10) * 10);
-      const maxY = Math.ceil((Math.max(...all, 120) + 10) / 10) * 10;
+      $$("[data-chart-card]").forEach((card) => {
+        const key = card.dataset.chartCard;
+        card.classList.toggle("active", key === state.chartMode);
+        card.classList.toggle("expanded", state.expandedChart === key);
+      });
+      $$("canvas[data-chart]").forEach((canvas) => drawMetricChart(canvas, canvas.dataset.chart, canvas.dataset.chart === state.chartMode));
+    }
 
+    function drawMetricChart(canvas, key, selected = false) {
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const values = state.histories[key] || [];
+      const target = state.targetHistories[key] || [];
+      const ai = state.aiHistories[key] || [];
+      const all = values.concat(target, ai).filter((value) => Number.isFinite(value));
+      const sensorMeta = sensor(key);
+      const rangeMin = sensorMeta?.min ?? 0;
+      const rangeMax = sensorMeta?.max ?? 1;
+      const span = all.length ? Math.max(...all) - Math.min(...all) : rangeMax - rangeMin;
+      const min = all.length ? Math.min(...all) - Math.max(0.01, span * 0.12) : rangeMin;
+      const max = all.length ? Math.max(...all) + Math.max(0.01, span * 0.12) : rangeMax;
+      const pad = { l: 42, r: 18, t: 12, b: 24 };
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "#FFFFFF";
+      ctx.fillStyle = "#FAF8F5";
       ctx.fillRect(0, 0, w, h);
-      ctx.font = "10px DM Mono, Consolas, monospace";
-      ctx.fillStyle = "#A0A8B5";
-      ctx.strokeStyle = "#DDE1E8";
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([3, 4]);
-      for (let i = 0; i <= 5; i++) {
-        const y = pad.t + i / 5 * (h - pad.t - pad.b);
-        const value = Math.round(maxY - i / 5 * (maxY - minY));
+      ctx.font = "300 10px Jost, sans-serif";
+      ctx.fillStyle = "#B0A898";
+      ctx.strokeStyle = "#E0DBD3";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.t + (i / 4) * (h - pad.t - pad.b);
+        const label = max - (i / 4) * (max - min);
         ctx.beginPath();
         ctx.moveTo(pad.l, y);
         ctx.lineTo(w - pad.r, y);
         ctx.stroke();
-        ctx.fillText(String(value), 10, y + 3);
+        ctx.fillText(fmtValue(label, 2), 4, y + 3);
       }
-      ctx.setLineDash([]);
-
-      for (let i = 0; i <= 8; i++) {
-        const x = pad.l + i / 8 * (w - pad.l - pad.r);
-        const label = i === 8 ? "now" : `-${8 - i}m`;
-        ctx.fillText(label, x - 10, h - 7);
+      for (let i = 0; i <= 10; i++) {
+        const x = pad.l + (i / 10) * (w - pad.l - pad.r);
+        const label = i === 10 ? "now" : `-${10 - i}m`;
+        if (selected || i % 2 === 0) ctx.fillText(label, x - 10, h - 6);
       }
-      ctx.fillText("°C", 10, 12);
-
-      drawSeries(ctx, tempPoints, "#1D4ED8", [], minY, maxY, pad, w, h);
-      drawSeries(ctx, targetPoints, "#6B7385", [5, 4], minY, maxY, pad, w, h);
-      drawSeries(ctx, aiPoints, "#D97706", [1, 4], minY, maxY, pad, w, h);
+      if (!values.length) {
+        ctx.fillStyle = "#7A7268";
+        ctx.fillText(state.backendError ? `code=${state.backendError.code} ${state.backendError.message}` : "waiting for data pipeline sample", pad.l, h / 2);
+        return;
+      }
+      drawLine(ctx, values, "#1A1814", [], 1.5, min, max, pad, w, h);
+      drawLine(ctx, target, "#B0A898", [4, 4], 1, min, max, pad, w, h);
+      drawLine(ctx, ai, "#2D5A3D", [2, 6], 1, min, max, pad, w, h);
     }
 
-    function drawSeries(ctx, points, color, dash, minY, maxY, pad, w, h) {
-      ctx.strokeStyle = color;
+    function drawMiniTrends() {
+      $$("[data-mini]").forEach((canvas) => {
+        const key = canvas.dataset.mini;
+        const values = state.histories[key] || [];
+        const { ctx, w, h } = fitCanvas(canvas);
+        ctx.clearRect(0, 0, w, h);
+        if (!values.length) return;
+        const meta = sensor(key);
+        const color = meta && isSensorOut(meta) ? "#8B3A2A" : "#2D5A3D";
+        const recent = values.slice(-300);
+        const min = Math.min(...recent);
+        const max = Math.max(...recent);
+        const pad = { l: 0, r: 0, t: 5, b: 5 };
+        ctx.beginPath();
+        recent.forEach((value, index) => {
+          const x = (index / Math.max(1, recent.length - 1)) * w;
+          const y = pad.t + (1 - (value - min) / Math.max(0.0001, max - min)) * (h - pad.t - pad.b);
+          if (index === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fillStyle = hexWithAlpha(color, 0.1);
+        ctx.fill();
+        drawLine(ctx, recent, color, [], 1.2, min, max, pad, w, h);
+      });
+    }
+
+    function hexWithAlpha(hex, alpha) {
+      const clean = hex.replace("#", "");
+      const r = parseInt(clean.slice(0, 2), 16);
+      const g = parseInt(clean.slice(2, 4), 16);
+      const b = parseInt(clean.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function drawStageGantt() {
+      const canvas = $("#stageGantt");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const total = state.stages.reduce((sum, stage) => sum + stage.duration * 60, 0) || 1;
+      const progressSeconds = clamp(state.programElapsed, 0, total);
+      let x = 0;
+      ctx.clearRect(0, 0, w, h);
+      ctx.font = "300 10px Jost, sans-serif";
+      state.stages.forEach((stage) => {
+        const width = (stage.duration * 60 / total) * w;
+        const start = x;
+        const end = x + width;
+        const stageStartSeconds = (start / w) * total;
+        const stageEndSeconds = (end / w) * total;
+        const completed = progressSeconds >= stageEndSeconds;
+        const current = progressSeconds >= stageStartSeconds && progressSeconds < stageEndSeconds;
+        ctx.fillStyle = completed ? "#2D5A3D" : current ? "#EBF2EE" : "#E0DBD3";
+        ctx.fillRect(start, 14, width, 22);
+        if (current) {
+          ctx.strokeStyle = "#2D5A3D";
+          ctx.lineWidth = 1;
+          for (let p = start - 30; p < end + 30; p += 8) {
+            ctx.beginPath();
+            ctx.moveTo(p, 36);
+            ctx.lineTo(p + 22, 14);
+            ctx.stroke();
+          }
+        }
+        ctx.strokeStyle = "#FAF8F5";
+        ctx.beginPath();
+        ctx.moveTo(end, 12);
+        ctx.lineTo(end, 38);
+        ctx.stroke();
+        ctx.fillStyle = "#7A7268";
+        ctx.fillText(stage.name, start + 4, 11);
+        x += width;
+      });
+      const marker = (progressSeconds / total) * w;
+      ctx.strokeStyle = "#1A1814";
       ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(marker, 7);
+      ctx.lineTo(marker, 48);
+      ctx.stroke();
+    }
+
+    function drawLine(ctx, points, color, dash, width, min, max, pad, w, h) {
+      if (!points.length) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
       ctx.setLineDash(dash);
       ctx.beginPath();
       points.forEach((value, index) => {
-        const x = pad.l + index / Math.max(1, points.length - 1) * (w - pad.l - pad.r);
-        const y = pad.t + (1 - (value - minY) / Math.max(1, maxY - minY)) * (h - pad.t - pad.b);
+        const x = pad.l + (index / Math.max(1, points.length - 1)) * (w - pad.l - pad.r);
+        const y = pad.t + (1 - (value - min) / Math.max(1, max - min)) * (h - pad.t - pad.b);
         if (index === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
@@ -1258,229 +2411,583 @@
       ctx.setLineDash([]);
     }
 
-    function renderHistory(outcomes, batches) {
-      let rows = [];
-      if (outcomes.length) {
-        const bestScore = Math.max(...outcomes.map(outcome => outcome.yield_percent));
-        rows = outcomes.slice(0, 7).map(outcome => [
-          `#${String(outcome.batch_id).padStart(3, "0")}`,
-          `${Math.round(outcome.target_temperature_c)}`,
-          `${round(outcome.yield_percent, 1)}%`,
-          outcome.yield_percent === bestScore ? "✓ 最优" : "已记录",
-          outcome.yield_percent === bestScore
-        ]);
-      } else {
-        rows = batches.slice(0, 7).map(batch => [
-          `#${String(batch.id).padStart(3, "0")}`,
-          `${Math.round(batch.target_temperature_c)}`,
-          "--",
-          batch.finished_at ? "待录入" : "运行中",
-          false
-        ]);
+    function drawRecipeTrend() {
+      const canvas = $("#recipeTrend");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const points = state.recipes[state.selectedRecipe]?.trend || [];
+      ctx.clearRect(0, 0, w, h);
+      const pad = { l: 38, r: 16, t: 12, b: 22 };
+      ctx.font = "300 10px Jost, sans-serif";
+      ctx.strokeStyle = "#E0DBD3";
+      ctx.fillStyle = "#B0A898";
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.t + (i / 4) * (h - pad.t - pad.b);
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(w - pad.r, y);
+        ctx.stroke();
+        const label = 100 - i * 25;
+        ctx.fillText(`${label}%`, 2, y + 3);
       }
-      if (!rows.length) rows = [["--", "--", "--", "待启动", false]];
-      $("historyRows").innerHTML = rows.map(row => `
-        <tr class="${row[4] ? "best" : ""}">
-          <td>${row[0]}</td>
-          <td class="mono">${row[1]}</td>
-          <td class="mono">${row[2]}</td>
-          <td>${row[3]}</td>
-        </tr>
-      `).join("");
+      if (!points.length) return;
+      const min = Math.max(0, Math.min(...points) - 5);
+      const max = Math.min(100, Math.max(...points) + 5);
+      const avg = points.reduce((sum, value) => sum + value, 0) / points.length;
+      const best = Math.max(...points);
+      const bestIndex = points.indexOf(best);
+      const yAvg = pad.t + (1 - (avg - min) / Math.max(1, max - min)) * (h - pad.t - pad.b);
+      ctx.strokeStyle = "#E0DBD3";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, yAvg);
+      ctx.lineTo(w - pad.r, yAvg);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      drawLine(ctx, points, "#2D5A3D", [], 1.4, min, max, pad, w, h);
+      const x = pad.l + (bestIndex / Math.max(1, points.length - 1)) * (w - pad.l - pad.r);
+      const y = pad.t + (1 - (best - min) / Math.max(1, max - min)) * (h - pad.t - pad.b);
+      ctx.fillStyle = "#2D5A3D";
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1A1814";
+      ctx.fillText(`Batch ${pad2(bestIndex + 1).padStart(3, "0")}`, Math.min(w - 80, x + 8), Math.max(12, y - 8));
     }
 
-    function renderRecentEvents(events) {
-      events.slice().reverse().forEach(event => {
-        if (seenEvents.has(event.id)) return;
-        seenEvents.add(event.id);
-        addLog(describeEvent(event), event.created_at);
+    function drawRecipeScatter() {
+      const canvas = $("#recipeScatter");
+      if (!canvas) return;
+      drawScatter(canvas, scatterRows("temp"), {
+        xLabel: "Target Temp",
+        yLabel: "Yield %",
+        xUnit: "°C",
+        title: "Temperature / Yield Distribution"
       });
     }
 
-    function describeEvent(event) {
-      const map = {
-        batch_started: "批次已启动，目标参数写入运行状态",
-        batch_finished: "批次已结束，等待产物结果录入",
-        product_result_recorded: "产物结果已保存，AI 推荐已刷新",
-        auto_enabled: "自动控制已开启",
-        auto_disabled: "自动控制已关闭",
-        emergency_stop: "人工急停已触发",
-        emergency_stop_reset: "急停状态已复位",
-        operator_targets_updated: "人工目标值已更新并完成限幅",
-        device_write: "目标温度/转速已下发到设备管线"
-      };
-      return map[event.event_type] || event.reason || event.event_type;
-    }
-
-    function addLog(message, timestamp = null) {
-      const log = $("eventLog");
-      const row = document.createElement("div");
-      row.className = "log-row";
-      const date = timestamp ? new Date(timestamp) : new Date();
-      const time = date.toLocaleTimeString("zh-CN", { hour12: false });
-      row.innerHTML = `<span class="log-time">${time}</span><span class="log-text">${message}</span>`;
-      log.appendChild(row);
-      while (log.children.length > 10) log.removeChild(log.firstChild);
-      log.scrollTop = log.scrollHeight;
-      $("aiUpdateTime").textContent = time;
-    }
-
-    function setOperatorNote(message, kind = "", stickyMs = 5000) {
-      const note = $("operatorNote");
-      note.textContent = message;
-      note.style.color = kind === "danger" ? "var(--danger)" : "var(--text-muted)";
-      operatorNoteStickyUntil = stickyMs > 0 ? Date.now() + stickyMs : 0;
-    }
-
-    async function pushTargets() {
-      try {
-        await api(`/api/v1/reactor/${deviceId}/control`, {
-          method: "POST",
-          body: JSON.stringify({
-            command_id: `cmd_${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            params: {
-              heat_time: controlMap.heatMinutes.value * 60,
-              hold_time: controlMap.stirMinutes.value * 60,
-              cool_time: 180,
-              stir_speed: controlMap.stirRpm.value,
-              shake_speed: 30,
-              target_temp: controlMap.targetTemp.value,
-              target_pressure: 0.5
-            },
-            priority: "normal",
-            auto_start: false
-          })
-        });
-        setOperatorNote("目标温度/转速已提交到后端安全限幅器。");
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`目标提交失败：${error.message}`, "danger");
-      }
-    }
-
-    async function startBatch() {
-      try {
-        await api("/api/batches/start", {
-          method: "POST",
-          body: JSON.stringify({
-            name: `batch-${new Date().toISOString()}`,
-            target_temperature_c: controlMap.targetTemp.value,
-            target_stirrer_rpm: controlMap.stirRpm.value,
-            heating_minutes: controlMap.heatMinutes.value,
-            stirring_minutes: controlMap.stirMinutes.value
-          })
-        });
-        elapsedSeconds = 0;
-        setOperatorNote("批次已启动。自动控制开启后才会持续下发目标值。");
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`启动失败：${error.message}`, "danger");
-      }
-    }
-
-    async function stopBatch() {
-      const id = lastLive && lastLive.runtime && lastLive.runtime.active_batch_id;
-      if (!id) return;
-      try {
-        await api(`/api/batches/${id}/finish`, { method: "POST" });
-        setOperatorNote("批次已结束，可以录入产率与产物比例。");
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`停止失败：${error.message}`, "danger");
-      }
-    }
-
-    async function toggleAuto() {
-      const enabled = !(lastLive && lastLive.runtime && lastLive.runtime.auto_enabled);
-      try {
-        await api("/api/control/auto", { method: "POST", body: JSON.stringify({ enabled }) });
-        setOperatorNote(`自动控制已${enabled ? "开启" : "关闭"}。`);
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`自动控制切换失败：${error.message}`, "danger");
-      }
-    }
-
-    async function emergencyStop() {
-      try {
-        await api("/api/control/emergency-stop", { method: "POST" });
-        setOperatorNote("急停已触发：自动控制已关闭。", "danger");
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`急停失败：${error.message}`, "danger");
-      }
-    }
-
-    async function resetEmergencyStop() {
-      try {
-        await api("/api/control/emergency-stop/reset", { method: "POST" });
-        setOperatorNote("急停状态已复位。请确认现场安全后再开启自动控制。 ");
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`急停复位失败：${error.message}`, "danger");
-      }
-    }
-
-    async function saveProductResult() {
-      const batches = (lastLive && lastLive.recent_batches) || [];
-      const batch = batches.find(item => item.finished_at);
-      if (!batch) {
-        setOperatorNote("没有已结束的批次可录入结果。", "danger");
+    function drawSensitivity() {
+      const canvas = $("#sensitivityChart");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      ctx.font = "300 12px Jost, sans-serif";
+      state.sensitivityHitboxes = [];
+      if (state.aiSensitivityParam) {
+        drawSensitivityScatter(canvas, state.aiSensitivityParam);
         return;
       }
-      try {
-        await api("/api/product-results", {
-          method: "POST",
-          body: JSON.stringify({
-            batch_id: batch.id,
-            yield_percent: Number($("yieldInput").value),
-            product_ratio: Number($("ratioInput").value),
-            notes: $("notesInput").value
-          })
-        });
-        setOperatorNote(`批次 #${String(batch.id).padStart(3, "0")} 结果已录入，AI 推荐已重新生成。`);
-        await pollLive();
-      } catch (error) {
-        setOperatorNote(`结果录入失败：${error.message}`, "danger");
+      const labelW = 116;
+      if (!state.coefficients.length) {
+        ctx.fillStyle = "#7A7268";
+        ctx.fillText("等待批次结果生成参数影响分析", 0, 24);
+        return;
+      }
+      state.coefficients.forEach(([name, coef], index) => {
+        const y = 26 + index * 34;
+        ctx.fillStyle = "#7A7268";
+        ctx.fillText(name, 0, y + 5);
+        state.sensitivityHitboxes.push({ name, x: 0, y: y - 12, w: labelW - 8, h: 24 });
+        ctx.fillStyle = coef < 0 ? "#8B3A2A" : "#2D5A3D";
+        ctx.fillRect(labelW, y - 5, Math.abs(coef) * (w - labelW - 70), 14);
+        ctx.font = "400 13px DM Serif Display, serif";
+        ctx.fillStyle = "#1A1814";
+        ctx.fillText(`${coef >= 0 ? "+" : ""}${coef.toFixed(2)}`, w - 48, y + 6);
+        ctx.font = "300 12px Jost, sans-serif";
+      });
+    }
+
+    function drawSensitivityScatter(canvas, paramName) {
+      const rows = scatterRows(paramKey(paramName));
+      drawScatter(canvas, rows, {
+        xLabel: paramName,
+        yLabel: "Yield %",
+        title: `${paramName} / Yield`
+      });
+    }
+
+    function paramKey(name) {
+      return {
+        "Temperature": "temp",
+        "Hold Duration": "hold",
+        "Stirrer RPM": "rpm",
+        "Reactant Ratio": "ratio"
+      }[name] || "temp";
+    }
+
+    function scatterRows(key) {
+      return state.batches
+        .filter((batch) => toNumber(batch[key]) !== null && toNumber(batch.yield) !== null)
+        .map((batch) => ({
+          id: batch.id,
+          x: toNumber(batch[key]),
+          y: toNumber(batch.yield),
+          temp: toNumber(batch.temp),
+          hold: toNumber(batch.hold),
+          rpm: toNumber(batch.rpm),
+          ratio: toNumber(batch.ratio)
+        }));
+    }
+
+    function drawScatter(canvas, rows, options = {}) {
+      const { ctx, w, h } = fitCanvas(canvas);
+      const pad = { l: 44, r: 18, t: 24, b: 28 };
+      ctx.clearRect(0, 0, w, h);
+      ctx.font = "300 10px Jost, sans-serif";
+      ctx.fillStyle = "#7A7268";
+      if (options.title) ctx.fillText(options.title, pad.l, 13);
+      ctx.strokeStyle = "#E0DBD3";
+      for (let i = 0; i <= 3; i++) {
+        const y = pad.t + (i / 3) * (h - pad.t - pad.b);
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(w - pad.r, y);
+        ctx.stroke();
+      }
+      if (!rows.length) {
+        ctx.fillText("等待后端批次结果", pad.l, h / 2);
+        canvas.__points = [];
+        return;
+      }
+      const xs = rows.map((row) => row.x);
+      const ys = rows.map((row) => row.y);
+      const xMin = Math.min(...xs);
+      const xMax = Math.max(...xs);
+      const yMin = Math.max(0, Math.min(...ys) - 4);
+      const yMax = Math.min(100, Math.max(...ys) + 4);
+      ctx.fillText(options.xLabel || "X", w - 86, h - 7);
+      ctx.save();
+      ctx.translate(10, h / 2 + 20);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(options.yLabel || "Y", 0, 0);
+      ctx.restore();
+      canvas.__points = rows.map((row) => {
+        const x = pad.l + ((row.x - xMin) / Math.max(0.0001, xMax - xMin)) * (w - pad.l - pad.r);
+        const y = pad.t + (1 - (row.y - yMin) / Math.max(0.0001, yMax - yMin)) * (h - pad.t - pad.b);
+        ctx.fillStyle = "#2D5A3D";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        return { ...row, px: x, py: y };
+      });
+    }
+
+    function drawLearning() {
+      const canvas = $("#learningChart");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const yields = state.batches.map((batch) => toNumber(batch.yield)).filter((value) => value !== null);
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#E0DBD3";
+      for (let i = 0; i <= 3; i++) {
+        const y = 12 + (i / 3) * (h - 28);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+      if (!yields.length) {
+        ctx.fillStyle = "#7A7268";
+        ctx.font = "300 12px Jost, sans-serif";
+        ctx.fillText("等待产物结果录入", 8, h / 2);
+        return;
+      }
+      const deviations = yields.map((value, index, arr) => {
+        const previous = arr.slice(0, Math.max(1, index)).reduce((sum, item) => sum + item, 0) / Math.max(1, index);
+        return value - previous;
+      });
+      drawLine(ctx, yields, "#1A1814", [], 1.4, Math.min(...yields) - 2, Math.max(...yields) + 2, { l: 8, r: 46, t: 18, b: 24 }, w, h);
+      const devMin = Math.min(...deviations, -1);
+      const devMax = Math.max(...deviations, 1);
+      drawLine(ctx, deviations, "#B0A898", [4, 4], 1.2, devMin, devMax, { l: 8, r: 46, t: 18, b: 24 }, w, h);
+      ctx.fillStyle = "#7A7268";
+      ctx.font = "300 10px Jost, sans-serif";
+      ctx.fillText("Yield %", w - 68, 18);
+      ctx.fillText("Prediction error", w - 104, 32);
+      [Math.floor(yields.length / 2), yields.length].filter(Boolean).forEach((batchNo) => {
+        const x = 8 + (batchNo / Math.max(1, yields.length)) * (w - 18);
+        ctx.strokeStyle = "#B0A898";
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x, 10);
+        ctx.lineTo(x, h - 18);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "#7A7268";
+        ctx.font = "300 10px Jost, sans-serif";
+        ctx.fillText("模型更新", x + 4, 18);
+      });
+    }
+
+    function drawAlarmDistribution() {
+      const canvas = $("#alarmDistribution");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const counts = Array.from({ length: 24 }, () => 0);
+      for (const alarm of state.alarms) {
+        const hour = Number(String(alarm.time || "").slice(0, 2));
+        if (Number.isInteger(hour) && hour >= 0 && hour < 24) counts[hour] += 1;
+      }
+      const max = Math.max(1, ...counts);
+      const nowHour = new Date().getHours();
+      const pad = { l: 0, r: 0, t: 8, b: 16 };
+      const barW = w / 24;
+      ctx.clearRect(0, 0, w, h);
+      counts.forEach((count, hour) => {
+        const barH = (count / max) * (h - pad.t - pad.b);
+        ctx.fillStyle = hour === nowHour ? "#7A5C1E" : count > 0 ? "#8B3A2A" : "#E0DBD3";
+        ctx.fillRect(hour * barW + 1, h - pad.b - barH, Math.max(1, barW - 2), barH || 2);
+      });
+      ctx.fillStyle = "#B0A898";
+      ctx.font = "300 10px Jost, sans-serif";
+      ["00:00", "06:00", "12:00", "18:00"].forEach((label, index) => {
+        ctx.fillText(label, (index * 6 / 24) * w, h - 3);
+      });
+    }
+
+    function updateBigScreenText() {
+      if (!$("#bigScreen") || $("#bigScreen").hidden) return;
+      const rec = activeRecommendation();
+      const active = activeAlarms().length;
+      const latestYield = state.batches.map((batch) => toNumber(batch.yield)).filter((value) => value !== null).at(-1);
+      $("#bigTempValue").textContent = `${fmtValue(sensor("temperature").value, 2)} °C`;
+      $("#bigYieldValue").textContent = latestYield === undefined ? "--%" : `${fmtValue(latestYield, 2)}%`;
+      $("#bigAiSummary").textContent = `Temp ${fmtValue(rec.temp, 2)} °C / RPM ${fmtValue(rec.rpm, 2)}`;
+      $("#bigAlarmValue").textContent = String(active);
+      $("#bigAlarmTile").classList.toggle("alarm", active > 0);
+    }
+
+    function drawBigScreen() {
+      if (!$("#bigScreen") || $("#bigScreen").hidden) return;
+      updateBigScreenText();
+      drawBigProgress();
+      const canvas = $("#bigTempChart");
+      if (canvas) drawMetricChart(canvas, "temperature", true);
+    }
+
+    function drawBigProgress() {
+      const canvas = $("#bigProgress");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const progress = stageProgress() / 100;
+      const cx = w / 2;
+      const cy = h / 2;
+      const radius = Math.min(w, h) / 2 - 10;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#E0DBD3";
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, -Math.PI / 2, Math.PI * 1.5);
+      ctx.stroke();
+      ctx.strokeStyle = "#2D5A3D";
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+      ctx.stroke();
+      ctx.fillStyle = "#1A1814";
+      ctx.font = "400 28px DM Serif Display, serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${fmtValue(progress * 100, 0)}%`, cx, cy + 9);
+      ctx.textAlign = "left";
+    }
+
+    function showBigScreen() {
+      $("#bigScreen").hidden = false;
+      drawBigScreen();
+    }
+
+    function hideBigScreen() {
+      $("#bigScreen").hidden = true;
+    }
+
+    function showTooltip(x, y, html) {
+      const tip = $("#chartTooltip");
+      if (!tip) return;
+      tip.innerHTML = html;
+      tip.style.left = `${x + 12}px`;
+      tip.style.top = `${y + 12}px`;
+      tip.style.display = "block";
+    }
+
+    function hideTooltip() {
+      const tip = $("#chartTooltip");
+      if (tip) tip.style.display = "none";
+    }
+
+    function handleScatterHover(event) {
+      const canvas = event.currentTarget;
+      const points = canvas.__points || [];
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const hit = points.find((point) => Math.hypot(point.px - x, point.py - y) <= 8);
+      if (!hit) {
+        hideTooltip();
+        return;
+      }
+      showTooltip(event.clientX, event.clientY, `Batch ${pad2(hit.id).padStart(3, "0")}<br>Yield ${fmtValue(hit.y, 2)}%<br>Temp ${fmtValue(hit.temp, 2)} °C<br>Hold ${fmtValue(hit.hold, 2)} min<br>RPM ${fmtValue(hit.rpm, 2)}`);
+    }
+
+    function confirmDanger(button, confirmLabel, action) {
+      if (!button) return;
+      const original = button.dataset.originalText || button.textContent;
+      if (button.dataset.confirming === "true") {
+        button.dataset.confirming = "false";
+        button.textContent = original;
+        action();
+        return;
+      }
+      button.dataset.originalText = original;
+      button.dataset.confirming = "true";
+      button.textContent = confirmLabel;
+      window.clearTimeout(button.__confirmTimer);
+      button.__confirmTimer = window.setTimeout(() => {
+        button.dataset.confirming = "false";
+        button.textContent = original;
+      }, 1500);
+    }
+
+    function renderAll() {
+      renderSidebar();
+      renderMonitor();
+      renderProgram();
+      renderMaterials();
+      renderRecipes();
+      renderAI();
+      renderAlarms();
+      drawAll();
+    }
+
+    function downloadText(filename, text, type = "text/plain") {
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportCsv(kind) {
+      if (kind === "pdf") {
+        window.print();
+        return;
+      }
+      if (kind === "batches") {
+        const rows = ["batch,temp,hold,rpm,yield,ratio"].concat(state.batches.map((batch) => `${batch.id},${fmtValue(batch.temp)},${fmtValue(batch.hold)},${fmtValue(batch.rpm)},${fmtValue(batch.yield)},${fmtValue(batch.ratio)}`));
+        downloadText("reactor-history.csv", rows.join("\n"), "text/csv");
+      }
+      if (kind === "alarms") {
+        const rows = ["id,time,sensor,description,value,active,acknowledged"].concat(state.alarms.map((alarm) => `${alarm.id},${alarm.time},${alarm.sensor},${alarm.description},${alarm.value},${alarm.active},${alarm.acknowledged}`));
+        downloadText("reactor-alarms.csv", rows.join("\n"), "text/csv");
       }
     }
 
-    async function applyRecommendation() {
-      setControl("targetTemp", recommendation.targetTemp, true, true);
-      setControl("heatMinutes", recommendation.heatMinutes, true, true);
-      setControl("stirMinutes", recommendation.stirMinutes, true, true);
-      setControl("stirRpm", recommendation.stirRpm, true, true);
-      addLog("AI 推荐参数已填入控制面板并准备提交");
-      setOperatorNote("AI 推荐参数已填入。启动批次或继续调整目标值时会经过后端安全限幅。");
-    }
-
-    function updateClocks() {
-      const now = new Date();
-      $("wallClock").textContent = now.toLocaleTimeString("zh-CN", { hour12: false });
-      if (running) elapsedSeconds += 1;
-      const hh = String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0");
-      const mm = String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0");
-      const ss = String(elapsedSeconds % 60).padStart(2, "0");
-      $("runClock").textContent = `${hh}:${mm}:${ss}`;
+    function bindGlobal() {
+      $$(".tab-btn").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
+      $("#alarmSummary").addEventListener("click", () => switchTab("alarms"));
+      $$(".chart-tab").forEach((button) => button.addEventListener("click", () => {
+        state.chartMode = button.dataset.chart;
+        $$(".chart-tab").forEach((item) => item.classList.toggle("active", item === button));
+        drawMainChart();
+      }));
+      $$("#monitorCharts .chart-card").forEach((card) => card.addEventListener("click", () => {
+        const key = card.dataset.chartCard;
+        state.chartMode = key;
+        state.expandedChart = state.expandedChart === key ? null : key;
+        $$(".chart-tab").forEach((item) => item.classList.toggle("active", item.dataset.chart === key));
+        drawMainChart();
+      }));
+      $("#addStageBtn").addEventListener("click", () => {
+        if (state.stages.length >= 8) return;
+        state.stages.push({ name: "Hold", temp: 180, rate: 0, duration: 30, rpm: 450, cooling: "自然" });
+        state.selectedStage = state.stages.length - 1;
+        renderProgram();
+      });
+      $("#deleteStageBtn").addEventListener("click", () => confirmDanger($("#deleteStageBtn"), "确认删除", () => {
+        if (state.stages.length <= 1) return;
+        state.stages.splice(state.selectedStage, 1);
+        state.selectedStage = Math.max(0, state.selectedStage - 1);
+        renderProgram();
+      }));
+      $("#saveRecipeBtn").addEventListener("click", () => {
+        const yields = state.batches.map((batch) => batch.yield).filter((value) => value !== null);
+        const best = yields.length ? Math.max(...yields) : null;
+        const low = yields.length ? Math.min(...yields) : null;
+        state.recipes.unshift({
+          name: `Recipe ${state.recipes.length + 1}`,
+          created: new Date().toISOString().slice(0, 19).replace("T", " "),
+          runs: state.batches.length,
+          best,
+          avg: yields.length ? yields.reduce((sum, value) => sum + value, 0) / yields.length : null,
+          low,
+          bestBatch: state.batches.find((batch) => batch.yield === best)?.id || 0,
+          lowBatch: state.batches.find((batch) => batch.yield === low)?.id || 0,
+          trend: yields.slice(-5),
+          stages: state.stages.map((stage) => ({ ...stage }))
+        });
+        state.selectedRecipe = 0;
+        switchTab("recipes");
+        renderRecipes();
+      });
+      $("#loadRecipeBtn").addEventListener("click", () => switchTab("recipes"));
+      $("#startProgramBtn").addEventListener("click", async () => {
+        const stage = currentStage();
+        try {
+          const batch = await apiJson("/api/batches/start", {
+            method: "POST",
+            json: {
+              name: `program-${Date.now()}`,
+              target_temperature_c: toNumber(stage.temp),
+              target_stirrer_rpm: toNumber(stage.rpm),
+              heating_minutes: toNumber(state.stages[0]?.duration) ?? toNumber(stage.duration),
+              stirring_minutes: toNumber(stage.duration)
+            }
+          });
+          state.activeBatchId = batch.id;
+          state.completedBatchId = batch.id;
+          await apiJson("/api/control/auto", { method: "POST", json: { enabled: true } });
+          await pollBackend();
+        } catch (err) {
+          state.backendError = { code: err.code || 500, message: err.message || "启动失败" };
+          applyPipelineError();
+          renderPassive();
+        }
+      });
+      $("#finishBatchBtn").addEventListener("click", () => confirmDanger($("#finishBatchBtn"), "确认停止", async () => {
+        const batchId = state.activeBatchId;
+        if (!batchId) return;
+        try {
+          await apiJson(`/api/batches/${batchId}/finish`, { method: "POST" });
+          state.completedBatchId = batchId;
+          state.activeBatchId = null;
+          state.running = false;
+          await pollBackend();
+          renderMaterials();
+        } catch (err) {
+          state.backendError = { code: err.code || 500, message: err.message || "结束批次失败" };
+          applyPipelineError();
+          renderPassive();
+        }
+      }));
+      $("#newRecipeBtn").addEventListener("click", () => {
+        state.recipes.unshift({
+          ...recipe("新建配方", 0, null, null, null, 0, 0, []),
+          stages: state.stages.map((stage) => ({ ...stage }))
+        });
+        state.selectedRecipe = 0;
+        renderRecipes();
+      });
+      $("#addMaterialBtn").addEventListener("click", () => {
+        state.ingredients.push({ name: "New material", lot: "LOT-", amount: 1.0, purity: 99.0 });
+        renderMaterials();
+      });
+      ["productMass", "theoreticalMass"].forEach((id) => $(`#${id}`).addEventListener("input", computeYield));
+      $("#saveProductBtn").addEventListener("click", async () => {
+        if (state.running) return;
+        const batchId = await latestFinishedBatchId();
+        if (!batchId) return;
+        const ratio = (state.ingredients[0]?.amount || 0) / Math.max(0.0001, (state.ingredients[0]?.amount || 0) + (state.ingredients[1]?.amount || 0));
+        try {
+          await apiJson("/api/product-results", {
+            method: "POST",
+            json: {
+              batch_id: batchId,
+              yield_percent: toNumber($("#computedYield").textContent.replace("%", "")) ?? 0,
+              product_ratio: clamp(ratio, 0, 1),
+              notes: $("#productNotes").value || ""
+            }
+          });
+          await pollBackend();
+        } catch (err) {
+          state.backendError = { code: err.code || 500, message: err.message || "保存产物记录失败" };
+          applyPipelineError();
+          renderPassive();
+        }
+      });
+      $("#applyAiBtn").addEventListener("click", async () => {
+        const rec = state.aiRecommendation;
+        if (!rec) return;
+        const holdStage = state.stages.find((stage) => stage.name.toLowerCase().includes("hold")) || state.stages[0];
+        holdStage.temp = rec.temp;
+        holdStage.duration = rec.hold;
+        holdStage.rpm = rec.rpm;
+        sensor("temperature").target = rec.temp;
+        sensor("rpm").target = rec.rpm;
+        try {
+          await apiJson(`/api/v1/reactor/${API_DEVICE_ID}/control`, {
+            method: "POST",
+            json: {
+              command_id: `ai_${Date.now()}`,
+              timestamp: new Date().toISOString(),
+              params: {
+                heat_time: (toNumber(rec.hold) ?? 0) * 60,
+                hold_time: (toNumber(rec.stir) ?? toNumber(rec.hold) ?? 0) * 60,
+                cool_time: 180,
+                stir_speed: toNumber(rec.rpm),
+                shake_speed: 30,
+                target_temp: toNumber(rec.temp),
+                target_pressure: sensor("pressure").target || 0.5
+              },
+              priority: "normal",
+              auto_start: false
+            }
+          });
+          await pollBackend();
+        } catch (err) {
+          state.backendError = { code: err.code || 500, message: err.message || "应用 AI 推荐失败" };
+          applyPipelineError();
+          renderPassive();
+        }
+        switchTab("program");
+        renderProgram();
+      });
+      $("#sensitivityChart").addEventListener("click", (event) => {
+        if (state.aiSensitivityParam) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        const hit = state.sensitivityHitboxes.find((box) => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h);
+        if (!hit) return;
+        state.aiSensitivityParam = hit.name;
+        $("#resetSensitivityBtn").hidden = false;
+        drawSensitivity();
+      });
+      $("#sensitivityChart").addEventListener("mousemove", handleScatterHover);
+      $("#sensitivityChart").addEventListener("mouseleave", hideTooltip);
+      $("#resetSensitivityBtn").addEventListener("click", () => {
+        state.aiSensitivityParam = null;
+        $("#resetSensitivityBtn").hidden = true;
+        hideTooltip();
+        drawSensitivity();
+      });
+      $("#bigScreenBtn").addEventListener("click", showBigScreen);
+      $("#bigScreenClose").addEventListener("click", hideBigScreen);
+      $("#exportTrigger").addEventListener("click", () => $("#exportBox").classList.toggle("open"));
+      $$(".export-menu button").forEach((button) => button.addEventListener("click", () => exportCsv(button.dataset.export)));
+      document.addEventListener("mousemove", (event) => {
+        if (event.target?.id === "recipeScatter") {
+          handleScatterHover({ currentTarget: event.target, clientX: event.clientX, clientY: event.clientY });
+        }
+      });
+      $("#recipeDetail").addEventListener("mouseleave", hideTooltip);
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") hideBigScreen();
+      });
+      window.addEventListener("resize", drawAll);
     }
 
     function boot() {
-      renderSensors();
-      bindControls();
-      sensors.forEach(drawMini);
-      drawMainChart();
-      addLog("上位机界面已加载，等待后端采集快照");
-      updateRecommendationComparison();
-      updateClocks();
-      pollLive();
-
-      setInterval(updateClocks, 1000);
-      setInterval(pollLive, 2000);
+      seedData();
+      bindGlobal();
+      renderTabs();
+      renderAll();
+      setInterval(tick, 1000);
+      pollBackend();
+      setInterval(pollBackend, 2000);
+      window.__reactorState = state;
     }
 
     boot();
   </script>
 </body>
 </html>
-

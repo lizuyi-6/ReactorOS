@@ -89,7 +89,7 @@ fn builds_tx_command_with_checksum() {
     };
 
     let frame = build_esp32_command("TX", &command, true);
-    let body = "TX|v=1|heat_time=300|hold_time=600|cool_time=180|target_temp=192.0|stir_speed=520|shake_speed=35|target_pressure=0.50";
+    let body = "TX|v=1|heat_time=300.00|hold_time=600.00|cool_time=180.00|target_temp=192.00|stir_speed=520.00|shake_speed=35.00|target_pressure=0.50";
     let expected = format!("{body}|chk={}\n", checksum_hex(body.as_bytes()));
 
     assert_eq!(frame, expected);

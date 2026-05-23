@@ -11,12 +11,16 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{
+    ai_provider::{
+        fallback_envelope, local_envelope, stepfun_envelope, AiProvider, AiRecommendationEnvelope,
+        AiRecommendationProvider,
+    },
     config::SafetyConfig,
     control::{clamp_operator_targets, SafeCommand},
     db::{Batch, BatchOutcome, ControlEvent, Db, ProductResult},
@@ -31,6 +35,7 @@ pub struct AppState {
     pub runtime: SharedState,
     pub safety: Arc<SafetyConfig>,
     pub ai_memory: Arc<AiMemory>,
+    pub ai_provider: Option<Arc<AiProvider>>,
     pub test_reset_enabled: bool,
 }
 
@@ -44,6 +49,7 @@ pub struct HealthResponse {
 pub struct LiveResponse {
     pub runtime: RuntimeState,
     pub latest_recommendation: Option<Recommendation>,
+    pub ai_provider: AiRecommendationProvider,
     pub recent_samples: Vec<SensorSnapshot>,
     pub recent_batches: Vec<Batch>,
     pub recent_outcomes: Vec<BatchOutcome>,
@@ -133,11 +139,26 @@ pub struct V1ProcessPhase {
     pub params: Value,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PipelineSampleRequest {
+    pub temperature_c: f64,
+    pub pressure_mpa: f64,
+    pub stirrer_rpm: f64,
+    pub shake_speed_cpm: f64,
+    pub flow_rate_l_min: f64,
+    pub product_concentration_percent: f64,
+    pub ph: f64,
+}
+
 pub fn router(state: AppState, assets: PathBuf) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/live", get(live))
         .route("/api/v1/reactor/:device_id/control", post(v1_control))
+        .route(
+            "/api/v1/reactor/:device_id/samples",
+            post(v1_pipeline_sample),
+        )
         .route("/api/v1/reactor/:device_id/realtime", get(v1_realtime))
         .route("/api/v1/reactor/:device_id/history", get(v1_history))
         .route("/api/v1/reactor/:device_id/process", post(v1_process))
@@ -154,6 +175,7 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
             post(reset_emergency_stop),
         )
         .route("/api/test/reset", post(test_reset))
+        .route("/api/test/pipeline-sample", post(test_pipeline_sample))
         .route("/api/recommendations/latest", get(latest_recommendation))
         .nest_service(
             "/",
@@ -179,15 +201,18 @@ async fn health() -> Json<HealthResponse> {
 
 async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppError> {
     let runtime = state.runtime.read().await.clone();
+    ensure_fresh_sample(&state, &runtime)?;
     let recent_samples = state.db.recent_samples(480)?;
     let recent_batches = state.db.recent_batches(20)?;
     let recent_outcomes = state.db.recent_batch_outcomes(20)?;
     let recent_events = state.db.recent_control_events(20)?;
     let ai_memory = AiMemorySummary::from(state.ai_memory.as_ref());
-    let latest_recommendation = Some(current_recommendation(&state)?);
+    let recommendation = current_cached_or_local_recommendation(&state)?;
+    let ai_provider = local_provider_for(&state);
     Ok(Json(LiveResponse {
         runtime,
-        latest_recommendation,
+        latest_recommendation: Some(recommendation),
+        ai_provider,
         recent_samples,
         recent_batches,
         recent_outcomes,
@@ -263,11 +288,25 @@ async fn v1_control(
     }))))
 }
 
+async fn v1_pipeline_sample(
+    State(state): State<AppState>,
+    Path(device_id): Path<String>,
+    Json(payload): Json<PipelineSampleRequest>,
+) -> Result<Json<V1Envelope<Value>>, AppError> {
+    let sample = accept_pipeline_sample(&state, payload).await?;
+    Ok(Json(success(json!({
+        "device_id": device_id,
+        "timestamp": sample.captured_at.to_rfc3339(),
+        "sample": sample
+    }))))
+}
+
 async fn v1_realtime(
     State(state): State<AppState>,
     Path(device_id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     let runtime = state.runtime.read().await.clone();
+    ensure_fresh_sample(&state, &runtime)?;
     Ok(Json(v1_realtime_payload(
         &device_id,
         &runtime,
@@ -411,15 +450,18 @@ async fn v1_process(
             target_pressure_mpa = Some(pressure);
         }
     }
-    let targets = ControlTargets {
-        temperature_c: target_temperature.unwrap_or(120.0),
-        heat_time_s: heat_time_s.unwrap_or(300.0),
-        hold_time_s: hold_time_s.unwrap_or(600.0),
-        cool_time_s: cool_time_s.unwrap_or(180.0),
-        stirrer_rpm: stirrer_rpm.unwrap_or(800.0),
-        shake_speed_cpm: shake_speed_cpm.unwrap_or(30.0),
-        target_pressure_mpa: target_pressure_mpa.unwrap_or(0.5),
-    };
+    let targets = clamp_operator_targets(
+        &state.safety,
+        ControlTargets {
+            temperature_c: target_temperature.unwrap_or(120.0),
+            heat_time_s: heat_time_s.unwrap_or(300.0),
+            hold_time_s: hold_time_s.unwrap_or(600.0),
+            cool_time_s: cool_time_s.unwrap_or(180.0),
+            stirrer_rpm: stirrer_rpm.unwrap_or(800.0),
+            shake_speed_cpm: shake_speed_cpm.unwrap_or(30.0),
+            target_pressure_mpa: target_pressure_mpa.unwrap_or(0.5),
+        },
+    );
     {
         let mut runtime = state.runtime.write().await;
         runtime.targets = targets.clone();
@@ -464,17 +506,21 @@ async fn start_batch(
         let runtime = state.runtime.read().await;
         runtime.targets.clone()
     };
-    let target_temperature_c = payload
-        .target_temperature_c
-        .unwrap_or(targets.temperature_c);
-    let target_stirrer_rpm = payload.target_stirrer_rpm.unwrap_or(targets.stirrer_rpm);
+    let target_temperature_c = round2(
+        payload
+            .target_temperature_c
+            .unwrap_or(targets.temperature_c),
+    );
+    let target_stirrer_rpm = round2(payload.target_stirrer_rpm.unwrap_or(targets.stirrer_rpm));
+    let heating_minutes = round2(payload.heating_minutes.unwrap_or(60.0));
+    let stirring_minutes = round2(payload.stirring_minutes.unwrap_or(60.0));
     let name = payload.name.unwrap_or_else(|| "batch".to_string());
     let batch = state.db.create_batch(
         &name,
         target_temperature_c,
         target_stirrer_rpm,
-        payload.heating_minutes.unwrap_or(60.0),
-        payload.stirring_minutes.unwrap_or(60.0),
+        heating_minutes,
+        stirring_minutes,
     )?;
     {
         let mut runtime = state.runtime.write().await;
@@ -521,7 +567,7 @@ async fn finish_batch(
 async fn product_results(
     State(state): State<AppState>,
     Json(payload): Json<ProductResultRequest>,
-) -> Result<Json<Recommendation>, AppError> {
+) -> Result<Json<AiRecommendationEnvelope>, AppError> {
     if !(0.0..=100.0).contains(&payload.yield_percent) {
         return Err(AppError::bad_request(
             "yield_percent must be between 0 and 100",
@@ -534,13 +580,11 @@ async fn product_results(
     }
     state.db.insert_product_result(&ProductResult {
         batch_id: payload.batch_id,
-        yield_percent: payload.yield_percent,
-        product_ratio: payload.product_ratio,
+        yield_percent: round2(payload.yield_percent),
+        product_ratio: round2(payload.product_ratio),
         notes: payload.notes.unwrap_or_default(),
     })?;
-    let outcomes = state.db.batch_outcomes()?;
-    let recommendation =
-        recommend_with_memory(&state.safety.optimizer, Some(&state.ai_memory), &outcomes);
+    let recommendation = generate_recommendation(&state).await?;
     state.db.insert_recommendation(&recommendation)?;
     state.db.insert_control_event(
         Some(payload.batch_id),
@@ -548,7 +592,7 @@ async fn product_results(
         None,
         "product result saved and recommendation regenerated",
     )?;
-    Ok(Json(recommendation))
+    Ok(Json(recommendation_envelope(&state, recommendation).await))
 }
 
 async fn set_auto(
@@ -662,8 +706,12 @@ async fn reset_emergency_stop(State(state): State<AppState>) -> Result<StatusCod
 
 async fn latest_recommendation(
     State(state): State<AppState>,
-) -> Result<Json<Option<Recommendation>>, AppError> {
-    Ok(Json(Some(current_recommendation(&state)?)))
+) -> Result<Json<Option<AiRecommendationEnvelope>>, AppError> {
+    let recommendation = generate_recommendation(&state).await?;
+    state.db.insert_recommendation(&recommendation)?;
+    Ok(Json(Some(
+        recommendation_envelope(&state, recommendation).await,
+    )))
 }
 
 async fn test_reset(State(state): State<AppState>) -> Result<StatusCode, AppError> {
@@ -681,13 +729,154 @@ async fn test_reset(State(state): State<AppState>) -> Result<StatusCode, AppErro
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn current_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
+async fn test_pipeline_sample(
+    State(state): State<AppState>,
+    Json(payload): Json<PipelineSampleRequest>,
+) -> Result<Json<SensorSnapshot>, AppError> {
+    if !state.test_reset_enabled {
+        return Err(AppError {
+            status: StatusCode::NOT_FOUND,
+            message: "not found".to_string(),
+        });
+    }
+
+    let sample = accept_pipeline_sample(&state, payload).await?;
+    Ok(Json(sample))
+}
+
+async fn accept_pipeline_sample(
+    state: &AppState,
+    payload: PipelineSampleRequest,
+) -> Result<SensorSnapshot, AppError> {
+    let sample = pipeline_sample_from_request(payload)?;
+    let active_batch_id = {
+        let mut runtime = state.runtime.write().await;
+        runtime.latest_sample = Some(sample.clone());
+        runtime.last_control_error = None;
+        runtime.active_batch_id
+    };
+    state.db.insert_sample(active_batch_id, &sample)?;
+    Ok(sample)
+}
+
+fn pipeline_sample_from_request(
+    payload: PipelineSampleRequest,
+) -> Result<SensorSnapshot, AppError> {
+    Ok(SensorSnapshot {
+        temperature_c: round2_finite("temperature_c", payload.temperature_c)?,
+        pressure_mpa: round2_finite("pressure_mpa", payload.pressure_mpa)?,
+        stirrer_rpm: round2_finite("stirrer_rpm", payload.stirrer_rpm)?,
+        shake_speed_cpm: round2_finite("shake_speed_cpm", payload.shake_speed_cpm)?,
+        flow_rate_l_min: round2_finite("flow_rate_l_min", payload.flow_rate_l_min)?,
+        product_concentration_percent: round2_finite(
+            "product_concentration_percent",
+            payload.product_concentration_percent,
+        )?,
+        ph: round2_finite("ph", payload.ph)?,
+        captured_at: Utc::now(),
+    })
+}
+
+fn ensure_fresh_sample(state: &AppState, runtime: &RuntimeState) -> Result<(), AppError> {
+    let Some(sample) = &runtime.latest_sample else {
+        return Err(AppError::service_unavailable(
+            "sensor data unavailable; waiting for ESP32/data pipeline sample",
+        ));
+    };
+    let max_age = Duration::milliseconds(state.safety.control.sensor_timeout_ms);
+    let age = Utc::now().signed_duration_since(sample.captured_at);
+    if age > max_age {
+        return Err(AppError::service_unavailable(format!(
+            "sensor data stale; last data pipeline sample is {} ms old",
+            age.num_milliseconds()
+        )));
+    }
+    Ok(())
+}
+
+fn local_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
     let outcomes = state.db.batch_outcomes()?;
     Ok(recommend_with_memory(
         &state.safety.optimizer,
         Some(&state.ai_memory),
         &outcomes,
     ))
+}
+
+fn current_cached_or_local_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
+    if let Some(recommendation) = state.db.latest_recommendation()? {
+        return Ok(recommendation);
+    }
+    local_recommendation(state)
+}
+
+async fn generate_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
+    let outcomes = state.db.batch_outcomes()?;
+    let fallback =
+        recommend_with_memory(&state.safety.optimizer, Some(&state.ai_memory), &outcomes);
+    let Some(provider) = &state.ai_provider else {
+        return Ok(fallback);
+    };
+    match provider
+        .recommend(
+            &state.safety.optimizer,
+            &state.ai_memory,
+            &outcomes,
+            &fallback,
+        )
+        .await
+    {
+        Ok(recommendation) => Ok(recommendation),
+        Err(err) => {
+            tracing::warn!("StepFun recommendation failed; falling back to local optimizer: {err}");
+            let mut recommendation = fallback;
+            recommendation.rationale = format!(
+                "StepFun 调用失败，已回退本地优化器：{}",
+                recommendation.rationale
+            );
+            Ok(recommendation)
+        }
+    }
+}
+
+async fn recommendation_envelope(
+    state: &AppState,
+    recommendation: Recommendation,
+) -> AiRecommendationEnvelope {
+    let Some(provider) = &state.ai_provider else {
+        return local_envelope(recommendation);
+    };
+    if recommendation.rationale.starts_with("StepFun 调用失败") {
+        fallback_envelope(
+            recommendation,
+            provider.model_name(),
+            "StepFun request failed; local optimizer fallback was used",
+        )
+    } else if recommendation.rationale.starts_with("StepFun:") {
+        stepfun_envelope(recommendation, provider.model_name())
+    } else {
+        fallback_envelope(
+            recommendation,
+            provider.model_name(),
+            "StepFun output was rejected by safety validation; local optimizer fallback was used",
+        )
+    }
+}
+
+fn local_provider_for(state: &AppState) -> AiRecommendationProvider {
+    if let Some(provider) = &state.ai_provider {
+        AiRecommendationProvider {
+            mode: "stepfun_configured_cached_or_local".to_string(),
+            model: provider.model_name().to_string(),
+            fallback_reason: None,
+        }
+    } else {
+        AiRecommendationProvider {
+            mode: "local_optimizer".to_string(),
+            model: "local-tpe-lite".to_string(),
+            fallback_reason: None,
+        }
+    }
 }
 
 fn success<T>(data: T) -> V1Envelope<T> {
@@ -699,7 +888,7 @@ fn success<T>(data: T) -> V1Envelope<T> {
 }
 
 fn seconds_to_minutes(seconds: Option<f64>) -> f64 {
-    seconds.unwrap_or(3600.0) / 60.0
+    round2(seconds.unwrap_or(3600.0) / 60.0)
 }
 
 fn validate_v1_control_params(
@@ -739,14 +928,25 @@ fn validate_v1_control_params(
     }
 
     Ok(ControlTargets {
-        temperature_c: target_temperature_c,
-        heat_time_s,
-        hold_time_s,
-        cool_time_s,
-        stirrer_rpm,
-        shake_speed_cpm,
-        target_pressure_mpa,
+        temperature_c: round2(target_temperature_c),
+        heat_time_s: round2(heat_time_s),
+        hold_time_s: round2(hold_time_s),
+        cool_time_s: round2(cool_time_s),
+        stirrer_rpm: round2(stirrer_rpm),
+        shake_speed_cpm: round2(shake_speed_cpm),
+        target_pressure_mpa: round2(target_pressure_mpa),
     })
+}
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+fn round2_finite(field: &str, value: f64) -> Result<f64, AppError> {
+    if !value.is_finite() {
+        return Err(AppError::bad_request(format!("{field} must be finite")));
+    }
+    Ok(round2(value))
 }
 
 fn validate_target_temperature(safety: &SafetyConfig, value: f64) -> Result<(), AppError> {
@@ -925,6 +1125,13 @@ impl AppError {
     fn conflict(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::CONFLICT,
+            message: message.into(),
+        }
+    }
+
+    fn service_unavailable(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
         }
     }
