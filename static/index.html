@@ -9,23 +9,23 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0A0C14;
-      --surface: #131313;
-      --surface-low: #1c1b1b;
-      --surface-card: #2F3640;
-      --surface-high: #353535;
-      --line: #3e4852;
-      --line-strong: #88929d;
-      --text: #e5e2e1;
-      --muted: #bec7d3;
-      --dim: #88929d;
-      --primary: #95ccff;
-      --blue: #2E86DE;
-      --green: #67e051;
-      --green-fill: #20BF6B;
-      --amber: #f4bf2a;
-      --red: #E84118;
-      --red-soft: rgba(147, 0, 10, 0.35);
+      --bg: #0e0e10;
+      --surface: #131315;
+      --surface-low: #1b1b1d;
+      --surface-card: #1f1f21;
+      --surface-high: #353437;
+      --line: #3d4a3a;
+      --line-strong: #869581;
+      --text: #e4e2e4;
+      --muted: #bbcbb5;
+      --dim: #869581;
+      --primary: #57f464;
+      --blue: #57f464;
+      --green: #57f464;
+      --green-fill: #32d74b;
+      --amber: #ffa93c;
+      --red: #ff453a;
+      --red-soft: rgba(147, 0, 10, 0.34);
       --nav-h: 48px;
       --side-w: 120px;
       --font-ui: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
@@ -34,6 +34,7 @@
 
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; }
+    [hidden] { display: none !important; }
     body {
       background: var(--bg);
       color: var(--text);
@@ -77,8 +78,8 @@
     .screen-shell {
       min-height: 100vh;
       background:
-        linear-gradient(90deg, rgba(136,146,157,.055) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(136,146,157,.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(134,149,129,.13) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(134,149,129,.10) 1px, transparent 1px),
         var(--bg);
       background-size: 40px 40px;
     }
@@ -88,7 +89,7 @@
       inset: 0 0 auto 0;
       height: var(--nav-h);
       display: grid;
-      grid-template-columns: 330px minmax(160px, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       background: var(--surface);
       border-bottom: 2px solid var(--line);
@@ -102,16 +103,18 @@
       padding: 0 22px;
       overflow: hidden;
     }
+    .brand-block > div { min-width: 0; }
     .brand-mark { color: var(--green); font-size: 23px; }
     .brand {
-      color: var(--primary);
-      font-size: 23px;
+      color: var(--green);
+      font-size: 28px;
       font-weight: 700;
       line-height: 1;
       white-space: nowrap;
-      text-transform: lowercase;
+      text-transform: uppercase;
       overflow: hidden;
       text-overflow: ellipsis;
+      letter-spacing: .04em;
     }
     .brand-sub {
       margin-top: 2px;
@@ -122,8 +125,9 @@
       text-transform: uppercase;
     }
     .top-title {
+      display: none;
       color: var(--text);
-      font-size: 23px;
+      font-size: 28px;
       font-weight: 700;
       min-width: 0;
     }
@@ -131,15 +135,16 @@
       height: 100%;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       padding-left: 10px;
     }
     .status-chip, .clock {
-      min-height: 40px;
+      min-height: 48px;
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      padding: 0 10px;
+      padding: 0 14px;
+      border-left: 1px solid var(--line);
       color: var(--muted);
       font-family: var(--font-data);
       font-size: 12px;
@@ -161,9 +166,9 @@
     .icon-btn {
       width: 48px;
       min-width: 48px;
-      height: 40px;
-      border: 2px solid var(--line-strong);
-      background: var(--surface-high);
+      height: 48px;
+      border: 1px solid var(--line-strong);
+      background: var(--surface-card);
       color: var(--text);
       font-family: var(--font-data);
       font-size: 22px;
@@ -202,30 +207,37 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 12px;
+      gap: 14px;
       padding: 10px 6px;
       border: 0;
       border-bottom: 1px solid var(--line);
       background: transparent;
-      color: #c9d3c5;
-      font-size: 13px;
+      color: #c8d5c2;
+      font-size: 14px;
       font-weight: 700;
     }
-    .tab-btn.active {
+    .tab-btn.active, .nav-settings.active {
       border-left: 4px solid var(--green);
-      background: #20aa18;
-      color: #022700;
+      background: #4a4a4d;
+      color: var(--green);
     }
     .tab-btn:hover, .nav-settings:hover { background: var(--surface-high); color: var(--text); }
-    .tab-btn.active:hover { background: #20aa18; color: #022700; }
-    .nav-icon { font-size: 31px; }
+    .tab-btn.active:hover, .nav-settings.active:hover { background: #4a4a4d; color: var(--green); }
+    .nav-icon { font-size: 34px; color: inherit; }
+    .tab-btn .material-symbols-outlined, .nav-settings .material-symbols-outlined {
+      font-size: 34px;
+      font-variation-settings: "FILL" 0, "wght" 600, "GRAD" 0, "opsz" 24;
+    }
+    .tab-btn.active .material-symbols-outlined, .nav-settings.active .material-symbols-outlined {
+      font-variation-settings: "FILL" 1, "wght" 600, "GRAD" 0, "opsz" 24;
+    }
     .sidebar-spacer { flex: 1; }
     .nav-settings { border-top: 2px solid var(--line); border-bottom: 0; }
 
     .main {
       min-height: 100vh;
       margin-left: var(--side-w);
-      padding: calc(var(--nav-h) + 24px) 24px 44px;
+      padding: calc(var(--nav-h) + 32px) 32px 44px;
     }
     .view { display: none; }
     .view.active { display: block; }
@@ -249,13 +261,13 @@
       margin-bottom: 30px;
     }
     .status-block {
-      min-height: 72px;
+      min-height: 64px;
       display: inline-flex;
       align-items: center;
       gap: 14px;
       padding: 0 22px;
       border: 2px solid var(--line);
-      background: var(--surface-card);
+      background: var(--surface-high);
       color: var(--text);
       font-family: var(--font-data);
       font-size: 14px;
@@ -268,7 +280,7 @@
       margin-left: auto;
       border-color: var(--green-fill);
       color: var(--green);
-      background: rgba(32,191,107,.08);
+      background: rgba(50,215,75,.08);
     }
     .status-block.warning {
       border-color: var(--amber);
@@ -283,18 +295,32 @@
     .status-block .material-symbols-outlined { font-size: 24px; }
 
     .panel, .card, .recommend-box, .ratio-box, .product-grid, .timeline {
-      border: 2px solid var(--line);
+      border: 1px solid var(--line);
       background: var(--surface-card);
     }
     .panel-head {
-      min-height: 52px;
+      min-height: 48px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
       padding: 0 20px;
       border-bottom: 1px solid var(--line);
-      background: var(--surface-low);
+      background: #242426;
+    }
+    .monitor-heading {
+      display: none;
+      margin-bottom: 18px;
+      color: var(--text);
+      font-size: 34px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+    .monitor-subheading {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 16px;
+      font-weight: 600;
     }
     .panel-title, .section-title, .label, .sensor-label, .chart-card-title, th, .kv-label, .caption, .big-label {
       color: var(--muted);
@@ -308,26 +334,26 @@
 
     .hmi-grid {
       display: grid;
-      grid-template-columns: minmax(0, 8fr) minmax(380px, 4fr);
+      grid-template-columns: minmax(0, 2.15fr) minmax(360px, .95fr);
       grid-template-areas:
         "center right"
         "left right";
-      gap: 24px;
+      gap: 28px;
       align-items: start;
     }
     .center-stack { grid-area: center; display: block; }
     .left-stack {
       grid-area: left;
       display: grid;
-      grid-template-columns: minmax(260px, .45fr) minmax(0, 1fr);
-      gap: 24px;
+      grid-template-columns: minmax(300px, .52fr) minmax(0, 1fr);
+      gap: 28px;
       align-items: start;
     }
     .right-stack {
       grid-area: right;
       display: grid;
       grid-template-rows: auto auto minmax(220px, 1fr);
-      gap: 24px;
+      gap: 28px;
     }
     .trend-panel {
       display: grid;
@@ -336,18 +362,25 @@
       background: transparent;
       border: 0;
     }
-    .trend-panel > .panel-head { height: 0; min-height: 0; padding: 0; overflow: hidden; border: 0; }
-    .chart-tabs { display: flex; gap: 6px; height: 0; overflow: hidden; }
+    .trend-panel > .panel-head {
+      min-height: 56px;
+      padding: 0 0 0 22px;
+      border: 1px solid var(--line);
+      background: #242426;
+    }
+    .chart-tabs { display: flex; gap: 0; height: 56px; overflow: visible; margin-left: auto; }
     .chart-tab {
-      min-height: 48px;
-      border: 2px solid var(--line);
-      background: var(--surface-high);
-      color: var(--text);
+      min-width: 82px;
+      min-height: 56px;
+      border: 0;
+      border-left: 1px solid var(--line);
+      background: transparent;
+      color: var(--muted);
       font-family: var(--font-data);
       font-size: 12px;
       font-weight: 700;
     }
-    .chart-tab.active { border-color: var(--blue); background: var(--blue); color: #fff; }
+    .chart-tab.active { background: var(--green); color: #00390a; }
     .hero-readouts {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -356,7 +389,7 @@
     .hero-readout {
       position: relative;
       min-height: 216px;
-      padding: 30px 34px 24px;
+      padding: 30px 28px 24px;
       border: 2px solid var(--line);
       background: var(--surface-high);
       overflow: hidden;
@@ -364,7 +397,7 @@
     }
     .hero-readout:hover {
       border-color: var(--line-strong);
-      background: #393939;
+      background: #39393b;
     }
     .hero-readout::after {
       content: "";
@@ -388,28 +421,28 @@
     .hero-readout[data-hero="temperature"] .hero-icon { color: var(--amber); }
     .hero-readout[data-hero="pressure"] .hero-icon { color: var(--primary); }
     .hero-readout[data-hero="rpm"] .hero-icon { color: var(--green); }
-    .hero-label { color: var(--dim); font-family: var(--font-data); font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .hero-label { color: var(--muted); font-family: var(--font-data); font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .hero-value {
       margin-top: 18px;
       color: var(--primary);
-      font-size: clamp(58px, 5.8vw, 78px);
+      font-size: 58px;
       font-weight: 700;
       line-height: 1.12;
-      letter-spacing: -.02em;
-      text-shadow: 0 0 14px rgba(149,204,255,.16);
+      letter-spacing: 0;
+      text-shadow: none;
       min-height: 104px;
     }
     .hero-readout[data-hero="temperature"] .hero-value { color: var(--amber); }
-    .hero-readout[data-hero="pressure"] .hero-value { color: var(--primary); }
+    .hero-readout[data-hero="pressure"] .hero-value { color: #9bd1ff; }
     .hero-readout[data-hero="rpm"] .hero-value { color: var(--green); }
-    .hero-value .unit { margin-left: 4px; font-size: .38em; }
+    .hero-value .unit { margin-left: 4px; font-size: .34em; }
     .hero-meta { display: flex; align-items: center; gap: 8px; margin-top: 20px; color: var(--muted); font-family: var(--font-data); font-size: 12px; font-weight: 700; }
     .hero-lamp { width: 10px; height: 10px; border-radius: 999px; background: var(--green-fill); }
     .hero-readout.limit .hero-lamp { background: var(--amber); }
     .hero-readout.danger .hero-lamp { background: var(--red); }
     .hero-readout.limit { border-color: var(--amber); }
     .hero-readout.danger { border-color: var(--red); }
-    #monitorCharts { min-height: 600px; }
+    #monitorCharts { min-height: 380px; }
     .chart-card {
       position: absolute;
       left: -10000px;
@@ -422,8 +455,8 @@
     .chart-card.active {
       position: static;
       width: auto;
-      min-height: 600px;
-      padding: 20px 24px 12px;
+      min-height: 380px;
+      padding: 24px 26px 12px;
       visibility: visible;
       pointer-events: auto;
       border: 2px solid var(--line);
@@ -431,7 +464,7 @@
     }
     .chart-card-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; color: var(--text); }
     .chart-card-title span:first-child { color: var(--text); font-family: var(--font-ui); font-size: 30px; font-weight: 700; letter-spacing: 0; text-transform: none; }
-    .large-chart { height: 520px; background: var(--surface-card); }
+    .large-chart { height: 300px; background: var(--surface-card); }
     .progress-row {
       display: grid;
       grid-template-columns: 120px minmax(0,1fr) 64px 190px;
@@ -446,8 +479,29 @@
     .progress-fill { height: 100%; width: 0; background: var(--green-fill); }
     .gantt-chart { height: 72px; margin: 0 24px 18px; border-top: 1px solid var(--line); background: var(--surface-card); }
 
-    .process-panel { display: grid; grid-template-rows: 52px minmax(420px, 1fr); background: rgba(14,14,14,.88); }
-    .process-canvas { height: 100%; min-height: 420px; background: rgba(14,14,14,.62); }
+    .monitor-support {
+      margin-top: 28px;
+      display: grid;
+      gap: 28px;
+    }
+    #view-monitor .trend-panel > .panel-head,
+    #view-monitor .monitor-support,
+    #view-monitor .alarm-card,
+    #view-monitor .progress-row,
+    #view-monitor #stageGantt,
+    .export,
+    .bigscreen {
+      display: none !important;
+    }
+    #view-monitor .hmi-grid {
+      grid-template-areas: "center right";
+    }
+    #view-monitor .right-stack {
+      grid-template-rows: auto auto;
+    }
+
+    .process-panel { display: grid; grid-template-rows: 52px minmax(300px, 1fr); background: rgba(14,14,14,.88); }
+    .process-canvas { height: 100%; min-height: 300px; background: rgba(14,14,14,.62); }
     .left-stack > .control-panel { grid-column: 1 / -1; }
     .sensor-panel { display: grid; grid-template-rows: 52px auto; }
     .hmi-sensors {
@@ -456,11 +510,11 @@
       overflow: hidden;
     }
     .side-sensor {
-      min-height: 148px;
+      min-height: 130px;
       padding: 16px;
       border-right: 1px solid var(--line);
       border-bottom: 1px solid var(--line);
-      background: var(--surface-low);
+      background: var(--surface);
     }
     .side-sensor:nth-child(2n) { border-right: 0; }
     .sensor-topline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -477,7 +531,7 @@
       font-weight: 700;
     }
     .sensor-status.danger { border-color: var(--red); background: var(--red-soft); color: #ffb4ab; }
-    .sensor-number { margin-top: 12px; color: var(--text); font-size: clamp(22px,1.8vw,30px); font-weight: 700; line-height: 1.18; white-space: normal; overflow-wrap: anywhere; min-height: 42px; }
+    .sensor-number { margin-top: 12px; color: var(--text); font-size: 28px; font-weight: 700; line-height: 1.18; white-space: normal; overflow-wrap: anywhere; min-height: 42px; }
     .sensor-number.danger { color: #ffb4ab; }
     .sensor-meta { margin-top: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .mini-trend { height: 42px; margin-top: 5px; }
@@ -485,13 +539,13 @@
     .control-panel { display: grid; grid-template-rows: 52px auto auto; }
     .control-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(188px,1fr));
+      grid-template-columns: repeat(5, minmax(160px,1fr));
       gap: 12px;
       padding: 18px;
       overflow-x: auto;
     }
     .control-cell { min-height: 96px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
-    .setpoint { margin-top: 10px; color: var(--text); font-size: clamp(18px,1.35vw,24px); font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
+    .setpoint { margin-top: 10px; color: var(--text); font-size: 22px; font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
     .actions, .hmi-actions { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; padding: 0 18px 18px; }
 
     .primary-btn, .secondary-btn, .text-btn, .ack-btn, .export-menu button, .export-trigger {
@@ -503,44 +557,53 @@
       letter-spacing: .06em;
       text-transform: uppercase;
     }
-    .primary-btn { min-width: 150px; min-height: 58px; border: 2px solid var(--blue); background: var(--blue); color: #fff; }
-    .primary-btn:hover { background: var(--primary); border-color: var(--primary); color: #001d32; }
+    .primary-btn { min-width: 150px; min-height: 58px; border: 2px solid var(--green); background: var(--green); color: #00390a; }
+    .primary-btn:hover { background: #70ff76; border-color: #70ff76; color: #002204; }
     .primary-btn.danger { border-color: var(--red); background: var(--red); color: #fff; }
     .secondary-btn, .text-btn, .ack-btn {
       border: 2px solid var(--line);
       background: var(--surface-high);
       color: var(--text);
     }
-    .secondary-btn:hover, .text-btn:hover, .ack-btn:hover { border-color: var(--blue); color: var(--primary); }
+    .secondary-btn:hover, .text-btn:hover, .ack-btn:hover { border-color: var(--green); color: var(--green); }
     .text-btn { min-width: 120px; padding: 0 14px; background: transparent; }
     .small-link { min-width: 92px; min-height: 44px; }
 
-    .ai-card { order: 1; overflow: hidden; border-color: var(--blue); background: var(--surface-low); }
+    .ai-card { order: 1; overflow: hidden; border: 2px solid #2e86de; background: var(--surface-low); box-shadow: 0 0 15px rgba(46,134,222,.12); }
     .recipe-card { order: 2; overflow: hidden; }
     .alarm-card { order: 3; overflow: hidden; }
     .ai-card > .panel-title {
       min-height: 62px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       padding: 0 22px;
-      background: var(--blue);
-      color: #fff;
+      background: #2e86de;
+      color: #f4fff0;
       font-family: var(--font-data);
       font-size: 18px;
       font-weight: 700;
       letter-spacing: .06em;
     }
-    .ai-card > .panel-title::before { content: "⚙"; font-family: var(--font-data); margin-right: 12px; font-size: 22px; }
+    .ai-card > .panel-title::before { content: none; }
+    .ai-card > .panel-title .material-symbols-outlined { color: #fff; font-size: 24px; }
+    .ai-card-title-left { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+    .model-badge { padding: 4px 8px; background: rgba(0,0,0,.3); color: #fff; font-size: 11px; white-space: nowrap; }
+    .ai-command-body { display: grid; gap: 20px; padding: 24px 26px 26px; }
+    .ai-advice { padding-left: 16px; border-left: 4px solid #2e86de; color: var(--text); font-size: 16px; line-height: 1.55; font-style: italic; }
+    .monitor-target-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 16px; border: 1px solid var(--line); background: var(--surface-card); }
+    .monitor-target-value { margin-top: 8px; color: var(--amber); font-size: 24px; font-weight: 700; line-height: 1; }
+    .monitor-target:nth-child(2) .monitor-target-value { color: var(--green); }
     .ai-score {
       display: grid;
       grid-template-columns: repeat(2,minmax(0,1fr));
       gap: 12px;
       margin: 24px 26px 0;
       padding: 18px 20px;
-      border-left: 4px solid var(--blue);
+      border-left: 4px solid var(--green);
       background: rgba(14,14,14,.62);
     }
-    .score-big { margin-top: 8px; color: var(--amber); font-size: 30px; font-weight: 700; line-height: 1; }
+    .score-big { margin-top: 8px; color: var(--green); font-size: 30px; font-weight: 700; line-height: 1; }
     .bar { height: 8px; margin: 16px 26px 0; background: var(--surface-high); }
     .bar > div { height: 100%; width: 0; background: var(--green-fill); }
     .kv { display: grid; }
@@ -555,9 +618,19 @@
     .kv-label, .kv-row .k { color: var(--muted); font-family: var(--font-data); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .kv-value, .kv-row .v { color: var(--text); font-family: var(--font-data); font-size: 16px; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
     .ai-card .kv { margin: 18px 26px 26px; padding: 18px; border: 1px solid var(--line); background: var(--surface-card); }
+    .ai-card .kv-row {
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 14px 0;
+    }
+    .ai-card .kv-value,
+    .ai-card .kv-row .v {
+      text-align: left;
+      font-size: 20px;
+      line-height: 1.25;
+    }
     .ai-card .monitor-ai-action {
-      margin: 0 26px 26px;
-      width: calc(100% - 52px);
+      width: 100%;
       min-height: 70px;
       font-size: 22px;
       letter-spacing: .12em;
@@ -566,6 +639,8 @@
       min-height: 66px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      gap: 14px;
       padding: 0 22px;
       border-bottom: 1px solid var(--line);
       background: var(--surface-low);
@@ -573,9 +648,14 @@
       font-size: 26px;
       font-weight: 700;
     }
+    .batch-code-badge { padding: 4px 8px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-family: var(--font-data); font-size: 12px; font-weight: 700; }
     .batch-id { padding: 18px 22px 0; color: var(--text); font-size: 40px; font-weight: 700; line-height: 1; }
     .recipe-card .muted { padding: 2px 22px 14px; }
     .recipe-card .kv { padding: 0 22px 18px; }
+    .batch-actions { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; padding: 18px 22px 22px; border-top: 1px solid var(--line); background: var(--surface-low); }
+    .hero-meta .material-symbols-outlined { font-size: 16px; }
+    .hero-progress { width: 100%; height: 8px; border: 1px solid var(--line); background: var(--surface); overflow: hidden; }
+    .hero-progress span { display: block; height: 100%; background: var(--green); }
     .alarm-list { display: grid; gap: 8px; padding: 12px; }
     .alarm-row {
       display: grid;
@@ -593,7 +673,7 @@
     .alarm-card .alarm-cell:nth-child(4) { display: none; }
     .alarm-card .alarm-cell:nth-child(3) { border-right: 1px solid var(--line); }
 
-    .program-layout, .ai-stack, .recipes-grid, .materials-grid {
+    .program-layout, .ai-stack, .recipes-grid, .materials-grid, .batch-table-layout, .history-grid, .ai-control-grid, .alarm-center-grid {
       display: grid;
       gap: 24px;
     }
@@ -704,6 +784,215 @@
       pointer-events: none;
     }
     .program-ai-panel > * { position: relative; z-index: 1; }
+    .process-list-head, .history-list-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--surface-low);
+    }
+    .process-list, .experiment-list {
+      display: grid;
+      gap: 16px;
+    }
+    .process-row, .experiment-row {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 20px;
+      align-items: center;
+      min-height: 112px;
+      padding: 22px 24px;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+      text-align: left;
+      transition: border-color .16s ease, background-color .16s ease;
+    }
+    .process-row:hover, .experiment-row:hover {
+      border-color: var(--green);
+      background: #242426;
+    }
+    .process-row-main, .experiment-row-main { min-width: 0; }
+    .process-row-title, .experiment-row-title {
+      color: var(--text);
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+    .process-row-meta, .experiment-row-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .process-row-action, .experiment-row-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--green);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .empty-state {
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      border: 1px dashed var(--line);
+      background: var(--surface);
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.7;
+    }
+    .process-detail-head, .history-detail-head {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 20px;
+      align-items: start;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--surface-low);
+    }
+    .process-detail-title, .history-detail-title {
+      margin: 0;
+      color: var(--text);
+      font-size: 38px;
+      line-height: 1.12;
+      overflow-wrap: anywhere;
+    }
+    .process-detail-actions, .history-detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+    .process-detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 8fr) minmax(340px, 4fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .process-stage-list {
+      display: grid;
+      gap: 0;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+    }
+    .process-step-card {
+      position: relative;
+      display: grid;
+      grid-template-columns: 46px minmax(0,1fr);
+      gap: 18px;
+      min-height: 158px;
+      padding: 24px;
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+    }
+    .process-step-card:last-child { border-bottom: 0; }
+    .process-step-card.active { background: rgba(87,244,100,.06); }
+    .step-icon {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-left: 3px solid var(--green);
+      color: var(--green);
+    }
+    .process-step-card:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 43px;
+      top: 68px;
+      bottom: -26px;
+      width: 2px;
+      background: var(--line);
+    }
+    .step-title {
+      color: var(--text);
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .step-duration-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: #242426;
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .step-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0,1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .step-metric-value {
+      margin-top: 8px;
+      color: var(--text);
+      font-family: var(--font-data);
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .step-metric-value.accent { color: var(--amber); }
+    .step-metric-value.success { color: var(--green); }
+    .step-editor-panel, .history-list-panel {
+      display: grid;
+      gap: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+    }
+    .step-editor-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 14px;
+    }
+    .process-meta-fields {
+      display: grid;
+      grid-template-columns: minmax(220px, .6fr) minmax(260px, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+      margin-top: 18px;
+    }
+    .step-editor-fields .field { min-height: auto; padding: 14px; }
+    .process-ai-notes {
+      display: grid;
+      gap: 18px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--amber);
+      background: var(--surface-card);
+    }
+    .history-list-panel { padding: 0; overflow: hidden; }
+    .history-list-panel .experiment-row {
+      border: 0;
+      border-bottom: 1px solid var(--line);
+      border-radius: 0;
+    }
+    .history-list-panel .experiment-row:last-child { border-bottom: 0; }
+    .history-detail-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 8fr) minmax(340px, 4fr);
+      gap: 24px;
+      align-items: start;
+    }
     .compare-box {
       display: grid;
       grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
@@ -726,6 +1015,242 @@
       font-size: 26px;
       font-weight: 700;
     }
+
+    .control-page-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 7fr) minmax(360px, 5fr);
+      gap: 24px;
+      align-items: stretch;
+    }
+    .manual-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0,1fr) auto;
+      border: 2px solid var(--line);
+      background: var(--surface-low);
+    }
+    .manual-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 24px;
+      padding: 26px;
+    }
+    .manual-fields .field:nth-child(3) { grid-column: 1 / -1; }
+    .stepper-row { display: grid; grid-template-columns: 48px minmax(0,1fr) 48px; gap: 10px; align-items: center; }
+    .stepper-btn { width: 48px; height: 48px; border: 1px solid var(--line); background: var(--surface-high); color: var(--text); }
+    .stepper-btn:hover { border-color: var(--green); color: var(--green); }
+    .voice-command {
+      display: grid;
+      grid-template-columns: 72px minmax(0,1fr) 88px;
+      gap: 18px;
+      align-items: center;
+      padding: 22px;
+      border: 2px solid var(--line);
+      border-left: 6px solid var(--amber);
+      background: var(--surface-low);
+    }
+    .mic-button {
+      width: 64px;
+      height: 64px;
+      border: 2px solid var(--amber);
+      background: rgba(255,169,60,.12);
+      color: var(--amber);
+      border-radius: 8px;
+    }
+    .batch-toolbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) 180px 180px auto auto auto;
+      gap: 18px;
+      align-items: center;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+    }
+    .batch-table {
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+      overflow: hidden;
+    }
+    .batch-row {
+      display: grid;
+      grid-template-columns: 1.5fr 1.4fr 1.4fr .9fr .9fr 1.4fr 1fr;
+      gap: 18px;
+      align-items: center;
+      min-height: 70px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--line);
+      font-family: var(--font-data);
+      font-size: 13px;
+    }
+    .batch-row.head {
+      min-height: 58px;
+      background: #2a2a2c;
+      color: var(--muted);
+      font-family: var(--font-ui);
+      font-weight: 700;
+    }
+    .batch-row.warn { background: rgba(255,69,58,.08); color: #ffb4ab; }
+    .score-bar { height: 8px; border: 1px solid var(--line); background: var(--surface); overflow: hidden; }
+    .score-bar > span { display: block; height: 100%; background: var(--green); }
+    .status-pill {
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .status-pill.warn { border-color: #ffb4ab; color: #ffb4ab; }
+    .history-grid {
+      grid-template-columns: minmax(0, 8fr) minmax(340px, 4fr);
+      align-items: start;
+    }
+    .history-chart-panel, .history-report, .training-panel, .process-recs, .ai-intent-panel, .voice-panel, .ai-preview-panel, .ai-log-panel, .alarm-list-panel, .alarm-detail-panel {
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+      padding: 24px;
+    }
+    .history-chart { min-height: 330px; height: 360px; border: 1px solid var(--line); background: var(--surface-low); }
+    .history-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+    .history-metric-tabs { display: inline-flex; flex-wrap: wrap; gap: 8px; }
+    .history-metric-tabs button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-family: var(--font-data); font-size: 12px; font-weight: 700; }
+    .history-metric-tabs button.active { border-color: var(--green); background: rgba(87,244,100,.1); color: var(--green); }
+    .history-report { min-height: 360px; }
+    .analysis-note {
+      padding: 14px 0 14px 14px;
+      border-left: 3px solid var(--green);
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .analysis-note.warn { border-left-color: var(--amber); }
+    .ai-control-grid {
+      grid-template-columns: minmax(0, 8fr) minmax(320px, 4fr);
+      align-items: start;
+    }
+    .ai-right-stack { display: grid; gap: 24px; }
+    .nlp-badge {
+      justify-self: end;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+      color: var(--green);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .intent-quote {
+      padding: 24px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--green);
+      font-size: 30px;
+      font-weight: 700;
+      text-shadow: 0 0 10px rgba(87,244,100,.35);
+    }
+    .intent-map {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 20px;
+      margin-top: 20px;
+    }
+    .intent-token {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--amber);
+      background: var(--surface);
+    }
+    .intent-token:nth-child(2) { border-left-color: var(--muted); }
+    .waveform {
+      height: 170px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .waveform span {
+      width: 10px;
+      border-radius: 8px 8px 0 0;
+      background: var(--green);
+      animation: wave 1s ease-in-out infinite alternate;
+    }
+    .preview-compare {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) 64px minmax(0,1fr);
+      gap: 20px;
+      align-items: center;
+    }
+    .preview-box {
+      min-height: 190px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .preview-box.suggested { border: 2px dashed var(--green); }
+    .alarm-center-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(420px, 1fr);
+      align-items: start;
+    }
+    .alarm-center-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--line);
+    }
+    .alarm-item {
+      position: relative;
+      display: grid;
+      gap: 10px;
+      min-height: 128px;
+      padding: 18px 18px 18px 24px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .alarm-item-title { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+    .alarm-icon {
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      background: var(--surface-low);
+      color: var(--amber);
+      flex: 0 0 auto;
+    }
+    .alarm-item.critical .alarm-icon { border-color: var(--red); background: var(--red-soft); color: #ffb4ab; }
+    .alarm-item::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: var(--amber);
+    }
+    .alarm-item.critical { border-color: var(--red); background: var(--red-soft); }
+    .alarm-item.critical::before { background: var(--red); }
+    .alarm-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 26px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    @keyframes wave { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
 
     .recipes-grid { grid-template-columns: minmax(300px,.42fr) minmax(0,1fr); }
     .recipe-row { padding: 16px; border-bottom: 1px solid var(--line); background: var(--surface-low); cursor: pointer; }
@@ -774,11 +1299,83 @@
     .filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; color: var(--muted); font-family: var(--font-data); font-size: 12px; text-transform: uppercase; }
     .history-scroll { max-height: 430px; overflow: auto; }
 
-    .export { position: fixed; right: 18px; bottom: 16px; z-index: 80; }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(380px, .9fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .settings-stack { display: grid; gap: 24px; }
+    .settings-panel {
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+    }
+    .settings-panel-body { display: grid; gap: 16px; padding: 22px; }
+    .settings-card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 16px;
+    }
+    .settings-card {
+      min-height: 118px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .settings-value {
+      margin-top: 12px;
+      color: var(--text);
+      font-family: var(--font-data);
+      font-size: 26px;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+    .settings-row, .endpoint-row {
+      display: grid;
+      grid-template-columns: 42px minmax(0,1fr) auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 70px;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .settings-row:last-child, .endpoint-row:last-child { border-bottom: 0; }
+    .settings-row .material-symbols-outlined, .endpoint-row .material-symbols-outlined { color: var(--green); }
+    .setting-switch {
+      position: relative;
+      width: 58px;
+      height: 30px;
+      border: 1px solid var(--green);
+      background: rgba(50,215,75,.16);
+    }
+    .setting-switch::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 20px;
+      height: 20px;
+      background: var(--green);
+    }
+    .setting-switch.warn {
+      border-color: var(--amber);
+      background: rgba(255,169,60,.14);
+    }
+    .setting-switch.warn::after { background: var(--amber); }
+
+    .export {
+      position: fixed;
+      right: 18px;
+      top: calc(var(--nav-h) + 12px);
+      z-index: 80;
+      display: flex;
+      flex-direction: column-reverse;
+      align-items: flex-end;
+    }
     .export-menu {
       display: none;
       min-width: 260px;
-      margin-bottom: 8px;
+      margin-top: 8px;
       border: 1px solid var(--line);
       background: var(--surface-low);
     }
@@ -810,6 +1407,7 @@
 
     @media (max-width: 1280px) {
       .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "left" "right"; }
+      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "right"; }
       .right-stack { grid-template-columns: repeat(3,minmax(0,1fr)); grid-template-rows: auto; }
       .left-stack { grid-template-columns: 1fr; }
       .process-panel, .sensor-panel, .control-panel { grid-column: auto; }
@@ -821,19 +1419,81 @@
       :root { --nav-h: 76px; --side-w: 0px; }
       .topbar { grid-template-columns: 1fr; grid-template-rows: 76px 60px; height: 136px; }
       .brand-block { border-bottom: 1px solid var(--line); }
+      .brand { font-size: 22px; }
+      .brand-sub { font-size: 9px; }
       .top-title { display: none; }
       .top-status { overflow-x: auto; padding: 0 10px; border-top: 1px solid var(--line); }
       .sidebar { top: 136px; right: 0; width: auto; height: 72px; flex-direction: row; overflow-x: auto; }
       .tab-btn, .nav-settings { min-width: 112px; min-height: 72px; height: 72px; border-left: 0; border-bottom: 4px solid transparent; }
       .tab-btn.active { border-left: 0; border-bottom-color: var(--green); }
-      .nav-settings, .sidebar-spacer { display: none; }
+      .nav-settings { border-top: 0; }
+      .sidebar-spacer { display: none; }
       .main { margin-left: 0; margin-top: 208px; padding: 14px; }
-      .hmi-sensors, .hero-readouts, .control-grid, .hmi-actions, .fields, .recipes-grid, .materials-grid, .product-grid, .ai-stack, .overview-grid, .recommend-box .kv, .alarm-stat-row, .right-stack { grid-template-columns: 1fr; }
+      .program-layout, .program-status-bar, .control-page-grid, .manual-panel, .program-ai-panel, .manual-fields, .program-layout .field {
+        min-width: 0;
+        width: 100%;
+        max-width: 100%;
+      }
+      .program-status-bar {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .program-status-bar .status-block {
+        flex: 1 1 100%;
+        min-width: 0;
+        white-space: normal;
+      }
+      .program-status-bar .mode-toggle {
+        width: 100%;
+      }
+      .program-status-bar .mode-toggle button {
+        flex: 1 1 0;
+      }
+      .manual-fields {
+        padding: 16px;
+        gap: 14px;
+      }
+      .program-layout .field {
+        min-height: auto;
+        padding: 14px;
+      }
+      .stepper-row {
+        grid-template-columns: 42px minmax(0,1fr) 42px;
+      }
+      .stepper-btn {
+        width: 42px;
+        height: 42px;
+      }
+      .action-row {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+      .trend-panel > .panel-head { display: grid; grid-template-columns: 74px minmax(0, 1fr); padding-left: 14px; overflow: hidden; }
+      .chart-tabs { min-width: 0; width: 100%; overflow-x: auto; }
+      .chart-tab { min-width: 82px; flex: 0 0 82px; }
+      .hmi-sensors, .hero-readouts, .control-grid, .hmi-actions, .fields, .recipes-grid, .materials-grid, .product-grid, .ai-stack, .overview-grid, .recommend-box .kv, .alarm-stat-row, .right-stack, .control-page-grid, .manual-fields, .batch-toolbar, .history-grid, .ai-control-grid, .intent-map, .preview-compare, .alarm-center-grid, .settings-grid, .settings-card-grid, .process-detail-grid, .history-detail-grid, .step-editor-fields, .step-metrics, .process-meta-fields { grid-template-columns: 1fr; }
+      .process-list-head, .history-list-head, .process-detail-head, .history-detail-head, .process-row, .experiment-row {
+        grid-template-columns: 1fr;
+      }
+      .process-detail-actions, .history-detail-actions {
+        justify-content: stretch;
+      }
+      .process-detail-actions button, .history-detail-actions button {
+        width: 100%;
+      }
+      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "right"; }
+      #view-monitor .right-stack { grid-template-columns: 1fr; grid-template-rows: auto; }
+      .batch-row { grid-template-columns: 1fr; gap: 8px; padding: 14px; }
+      .batch-row.head { display: none; }
+      .voice-command { grid-template-columns: 64px minmax(0,1fr); }
+      .voice-command button:last-child { grid-column: 1 / -1; }
       .stage-editor { grid-template-columns: 1fr; }
       .alarm-row { grid-template-columns: 1fr; }
       .alarm-cell { border-right: 0; }
-      .progress-row { grid-template-columns: 1fr; }
+      .progress-row { grid-template-columns: 1fr; margin-left: 0; margin-right: 0; }
+      .gantt-chart { margin-left: 0; margin-right: 0; }
       .bigscreen-grid { grid-template-columns: 1fr; grid-template-rows: none; overflow: auto; }
+      .export { top: auto; right: 10px; bottom: 12px; }
     }
   </style>
 </head>
@@ -853,24 +1513,27 @@
         <span class="status-chip"><span id="pipelineDot" class="state-dot warning"></span><span id="pipelineState">Pipeline</span></span>
         <span id="runClock" class="clock">00:00:00</span>
         <span id="wallClock" class="clock">--:--:--</span>
-        <button id="bigScreenBtn" class="icon-btn" type="button" aria-label="Big screen overview">▦</button>
         <button id="topEstopBtn" class="top-estop-btn" type="button">△ 急停</button>
       </div>
     </header>
 
     <nav class="sidebar tabs" aria-label="Main navigation">
-      <button class="tab-btn active" type="button" data-tab="monitor"><span class="symbol nav-icon">▦</span><span>运行看板</span></button>
-      <button class="tab-btn" type="button" data-tab="program"><span class="symbol nav-icon">▤</span><span>程序控制</span></button>
-      <button class="tab-btn" type="button" data-tab="recipes"><span class="symbol nav-icon">▧</span><span>配方管理</span></button>
-      <button class="tab-btn" type="button" data-tab="materials"><span class="symbol nav-icon">▥</span><span>原料批次</span></button>
-      <button class="tab-btn" type="button" data-tab="ai"><span class="symbol nav-icon">◌</span><span>AI 实验室</span></button>
-      <button class="tab-btn" type="button" data-tab="alarms"><span class="symbol nav-icon">△</span><span>报警中心</span></button>
+      <button class="tab-btn active" type="button" data-tab="monitor"><span class="material-symbols-outlined nav-icon">dashboard</span><span>运行看板</span></button>
+      <button class="tab-btn" type="button" data-tab="recipes"><span class="material-symbols-outlined nav-icon">inventory_2</span><span>批次管理</span></button>
+      <button class="tab-btn" type="button" data-tab="program"><span class="material-symbols-outlined nav-icon">settings_input_component</span><span>控制面板</span></button>
+      <button class="tab-btn" type="button" data-tab="ai"><span class="material-symbols-outlined nav-icon">biotech</span><span>AI 实验室</span></button>
+      <button class="tab-btn" type="button" data-tab="materials"><span class="material-symbols-outlined nav-icon">history</span><span>历史数据</span></button>
+      <button class="tab-btn" type="button" data-tab="alarms"><span class="material-symbols-outlined nav-icon">warning</span><span>报警中心</span></button>
       <div class="sidebar-spacer"></div>
-      <button class="nav-settings" type="button"><span class="symbol nav-icon">⚙</span><span>设置</span></button>
+      <button class="nav-settings" type="button" data-tab="settings"><span class="material-symbols-outlined nav-icon">settings</span><span>设置</span></button>
     </nav>
 
     <main class="main">
       <section id="view-monitor" class="view active hmi-view">
+        <div class="monitor-heading">
+          运行看板
+          <div class="monitor-subheading">实时反应釜状态、AI 建议与过程历史</div>
+        </div>
         <div class="status-strip">
           <div id="systemHealthBlock" class="status-block"><span class="state-dot"></span><span id="systemHealthText">系统健康: 等待</span></div>
           <div id="esp32HealthBlock" class="status-block"><span class="symbol">⌁</span><span id="esp32HealthText">ESP32 连接: 检查中</span></div>
@@ -911,7 +1574,7 @@
             </section>
           </section>
 
-          <section class="left-stack">
+          <section class="left-stack monitor-support">
             <section class="panel process-panel">
               <div class="panel-head"><div class="panel-title">Process Line</div><div class="dim mono">ESP32 -> Pi -> HMI</div></div>
               <canvas id="processCanvas" class="process-canvas" height="280"></canvas>
@@ -940,20 +1603,27 @@
 
           <section class="right-stack">
             <section class="panel ai-card">
-              <div class="panel-title">AI Recommendation</div>
-              <div class="ai-score">
-                <div><div class="label">Learned</div><div id="aiLearnedCount" class="score-big">--</div></div>
-                <div><div class="label">Expected Lift</div><div id="aiLiftValue" class="score-big">--%</div></div>
+              <div class="panel-title">
+                <span class="ai-card-title-left"><span class="material-symbols-outlined">psychology</span><span>AI 指令中心</span></span>
+                <span class="model-badge" id="monitorModelBadge">模型: --</span>
               </div>
-              <div class="bar"><div id="aiConfidenceBar"></div></div>
-              <div class="kv" id="aiRecommendation"></div>
-              <button id="monitorApplyAiBtn" class="primary-btn monitor-ai-action" type="button"><span class="symbol">↯</span> 应用 AI 参数</button>
+              <div class="ai-command-body">
+                <div class="ai-advice" id="monitorAiAdvice">等待后端 AI 推荐。</div>
+                <div class="monitor-target-grid">
+                  <div class="monitor-target"><div class="label">目标温度</div><div id="monitorTargetTemp" class="monitor-target-value">-- °C</div></div>
+                  <div class="monitor-target"><div class="label">目标转速</div><div id="monitorTargetRpm" class="monitor-target-value">--</div></div>
+                </div>
+                <button id="monitorApplyAiBtn" class="primary-btn monitor-ai-action" type="button"><span class="material-symbols-outlined">bolt</span> 应用 AI 参数</button>
+              </div>
             </section>
             <section class="panel recipe-card">
-              <div class="panel-title">Batch Summary</div>
-              <div id="batchId" class="batch-id">Batch ---</div>
+              <div class="panel-title"><span>当前批次</span><span id="batchId" class="batch-code-badge">ID: --</span></div>
               <div class="muted">Started <span id="batchStart">--:--:--</span></div>
               <div class="kv" id="batchSummary"></div>
+              <div class="batch-actions">
+                <button class="secondary-btn" type="button" data-tab-jump="recipes">查看日志</button>
+                <button class="text-btn" type="button" data-tab-jump="program">手动覆盖</button>
+              </div>
             </section>
             <section class="panel alarm-card">
               <div class="panel-head"><div class="panel-title">Alarm Queue</div><button class="text-btn small-link" type="button" data-tab-jump="alarms">Details</button></div>
@@ -965,119 +1635,125 @@
       </section>
 
       <section id="view-program" class="view">
-        <h1 class="view-title">系统控制面板</h1>
         <section class="program-layout">
-          <div class="program-status-bar">
-            <div class="status-block"><span class="state-dot"></span><span>状态: <span id="programStatusText">检查中</span></span></div>
-            <div class="status-block"><span class="symbol">▥</span><span>批次: <span id="programBatchText">---</span></span></div>
-            <div class="mode-toggle" aria-label="control mode"><button class="active" type="button">自动</button><button type="button">手动</button></div>
-          </div>
-          <div class="panel" style="padding:18px">
-            <div class="hint">Drag stage boundaries to tune duration; click a stage to edit parameters.</div>
-            <div id="timeline" class="timeline" style="margin-top:14px"></div>
-          </div>
-          <div class="program-editor-grid">
-            <div class="stage-editor">
-              <div class="fields" id="stageFields"></div>
-              <div class="text-actions">
-                <button id="addStageBtn" class="text-btn" type="button">+ Add stage</button>
-                <button id="deleteStageBtn" class="primary-btn danger" type="button">Delete stage</button>
-              </div>
-            </div>
-            <aside class="program-ai-panel">
-              <div class="panel-title">AI 优化器运行中</div>
-              <div class="dim">基于当前程序参数和批次历史的安全限幅建议。</div>
-              <div class="compare-box">
-                <div class="compare-card"><div class="label">当前系统状态</div><div class="kv" id="programCurrentCompare"></div></div>
-                <div class="compare-arrow">→</div>
-                <div class="compare-card suggested"><div class="label">AI 建议目标</div><div class="kv" id="programSuggestedCompare"></div></div>
-              </div>
-              <button id="programApplyAiBtn" class="primary-btn" type="button"><span class="symbol">✓</span> 确认应用建议</button>
-            </aside>
-          </div>
-          <div class="action-row">
-            <button id="saveRecipeBtn" class="text-btn" type="button">Save as recipe...</button>
-            <button id="loadRecipeBtn" class="text-btn" type="button">Load recipe...</button>
-            <button id="startProgramBtn" class="primary-btn" type="button">START PROGRAM</button>
-          </div>
+          <div id="programRoot"></div>
         </section>
       </section>
 
       <section id="view-recipes" class="view">
-        <h1 class="view-title">配方管理</h1>
-        <div class="recipes-grid">
-          <section class="panel"><div id="recipeList"></div><button id="newRecipeBtn" class="text-btn" type="button" style="margin:16px">+ New recipe</button></section>
-          <section id="recipeDetail"></section>
+        <h1 class="view-title">批次管理</h1>
+        <div class="batch-table-layout">
+          <div class="batch-toolbar">
+            <input class="field-line" placeholder="搜索批次编号 / 状态..." aria-label="搜索批次">
+            <input class="field-line" value="" placeholder="开始日期" aria-label="开始日期">
+            <input class="field-line" value="" placeholder="结束日期" aria-label="结束日期">
+            <button class="text-btn" type="button"><span class="material-symbols-outlined">filter_list</span> 高级筛选</button>
+            <button id="historyExportBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> 导出数据</button>
+            <button class="primary-btn" type="button" data-tab-jump="materials"><span class="material-symbols-outlined">psychology</span> 动态学习总览</button>
+          </div>
+          <section class="batch-table" id="batchTable"></section>
         </div>
       </section>
 
       <section id="view-materials" class="view">
-        <h1 class="view-title">原料批次</h1>
-        <div class="materials-grid">
-          <section class="panel" style="padding:20px">
-            <h2 class="section-title">Batch Inputs</h2>
-            <table class="plain-table"><thead><tr><th>Name</th><th>Lot</th><th>Amount g/mL</th><th>Purity %</th><th></th></tr></thead><tbody id="materialRows"></tbody></table>
-            <button id="addMaterialBtn" class="text-btn" type="button" style="margin-top:14px">+ Add material</button>
-          </section>
-          <aside class="ratio-box">
-            <div class="ratio-title">A : B : C</div>
-            <div id="ratioRaw" class="mono" style="font-size:22px;margin-top:16px"></div>
-            <div id="ratioNormalized" class="muted" style="margin-top:8px"></div>
-          </aside>
+        <div id="historyRoot"></div>
+        <div class="materials-grid" hidden>
+          <table class="plain-table"><tbody id="materialRows"></tbody></table>
+          <div id="ratioRaw"></div><div id="ratioNormalized"></div>
         </div>
-        <section class="product-grid" id="productForm">
-          <div class="wide"><h2 class="section-title">Product Tracking</h2></div>
-          <div class="field"><label class="label" for="productName">Product name</label><input id="productName" class="field-line" value="Light fraction"></div>
-          <div class="field"><label class="label" for="productMass">Output mass g</label><input id="productMass" class="field-line" type="number" step="0.01" value="32.40"></div>
-          <div class="field"><label class="label" for="sampleTime">Sample time</label><input id="sampleTime" class="field-line" value="15:42:00"></div>
-          <div class="field"><label class="label" for="appearance">Appearance</label><input id="appearance" class="field-line" value="Clear pale liquid"></div>
-          <div class="field"><label class="label">Measured yield</label><div id="computedYield" class="field-line">--%</div></div>
-          <div class="field"><label class="label" for="theoreticalMass">Theoretical max g</label><input id="theoreticalMass" class="field-line" type="number" step="0.01" value="45.00"></div>
-          <div class="field wide"><label class="label" for="productNotes">Notes</label><textarea id="productNotes" class="textarea-line">Manual sample after cool-down.</textarea></div>
-          <div id="productLockNote" class="disabled-note wide">Finish the batch before saving product results.</div>
-          <div class="action-row wide"><button id="finishBatchBtn" class="primary-btn danger" type="button">FINISH BATCH</button><button id="saveProductBtn" class="primary-btn" type="button">SAVE RESULT</button></div>
-        </section>
       </section>
 
       <section id="view-ai" class="view">
-        <h1 class="view-title">AI 辅助控制中心</h1>
-        <div class="ai-stack">
-          <section><h2 class="section-title">Learning State</h2><div class="overview-grid" id="aiOverview"></div></section>
-          <section><h2 class="section-title">Parameter Sensitivity</h2><div class="dim">Based on backend batch results</div><canvas id="sensitivityChart" class="bar-chart" height="220" style="margin-top:14px"></canvas><div class="dim" style="margin-top:10px">Positive values mean the parameter is correlated with higher yield. Click a parameter to inspect its yield scatter plot.</div><button id="resetSensitivityBtn" class="text-btn" type="button" hidden>Back to sensitivity bars</button></section>
-          <section><h2 class="section-title">Learning History</h2><canvas id="learningChart" class="learn-chart" height="220"></canvas><div id="aiLogList" class="log-list"></div></section>
-          <section class="recommend-box"><div class="recipe-title-line"><div><div class="section-title">Recommended setup</div><div class="batch-id" style="padding:0;font-size:28px">Next Batch</div></div><button id="applyAiBtn" class="primary-btn" type="button">APPLY RECOMMENDATION</button></div><div class="kv" id="aiRecommendationFull"></div></section>
+        <div class="recipe-title-line"><div><h1 class="view-title" style="margin:0;border:0">AI 辅助控制中心</h1><div class="muted">实时后端推荐与参数优化</div></div><div class="nlp-badge"><span class="state-dot"></span><span id="aiProviderStatus">模型状态: --</span></div></div>
+        <div class="ai-control-grid">
+          <div class="ai-left-stack">
+            <section class="ai-intent-panel">
+              <div class="recipe-title-line"><h2 class="section-title">推荐来源</h2><span class="status-pill" id="aiConfidencePill">--</span></div>
+              <div class="intent-quote" id="aiIntentQuote">等待后端推荐。</div>
+              <div class="intent-map" id="aiIntentMap"></div>
+            </section>
+            <section class="ai-preview-panel" style="margin-top:24px">
+              <h2 class="section-title">参数应用预览</h2>
+              <div class="preview-compare">
+                <div class="preview-box"><div class="label">当前系统状态</div><div class="kv" id="aiCurrentCompare"></div></div>
+                <div class="compare-arrow">→</div>
+                <div class="preview-box suggested"><div class="label">AI 建议目标</div><div class="kv" id="aiSuggestedCompare"></div></div>
+              </div>
+              <div class="action-row" style="border:0;padding-right:0"><button class="text-btn" type="button">忽略</button><button id="applyAiBtn" class="primary-btn" type="button">确认应用建议</button></div>
+            </section>
+          </div>
+          <aside class="ai-right-stack">
+            <section class="voice-panel">
+              <div class="label" style="color:#ffb4ab">PIPELINE</div>
+              <div class="waveform" aria-label="voice waveform"><span style="height:34%"></span><span style="height:62%;animation-delay:.1s"></span><span style="height:48%;animation-delay:.2s"></span><span style="height:82%;animation-delay:.3s"></span><span style="height:100%;animation-delay:.4s"></span><span style="height:76%;animation-delay:.5s"></span><span style="height:42%;animation-delay:.6s"></span><span style="height:68%;animation-delay:.7s"></span></div>
+              <div class="muted mono" id="voicePipelineText" style="text-align:center">等待后端事件...</div>
+            </section>
+            <section class="ai-log-panel"><h2 class="section-title">操作日志</h2><div id="aiLogList" class="log-list"></div></section>
+          </aside>
+          <div class="ai-stack" hidden>
+            <section><div id="aiOverview"></div></section>
+            <canvas id="sensitivityChart" class="bar-chart" height="220"></canvas>
+            <canvas id="learningChart" class="learn-chart" height="220"></canvas>
+            <div id="aiRecommendationFull"></div>
+          </div>
         </div>
       </section>
 
       <section id="view-alarms" class="view">
-        <h1 class="view-title">报警中心</h1>
-        <div class="alarm-stats" id="alarmStats"></div>
-        <section><h2 class="section-title">Active Alarms</h2><div id="activeAlarmRowsFull" class="alarm-table"></div></section>
-        <section style="margin-top:24px"><h2 class="section-title">Alarm History</h2><div class="filters"><span>Time range: Today</span><span>Type: All</span><span>Status: All</span></div><div id="alarmHistoryRows" class="alarm-table history-scroll"></div></section>
+        <div class="alarm-center-head">
+          <div><h1 class="view-title" style="margin:0;border:0">报警中心</h1><div class="muted">需要操作员立即干预的活动故障。</div></div>
+          <div id="alarmStats"></div>
+        </div>
+        <div class="alarm-center-grid">
+          <section class="alarm-list-panel">
+            <div class="filters"><input class="field-line" placeholder="通过节点 ID 或错误代码过滤..."><button class="text-btn" type="button">过滤</button></div>
+            <div id="activeAlarmRowsFull" class="alarm-table"></div>
+          </section>
+          <section class="alarm-detail-panel">
+            <div id="alarmDetail"></div>
+            <div style="margin-top:22px"><label class="label">操作日志条目</label><div class="voice-command" style="grid-template-columns:minmax(0,1fr) 96px;padding:0;border-left-width:2px"><input class="field-line" placeholder="输入解决注释或采取的操作..."><button class="primary-btn" type="button">记录</button></div></div>
+          </section>
+        </div>
+        <section style="margin-top:24px" hidden><div id="alarmHistoryRows" class="alarm-table history-scroll"></div></section>
+      </section>
+
+      <section id="view-settings" class="view">
+        <div class="alarm-center-head">
+          <div><h1 class="view-title" style="margin:0;border:0">设置</h1><div class="muted">系统连接、数据端口与安全控制状态。</div></div>
+          <div id="settingsStatus"></div>
+        </div>
+        <div class="settings-grid">
+          <div class="settings-stack">
+            <section class="settings-panel">
+              <div class="panel-head"><div class="panel-title">系统状态</div><span class="status-pill" id="settingsHealthPill">ONLINE</span></div>
+              <div class="settings-panel-body">
+                <div class="settings-card-grid" id="settingsCards"></div>
+              </div>
+            </section>
+            <section class="settings-panel">
+              <div class="panel-head"><div class="panel-title">后端数据端口</div><span class="mono muted">READ ONLY</span></div>
+              <div class="settings-panel-body" id="settingsEndpoints"></div>
+            </section>
+          </div>
+          <div class="settings-stack">
+            <section class="settings-panel">
+              <div class="panel-head"><div class="panel-title">控制权限</div><span class="mono muted">SAFETY GATE</span></div>
+              <div class="settings-panel-body">
+                <div class="settings-row"><span class="material-symbols-outlined">admin_panel_settings</span><div><div class="label">手动覆盖</div><div class="muted">允许操作员在安全限幅内调整温度、转速与保持时间。</div></div><span class="setting-switch"></span></div>
+                <div class="settings-row"><span class="material-symbols-outlined">psychology</span><div><div class="label">AI 建议应用</div><div class="muted">AI 参数必须通过人工确认后写入控制队列。</div></div><span class="setting-switch"></span></div>
+                <div class="settings-row"><span class="material-symbols-outlined">emergency_home</span><div><div class="label">急停互锁</div><div class="muted">急停和报警确认受硬件互锁保护。</div></div><span class="setting-switch warn"></span></div>
+              </div>
+            </section>
+            <section class="settings-panel">
+              <div class="panel-head"><div class="panel-title">设备通道</div><span class="mono muted" id="settingsDeviceRatio">0/0</span></div>
+              <div class="settings-panel-body" id="settingsDevices"></div>
+            </section>
+          </div>
+        </div>
       </section>
     </main>
   </div>
 
-  <div id="exportBox" class="export">
-    <div class="export-menu">
-      <button type="button" data-export="pdf">批次报告 PDF（当前批次）</button>
-      <button type="button" data-export="batches">历史数据 CSV（全部批次）</button>
-      <button type="button" data-export="alarms">报警记录 CSV</button>
-    </div>
-    <button id="exportTrigger" class="export-trigger" type="button">Export ↑</button>
-  </div>
-
-  <section id="bigScreen" class="bigscreen" hidden aria-label="大屏总览">
-    <div class="bigscreen-head"><div class="brand">ReactorOS Overview</div><button id="bigScreenClose" class="icon-btn" type="button" aria-label="退出大屏">×</button></div>
-    <div class="bigscreen-grid">
-      <div class="big-tile"><div class="big-label">Current Temp</div><div id="bigTempValue" class="big-value">-- °C</div></div>
-      <div class="big-tile"><div class="big-label">Current Yield</div><div id="bigYieldValue" class="big-value">--%</div></div>
-      <div class="big-tile"><div class="big-label">Batch Progress</div><canvas id="bigProgress" width="140" height="140" style="width:140px;height:140px;margin-top:18px"></canvas></div>
-      <div class="big-tile"><div class="big-label">Temperature Trend</div><canvas id="bigTempChart" class="big-chart" height="200"></canvas></div>
-      <div class="big-tile"><div class="big-label">AI Recommendation</div><div id="bigAiSummary" class="metric">Waiting for model</div></div>
-      <div id="bigAlarmTile" class="big-tile"><div class="big-label">Active Alarms</div><div id="bigAlarmValue" class="big-value">0</div></div>
-    </div>
-  </section>
   <div id="chartTooltip" class="chart-tooltip"></div>
 
   <script>
@@ -1112,7 +1788,7 @@
       lastAlarmAt: {},
       sensors: [
         { key: "temperature", label: "TEMP", name: "Temperature", value: null, target: null, ai: null, unit: "°C", min: 0, max: 300, normal: [50, 240], decimals: 2 },
-        { key: "pressure", label: "PRESSURE", name: "Pressure", value: null, target: null, ai: null, unit: "MPa", min: 0, max: 1, normal: [0.05, 0.4], decimals: 2 },
+        { key: "pressure", label: "PRESSURE", name: "Pressure", value: null, target: null, ai: null, unit: "MPa", min: 0, max: 1, normal: [0.05, 0.5], decimals: 2 },
         { key: "rpm", label: "RPM", name: "Stirrer RPM", value: null, target: null, ai: null, unit: "RPM", min: 0, max: 1200, normal: [100, 900], decimals: 2 },
         { key: "shake", label: "SHAKE", name: "Shake Vessel Speed", value: null, target: null, ai: null, unit: "CPM", min: 0, max: 60, normal: [0, 50], decimals: 2 },
         { key: "tilt", label: "TILT", name: "Tilt Angle", value: null, target: null, ai: null, unit: "deg", min: -45, max: 45, normal: [-30, 30], decimals: 2 },
@@ -1129,12 +1805,20 @@
         { name: "Cool-down", temp: 60, rate: 0, duration: 3, rpm: 160, shake: 12, cooling: "风冷" }
       ],
       recipes: [],
-      ingredients: [
-        { name: "Reactant A", lot: "LOT-2024-08", amount: 45.0, purity: 99.2 },
-        { name: "Reactant B", lot: "LOT-2024-07", amount: 12.5, purity: 98.7 },
-        { name: "Catalyst", lot: "LOT-2024-09", amount: 0.8, purity: 97.0 }
-      ],
+      ingredients: [],
       batches: [],
+      processes: [],
+      processDetails: {},
+      processError: null,
+      processLoading: false,
+      processesLoaded: false,
+      selectedProcessId: null,
+      selectedProcessStepId: null,
+      selectedHistoryBatchId: null,
+      batchDetails: {},
+      historyError: null,
+      historyLoading: false,
+      historyLoaded: false,
       alarms: [],
       acknowledgedAlarmIds: new Set(),
       coefficients: [],
@@ -1142,6 +1826,7 @@
       aiProvider: null,
       aiMemory: null,
       aiRecommendation: null,
+      recentEvents: [],
       aiSensitivityParam: null,
       sensitivityHitboxes: []
     };
@@ -1149,9 +1834,23 @@
     function seedData() {
       state.recipes = [];
       state.batches = [];
+      state.processes = [];
+      state.processDetails = {};
+      state.processError = null;
+      state.processLoading = false;
+      state.processesLoaded = false;
+      state.selectedProcessId = null;
+      state.selectedProcessStepId = null;
+      state.selectedHistoryBatchId = null;
+      state.batchDetails = {};
+      state.historyError = null;
+      state.historyLoading = false;
+      state.historyLoaded = false;
       state.alarms = [];
       state.aiLogs = [];
       state.coefficients = [];
+      state.ingredients = [];
+      state.recentEvents = [];
     }
 
     function recipe(name, runs, best, avg, low, bestBatch, lowBatch, trend) {
@@ -1160,8 +1859,9 @@
 
     function renderTabs() {
       $$(".tab-btn").forEach((button) => button.classList.toggle("active", button.dataset.tab === state.activeTab));
+      $$(".nav-settings").forEach((button) => button.classList.toggle("active", button.dataset.tab === state.activeTab));
       $$(".view").forEach((view) => view.classList.toggle("active", view.id === `view-${state.activeTab}`));
-      const activeButton = $(`.tab-btn[data-tab="${state.activeTab}"]`);
+      const activeButton = $(`.tab-btn[data-tab="${state.activeTab}"], .nav-settings[data-tab="${state.activeTab}"]`);
       const title = activeButton?.querySelector("span:last-child")?.textContent || activeButton?.textContent || "ReactorOS";
       if ($("#pageTitle")) $("#pageTitle").textContent = title.trim();
       requestAnimationFrame(drawAll);
@@ -1170,6 +1870,9 @@
     function switchTab(tab) {
       state.activeTab = tab;
       renderTabs();
+      if (tab === "program") void refreshProcesses();
+      if (tab === "materials") void refreshHistoryBatches();
+      renderActiveView();
     }
 
     async function apiJson(path, options = {}) {
@@ -1216,7 +1919,7 @@
         }
         applyPipelineError();
       }
-      renderPassive();
+      renderPassive({ preserveActiveView: true });
       window.__reactorState = state;
     }
 
@@ -1226,9 +1929,15 @@
       if (!sample) throw Object.assign(new Error("sensor data unavailable"), { code: 503 });
       state.aiProvider = live.ai_provider || null;
       state.aiMemory = live.ai_memory || null;
+      state.recentEvents = Array.isArray(live.recent_events) ? live.recent_events : [];
       state.activeBatchId = runtime.active_batch_id;
       state.running = Boolean(runtime.active_batch_id);
       if (state.activeBatchId) state.completedBatchId = state.activeBatchId;
+      if (Array.isArray(live.processes)) {
+        mergeProcessSummaries(live.processes);
+        state.processesLoaded = true;
+        state.processError = null;
+      }
 
       const recentBatches = Array.isArray(live.recent_batches) ? live.recent_batches : [];
       const activeBatch = recentBatches.find((batch) => batch.id === runtime.active_batch_id) || recentBatches[0];
@@ -1254,9 +1963,9 @@
 
       applyTargetsToStages(targets);
       mapRecentSamples(live.recent_samples || [sample]);
-      mapBatches(live.recent_batches || [], live.recent_outcomes || []);
+      mapBatches(live.recent_batches || [], live.recent_outcomes || [], live.recent_samples || []);
       mapRecommendation(live.latest_recommendation);
-      mapAlarms(runtime);
+      mapAlarms(live.alarms || []);
       mapAi(live);
     }
 
@@ -1307,21 +2016,10 @@
       });
     }
 
-    function mapBatches(batches, outcomes) {
-      const outcomeByBatch = new Map(outcomes.map((outcome) => [outcome.batch_id, outcome]));
-      state.batches = batches.map((batch) => {
-        const outcome = outcomeByBatch.get(batch.id) || {};
-        return {
-          id: batch.id,
-          temp: toNumber(batch.target_temperature_c),
-          hold: toNumber(batch.heating_minutes),
-          rpm: toNumber(batch.target_stirrer_rpm),
-          ratio: toNumber(outcome.product_ratio),
-          yield: toNumber(outcome.yield_percent),
-          started_at: batch.started_at,
-          finished_at: batch.finished_at
-        };
-      }).sort((a, b) => a.id - b.id);
+    function mapBatches(batches, outcomes, samples = []) {
+      mergeBatches(batches, outcomes, samples);
+      state.historyLoaded = true;
+      state.historyError = null;
     }
 
     function mapRecommendation(rec) {
@@ -1336,46 +2034,39 @@
         rpm: toNumber(rec.target_stirrer_rpm),
         shake: toNumber(sensor("shake").target) ?? currentStage().shake,
         ratio: 0,
-        lift: toNumber(rec.expected_score) ?? 0,
-        basedOn: rec.based_on_batch_count ?? state.aiMemory?.reference_batch_count ?? 0,
+        lift: toNumber(rec.expected_score) ?? toNumber(rec.expected_yield_percent) ?? 0,
+        basedOn: rec.based_on_batch_count ?? rec.based_on_batches ?? state.aiMemory?.reference_batch_count ?? 0,
         rationale: rec.rationale || ""
       };
     }
 
-    function mapAlarms(runtime) {
-      const alarms = [];
-      state.sensors.forEach((item) => {
-        if (!isSensorOut(item)) return;
-        const id = `limit-${item.key}`;
-        alarms.push({
+    function mapAlarms(backendAlarms) {
+      state.alarms = backendAlarms.map((alarm, index) => {
+        const id = alarm.id || alarm.type || `alarm-${index}`;
+        const current = alarm.current_value ?? alarm.value ?? alarm.limit_value ?? "--";
+        return {
           id,
-          time: nowTime(),
-          sensor: item.label,
-          description: `${item.name} out of range ${fmtValue(item.normal[0], item.decimals)}-${fmtValue(item.normal[1], item.decimals)} ${item.unit}`,
-          value: `${fmtValue(item.value, item.decimals)} ${item.unit}`,
+          time: alarm.time || timeLabel(alarm.created_at) || nowTime(),
+          sensor: alarm.sensor || alarm.type || "Data Pipeline",
+          description: alarm.message || alarm.description || "backend alarm",
+          value: current === "--" ? "--" : String(current),
+          level: alarm.level || "medium",
+          suggestion: alarm.suggestion || "",
           active: !state.acknowledgedAlarmIds.has(id),
           acknowledged: state.acknowledgedAlarmIds.has(id)
-        });
+        };
       });
-      if (runtime?.last_control_error) {
-        const id = "runtime-control-error";
-        alarms.unshift({ id, time: nowTime(), sensor: "Controller", description: runtime.last_control_error, value: "ERR", active: !state.acknowledgedAlarmIds.has(id), acknowledged: state.acknowledgedAlarmIds.has(id) });
-      }
-      if (runtime?.emergency_stop) {
-        const id = "runtime-emergency-stop";
-        alarms.unshift({ id, time: nowTime(), sensor: "Emergency Stop", description: "manual emergency stop is active", value: "ACTIVE", active: !state.acknowledgedAlarmIds.has(id), acknowledged: state.acknowledgedAlarmIds.has(id) });
-      }
-      state.alarms = alarms;
     }
 
     function mapAi(live) {
       const learned = state.aiRecommendation?.basedOn ?? state.aiMemory?.reference_batch_count ?? 0;
-      state.coefficients = state.batches.filter((batch) => batch.yield !== null).length >= 2
-        ? [["Temperature", 0.84], ["Hold Duration", 0.61], ["Stirrer RPM", 0.31], ["Reactant Ratio", 0.72]]
-        : [];
+      state.coefficients = [];
       state.aiLogs = [];
       if (live.latest_recommendation?.rationale) state.aiLogs.push("AI: " + live.latest_recommendation.rationale);
       state.aiLogs.push(`Model: ${state.aiProvider?.model || "not configured"} / learned ${learned} batches`);
+      if (state.recentEvents.length) {
+        state.recentEvents.slice(0, 5).forEach((event) => state.aiLogs.push(`${timeLabel(event.created_at)} ${event.event_type}: ${event.reason}`));
+      }
       if (!state.batches.some((batch) => batch.yield !== null)) state.aiLogs.push("Waiting for backend product results before sensitivity regression");
     }
 
@@ -1386,6 +2077,18 @@
         state.targetHistories[key] = [];
         state.aiHistories[key] = [];
       });
+      state.recipes = [];
+      state.ingredients = [];
+      state.coefficients = [];
+      state.aiLogs = [];
+      state.aiProvider = null;
+      state.aiMemory = null;
+      state.aiRecommendation = null;
+      state.recentEvents = [];
+      state.activeBatchId = null;
+      state.running = false;
+      state.batchNo = null;
+      state.batchStart = "--:--:--";
       const id = "pipeline-error";
       state.alarms = [{
         id,
@@ -1398,16 +2101,26 @@
       }];
     }
 
-    function renderPassive() {
+    function renderActiveView() {
+      if (state.activeTab === "program") renderProgram();
+      else if (state.activeTab === "recipes") renderRecipes();
+      else if (state.activeTab === "materials") renderMaterials();
+      else if (state.activeTab === "ai") renderAI();
+      else if (state.activeTab === "alarms") renderAlarms();
+      else if (state.activeTab === "settings") renderSettings();
+      else renderMonitor();
+    }
+
+    function renderPassive(options = {}) {
+      const preserveActiveView = options.preserveActiveView === true;
       renderSidebar();
       renderMonitor();
-      renderProgram();
-      renderRecipes();
-      renderMaterials();
-      renderAI();
-      renderAlarms();
-      computeYield();
-      renderProductLock();
+      if (!preserveActiveView || state.activeTab !== "program") renderProgram();
+      if (!preserveActiveView || state.activeTab !== "recipes") renderRecipes();
+      if (!preserveActiveView || state.activeTab !== "materials") renderMaterials();
+      if (!preserveActiveView || state.activeTab !== "ai") renderAI();
+      if (!preserveActiveView || state.activeTab !== "alarms") renderAlarms();
+      if (!preserveActiveView || state.activeTab !== "settings") renderSettings();
       drawAll();
     }
 
@@ -1424,18 +2137,7 @@
     }
 
     function activeRecommendation() {
-      const stage = currentStage();
-      return state.aiRecommendation || {
-        temp: sensor("temperature").target ?? stage.temp,
-        hold: stage.duration,
-        stir: stage.duration,
-        rpm: sensor("rpm").target ?? stage.rpm,
-        shake: sensor("shake").target ?? stage.shake,
-        ratio: 0,
-        lift: 0,
-        basedOn: 0,
-        rationale: ""
-      };
+      return state.aiRecommendation;
     }
 
     function latestKnownBatchId() {
@@ -1497,13 +2199,19 @@
       const target = $("#heroReadouts");
       if (!target) return;
       const keys = ["temperature", "pressure", "rpm"];
-      const icons = { temperature: "♨", pressure: "⇵", rpm: "◎" };
+      const icons = { temperature: "thermostat", pressure: "compress", rpm: "cyclone" };
+      const heroDecimals = { temperature: 1, pressure: 2, rpm: 0 };
+      const labels = { temperature: "温度", pressure: "压力", rpm: "搅拌器" };
       target.innerHTML = keys.map((key) => {
         const item = sensor(key);
+        const decimals = heroDecimals[key] ?? item.decimals;
         const out = isSensorOut(item);
-        const status = state.dataReady ? (out ? "LIMIT" : "NORMAL") : `CODE ${state.backendError?.code || 503}`;
-        const meta = state.dataReady ? `${status} / ${fmtValue(item.normal[0], item.decimals)}-${fmtValue(item.normal[1], item.decimals)} ${item.unit}` : "DATA PIPELINE UNAVAILABLE";
-        return `<div class="hero-readout ${out ? "limit" : ""} ${!state.dataReady ? "danger" : ""}" data-hero="${item.key}"><span class="symbol hero-icon">${icons[key] || "◎"}</span><div class="hero-label">${item.name}</div><div class="hero-value">${fmtValue(item.value, item.decimals)}<span class="unit">${item.unit}</span></div><div class="hero-meta"><span class="hero-lamp"></span><span>${meta}</span></div></div>`;
+        const meta = key === "temperature"
+          ? (state.dataReady ? "来自数据管线" : pipelineErrorText())
+          : key === "pressure"
+            ? (state.dataReady ? (out ? "压力接近上限" : "管线在线") : pipelineErrorText())
+            : `<div class="hero-progress"><span style="width:${clamp(((toNumber(item.value) ?? 0) / Math.max(1, item.max)) * 100, 0, 100)}%"></span></div>`;
+        return `<div class="hero-readout ${out ? "limit" : ""} ${!state.dataReady ? "danger" : ""}" data-hero="${item.key}"><span class="material-symbols-outlined hero-icon">${icons[key] || "sensors"}</span><div class="hero-label">${labels[key]}</div><div class="hero-value">${fmtValue(item.value, decimals)}<span class="unit">${item.unit}</span></div><div class="hero-meta">${key === "temperature" ? '<span class="material-symbols-outlined">arrow_upward</span>' : key === "pressure" ? '<span class="material-symbols-outlined">horizontal_rule</span>' : ""}<span>${meta}</span></div></div>`;
       }).join("");
     }
 
@@ -1514,30 +2222,24 @@
     function renderMonitor() {
       const rec = activeRecommendation();
       renderHeroReadouts();
-      if ($("#batchId")) $("#batchId").textContent = state.batchNo ? "Batch " + pad2(state.batchNo).padStart(3, "0") : "Batch ---";
+      if ($("#batchId")) $("#batchId").textContent = state.batchNo ? "ID: " + state.batchNo : "ID: --";
       if ($("#batchStart")) $("#batchStart").textContent = state.batchStart;
       const stage = currentStage();
       const progress = stageProgress();
       const temp = sensor("temperature");
       const rpm = sensor("rpm");
-      const shake = sensor("shake");
-      const tilt = sensor("tilt");
-      const flow = sensor("flow");
-      const actualTemp = toNumber(temp.value);
-      const targetTemp = toNumber(rec.temp);
-      const delta = actualTemp === null || targetTemp === null ? null : actualTemp - targetTemp;
+      const targetTemp = rec?.temp ?? sensor("temperature").target;
+      const targetRpm = rec?.rpm ?? sensor("rpm").target;
+      if ($("#monitorModelBadge")) $("#monitorModelBadge").textContent = "模型: " + (state.aiProvider?.model || "--");
+      if ($("#monitorAiAdvice")) $("#monitorAiAdvice").textContent = rec?.rationale ? `"${rec.rationale}"` : (state.backendError ? pipelineErrorText() : "等待后端 AI 推荐。");
+      if ($("#monitorTargetTemp")) $("#monitorTargetTemp").textContent = fmtValue(targetTemp, 0) + "°C";
+      if ($("#monitorTargetRpm")) $("#monitorTargetRpm").textContent = fmtValue(targetRpm, 0);
       if ($("#batchSummary")) {
         $("#batchSummary").innerHTML = rows([
-          ["Stage", stage.name],
-          ["Progress", fmtValue(progress, 2) + "%"],
-          ["Duration", formatDuration(state.programElapsed) + " / " + formatDuration(stage.duration * 60)],
-          ["Target Temp", fmtValue(rec.temp, 2) + " °C"],
-          ["Actual Temp", fmtValue(temp.value, 2) + " °C"],
-          ["Delta", delta === null ? "-- °C" : (delta >= 0 ? "+" : "-") + fmtValue(Math.abs(delta), 2) + " °C"],
-          ["Stirrer RPM", fmtValue(rpm.value, 2) + " RPM"],
-          ["Shake Vessel", fmtValue(shake.value, 2) + " CPM"],
-          ["Tilt Angle", fmtValue(tilt.value, 2) + " deg"],
-          ["Flow Rate", fmtValue(flow.value, 2) + " L/min"]
+          ["阶段", stage.name.toLowerCase().includes("heat") ? "放热反应" : stage.name],
+          ["已用时间", formatDuration(state.programElapsed)],
+          ["预计完成时间", formatDuration(Math.max(0, stage.duration * 60 - state.programElapsed))],
+          ["数据来源", state.dataReady ? "后端数据管线" : pipelineErrorText()]
         ]);
       }
       if ($("#feedSummary")) $("#feedSummary").innerHTML = rows(feedRows());
@@ -1545,10 +2247,10 @@
       if ($("#stageProgressPercent")) $("#stageProgressPercent").textContent = fmtValue(progress, 2) + "%";
       if ($("#stageProgressTime")) $("#stageProgressTime").textContent = "Elapsed " + formatDuration(state.programElapsed) + " / Plan " + formatDuration(stage.duration * 60);
       if ($("#stageProgressFill")) $("#stageProgressFill").style.width = progress + "%";
-      if ($("#setTemp")) $("#setTemp").textContent = fmtValue(rec.temp, 2) + " °C";
-      if ($("#setRpm")) $("#setRpm").textContent = fmtValue(rec.rpm, 2) + " RPM";
-      if ($("#setShake")) $("#setShake").textContent = fmtValue(currentStage().shake ?? sensor("shake").target, 2) + " CPM";
-      if ($("#setHold")) $("#setHold").textContent = fmtValue(rec.hold, 2) + " min";
+      if ($("#setTemp")) $("#setTemp").textContent = fmtValue(targetTemp, 2) + " °C";
+      if ($("#setRpm")) $("#setRpm").textContent = fmtValue(targetRpm, 2) + " RPM";
+      if ($("#setShake")) $("#setShake").textContent = fmtValue(sensor("shake").target, 2) + " CPM";
+      if ($("#setHold")) $("#setHold").textContent = fmtValue(rec?.hold, 2) + " min";
       if ($("#setBatch")) $("#setBatch").textContent = state.activeBatchId ? String(state.activeBatchId).padStart(3, "0") : "---";
       if ($("#controlStatus")) $("#controlStatus").textContent = state.dataReady ? "Safety limited writes" : "Pipeline unavailable code=" + (state.backendError?.code || 503);
       const active = activeAlarms().length;
@@ -1560,26 +2262,126 @@
       if ($("#esp32HealthText")) $("#esp32HealthText").textContent = state.dataReady ? `ESP32 连接: 活跃 ${onlineCount}/${totalCount}` : `ESP32 连接: ${onlineCount}/${totalCount}`;
       if ($("#autoHealthBlock")) $("#autoHealthBlock").className = "status-block auto " + (state.running ? "" : "warning");
       if ($("#autoHealthText")) $("#autoHealthText").textContent = state.running ? "自动控制: 已启用" : "自动控制: 待机";
-      updateBigScreenText();
+      renderManualControls();
     }
 
     function rows(items) {
       return items.map(([k, v]) => `<div class="kv-row"><span class="kv-label k">${k}</span><span class="kv-value v">${v}</span></div>`).join("");
     }
 
+    function pipelineErrorText() {
+      return `PIPELINE ${state.backendError?.code || 503}: ${state.backendError?.message || "waiting for data pipeline"}`;
+    }
+
+    function scopedErrorText(scope, error) {
+      const label = scope || "PROCESS";
+      return `${label} ${error?.code || 500}: ${error?.message || "request failed"}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+    }
+
+    function unwrapData(payload) {
+      return payload && Object.prototype.hasOwnProperty.call(payload, "data") ? payload.data : payload;
+    }
+
+    function setInputValue(id, value, decimals = 2) {
+      const input = $(`#${id}`);
+      if (!input) return;
+      const next = toNumber(value);
+      input.value = next === null ? "" : fmtValue(next, decimals);
+    }
+
+    function renderManualControls() {
+      const temp = sensor("temperature");
+      const pressure = sensor("pressure");
+      const rpm = sensor("rpm");
+      setInputValue("manualTemp", temp.target ?? temp.value, 1);
+      setInputValue("manualPressure", pressure.target ?? pressure.value, 2);
+      setInputValue("manualRpm", rpm.target ?? rpm.value, 0);
+      if ($("#manualRpmRange")) $("#manualRpmRange").value = String(toNumber(rpm.target ?? rpm.value) ?? 0);
+      if ($("#manualTempFill")) $("#manualTempFill").style.width = temp.value === null ? "0%" : clamp((temp.value / Math.max(1, temp.max)) * 100, 0, 100) + "%";
+      if ($("#manualPressureFill")) $("#manualPressureFill").style.width = pressure.value === null ? "0%" : clamp((pressure.value / Math.max(1, pressure.max)) * 100, 0, 100) + "%";
+      if ($("#manualTempMeta")) $("#manualTempMeta").textContent = state.dataReady ? `当前 ${fmtValue(temp.value, 1)} / 目标 ${fmtValue(temp.target, 1)}` : pipelineErrorText();
+      if ($("#manualPressureMeta")) $("#manualPressureMeta").textContent = state.dataReady ? `当前 ${fmtValue(pressure.value, 2)} / 目标 ${fmtValue(pressure.target, 2)}` : pipelineErrorText();
+    }
+
     function feedRows() {
       const a = state.ingredients[0]?.amount || 0;
       const b = state.ingredients[1]?.amount || 1;
       return [
-        [state.ingredients[0]?.name || "Reactant A", `${fmtValue(a, 2)} g`],
-        [state.ingredients[1]?.name || "Reactant B", `${fmtValue(b, 2)} g`],
-        [state.ingredients[2]?.name || "Catalyst", `${fmtValue(state.ingredients[2]?.amount || 0, 2)} g`],
+        [state.ingredients[0]?.name || "--", `${fmtValue(a, 2)} g`],
+        [state.ingredients[1]?.name || "--", `${fmtValue(b, 2)} g`],
+        [state.ingredients[2]?.name || "--", `${fmtValue(state.ingredients[2]?.amount || 0, 2)} g`],
         ["A : B ratio", `${fmtValue(a / b, 2)} : 1`]
       ];
     }
 
     function sensor(key) { return state.sensors.find((item) => item.key === key); }
     function currentStage() { return state.stages[Math.min(state.selectedStage, state.stages.length - 1)]; }
+    function selectedProcess() {
+      return state.processes.find((process) => process.id === state.selectedProcessId) || null;
+    }
+    function selectedProcessDetail() {
+      return state.selectedProcessId ? state.processDetails[state.selectedProcessId] || null : null;
+    }
+    function selectedHistoryBatch() {
+      return state.batches.find((batch) => batch.id === state.selectedHistoryBatchId) || null;
+    }
+
+    function mergeProcessSummaries(processes) {
+      const details = state.processDetails;
+      const byId = new Map();
+      state.processes.forEach((process) => byId.set(process.id, process));
+      processes.forEach((process) => byId.set(process.id, { ...(byId.get(process.id) || {}), ...process }));
+      state.processes = Array.from(byId.values()).sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+        const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+        return (bTime || 0) - (aTime || 0) || b.id - a.id;
+      });
+      Object.values(details).forEach((detail) => {
+        if (!detail?.process) return;
+        state.processes = state.processes.map((process) => process.id === detail.process.id ? { ...process, ...detail.process } : process);
+      });
+    }
+
+    function normalizeBatch(batch, outcomesByBatch = new Map(), samplesByBatch = new Map()) {
+      const outcome = outcomesByBatch.get(batch.id) || batch.outcome || {};
+      const batchSamples = samplesByBatch.get(batch.id) || batch.samples || [];
+      const pressures = batchSamples.map((sample) => toNumber(sample.pressure_mpa)).filter((value) => value !== null);
+      const maxPressure = pressures.length ? Math.max(...pressures) : null;
+      return {
+        id: batch.id,
+        process_id: batch.process_id,
+        name: batch.name,
+        temp: toNumber(batch.target_temperature_c),
+        hold: toNumber(batch.heating_minutes),
+        rpm: toNumber(batch.target_stirrer_rpm),
+        pressure: maxPressure,
+        ratio: toNumber(outcome.product_ratio),
+        yield: toNumber(outcome.yield_percent),
+        started_at: batch.started_at,
+        finished_at: batch.finished_at
+      };
+    }
+
+    function mergeBatches(batches, outcomes = [], samples = []) {
+      const outcomeByBatch = new Map(outcomes.map((outcome) => [outcome.batch_id, outcome]));
+      const samplesByBatch = new Map();
+      samples.forEach((sample) => {
+        if (!sample.batch_id) return;
+        if (!samplesByBatch.has(sample.batch_id)) samplesByBatch.set(sample.batch_id, []);
+        samplesByBatch.get(sample.batch_id).push(sample);
+      });
+      const byId = new Map(state.batches.map((batch) => [batch.id, batch]));
+      batches.forEach((batch) => {
+        const normalized = normalizeBatch(batch, outcomeByBatch, samplesByBatch);
+        byId.set(batch.id, { ...(byId.get(batch.id) || {}), ...normalized });
+      });
+      state.batches = Array.from(byId.values()).sort((a, b) => a.id - b.id);
+    }
+
     function stageProgress() {
       const duration = currentStage().duration * 60;
       if (!duration) return 0;
@@ -1593,41 +2395,183 @@
     }
 
     function renderProgram() {
-      const total = state.stages.reduce((sum, stage) => sum + stage.duration, 0) || 1;
-      $("#timeline").innerHTML = state.stages.map((stage, index) => `
-        <div class="stage-block ${index === state.selectedStage ? "active" : ""}" data-stage="${index}" style="flex:${stage.duration / total}">
-          <div class="stage-name">${stage.name}</div>
-          <div class="muted">${fmtValue(stage.duration, 2)} min</div>
-          <div class="stage-temp">${fmtValue(stage.temp, 2)} °C</div>
-          ${index < state.stages.length - 1 ? `<div class="stage-handle" data-handle="${index}"></div>` : ""}
-        </div>`).join("");
-      renderStageFields();
-      renderProgramCompare();
-      bindTimeline();
+      const root = $("#programRoot");
+      if (!root) return;
+      if (state.selectedProcessId) {
+        renderProcessDetail(root);
+      } else {
+        renderProcessList(root);
+      }
+    }
+
+    function renderProcessList(root) {
+      if (!state.processesLoaded && !state.processLoading) void refreshProcesses({ silent: true });
+      const processNotice = state.processError
+        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>工艺数据错误</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
+        : state.backendError
+          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>实时管线状态</strong><br>${escapeHtml(pipelineErrorText())}<br>工艺定义仍可通过 /api/processes 添加和配置。</div>`
+          : "";
+      const processRows = state.processes.length
+        ? state.processes.map((process) => `
+          <button class="process-row" type="button" data-process-open="${process.id}">
+            <span class="process-row-main">
+              <span class="process-row-title">${escapeHtml(process.name)}</span>
+              <span class="process-row-meta">
+                <span>版本 V${process.version}</span>
+                <span>${process.step_count || 0} 个步骤</span>
+                <span>状态 ${process.status === "applied" ? "已应用" : process.status === "archived" ? "已归档" : "草稿"}</span>
+                <span>更新 ${shortDateTime(process.updated_at) || "--"}</span>
+              </span>
+            </span>
+            <span class="process-row-action"><span class="material-symbols-outlined">arrow_forward</span> 配置</span>
+          </button>`).join("")
+        : `<div class="empty-state">${state.processLoading ? "正在从 /api/processes 读取工艺列表..." : state.processError ? scopedErrorText("PROCESS", state.processError) : "后端暂无工艺定义。点击新增工艺后会写入数据管线。"}</div>`;
+      root.innerHTML = `
+        <div class="process-list-head">
+          <div>
+            <h1 class="view-title" style="margin:0;border:0">工艺控制面板</h1>
+            <div class="muted" style="margin-top:10px">先选择或新增一个工艺，再进入步骤配置与优化参数应用。</div>
+          </div>
+          <button id="createProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">add</span> 新增工艺</button>
+        </div>
+        ${processNotice}
+        <div class="program-status-bar">
+          <div class="status-block"><span class="state-dot ${state.processError ? "danger" : state.backendError ? "warning" : ""}"></span><span>工艺接口: <span id="programProcessStatusText">${state.processError ? "错误 " + state.processError.code : state.processLoading ? "读取中" : "在线"}</span></span></div>
+          <div class="status-block"><span class="state-dot ${state.backendError ? "warning" : ""}"></span><span>实时管线: <span id="programStatusText">${state.backendError ? "错误 " + state.backendError.code : state.running ? "运行中" : "待机"}</span></span></div>
+          <div class="status-block"><span class="material-symbols-outlined">schema</span><span>工艺: ${state.processes.length}</span></div>
+          <div class="status-block"><span class="material-symbols-outlined">science</span><span>活动批次: <span id="programBatchText">${state.activeBatchId || "---"}</span></span></div>
+        </div>
+        <div class="process-list">${processRows}</div>`;
+      bindProcessListActions();
+    }
+
+    function renderProcessDetail(root) {
+      const detail = selectedProcessDetail();
+      const process = detail?.process || selectedProcess();
+      if (!process) {
+        state.selectedProcessId = null;
+        renderProgram();
+        return;
+      }
+      const steps = Array.isArray(detail?.steps) ? detail.steps : [];
+      if (!state.selectedProcessStepId && steps.length) state.selectedProcessStepId = steps[0].id;
+      const activeStep = steps.find((step) => step.id === state.selectedProcessStepId) || steps.at(-1) || null;
+      const rec = activeRecommendation();
+      const processNotice = state.processError
+        ? `<div class="analysis-note warn"><strong>工艺数据错误</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
+        : "";
+      const aiNote = rec?.rationale
+        || (state.backendError ? "实时管线暂不可用，工艺定义可以继续编辑；应用参数时后端会返回明确错误码。" : "等待后端推荐。");
+      root.innerHTML = `
+        <div class="process-detail-head">
+          <div>
+            <button id="backToProcessListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> 返回列表</button>
+            <h1 class="process-detail-title">${escapeHtml(process.name)}</h1>
+            <div class="muted" style="margin-top:10px">版本 V${process.version} | 最后修改 ${shortDateTime(process.updated_at) || "--"} | 状态 ${process.status === "applied" ? "已应用" : "草稿"}</div>
+            <div class="process-meta-fields">
+              <div class="field"><label class="label" for="processNameInput">工艺名称</label><input id="processNameInput" class="field-line" value="${escapeHtml(process.name)}"></div>
+              <div class="field"><label class="label" for="processDescriptionInput">工艺说明</label><input id="processDescriptionInput" class="field-line" value="${escapeHtml(process.description || "")}" placeholder="例如 RX-78 高分子聚合"></div>
+              <button id="saveProcessMetaBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">edit</span> 保存定义</button>
+            </div>
+          </div>
+          <div class="process-detail-actions">
+            <button id="addProcessStepBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">add</span> 添加下一步</button>
+            <button id="applyProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">play_arrow</span> 应用此工艺</button>
+          </div>
+        </div>
+        ${processNotice}
+        <div class="process-detail-grid">
+          <section class="process-stage-list">
+            ${steps.length ? steps.map((step) => processStepMarkup(step, activeStep?.id === step.id)).join("") : `<div class="empty-state">此工艺还没有步骤。点击“添加下一步”后配置第一步。</div>`}
+          </section>
+          <aside style="display:grid;gap:24px">
+            ${processStepEditorMarkup(activeStep)}
+            <section class="process-ai-notes">
+              <div class="panel-title" id="programAiTitle">AI 优化建议 & 历史表现</div>
+              <div class="analysis-note"><strong style="color:var(--green)">建议</strong><br><span id="programAiReason">${escapeHtml(aiNote)}</span></div>
+              <div class="overview-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+                <div><div class="label">历史成功率</div><div class="metric">${fmtValue(successRateForProcess(process.id), 1)}%</div><div class="muted">来自关联批次结果</div></div>
+                <div><div class="label">学习样本</div><div class="metric">${state.batches.filter((batch) => batch.process_id === process.id).length}</div><div class="muted">真实后端批次</div></div>
+              </div>
+            </section>
+          </aside>
+        </div>`;
+      bindProcessDetailActions();
+    }
+
+    function processStepMarkup(step, active) {
+      const icon = step.step_index === 1 ? "local_fire_department" : step.name.includes("冷") ? "ac_unit" : "hourglass_empty";
+      const valueClass = step.step_index === 1 ? "accent" : step.step_index === 2 ? "success" : "";
+      return `<button class="process-step-card ${active ? "active" : ""}" type="button" data-step-open="${step.id}">
+        <span class="step-icon"><span class="material-symbols-outlined">${icon}</span></span>
+        <span>
+          <span class="recipe-title-line" style="margin:0">
+            <span class="step-title">阶段 ${step.step_index}: ${escapeHtml(step.name)}</span>
+            <span class="step-duration-pill">持续时间: ${fmtValue(step.duration_minutes, 0)} 分钟</span>
+          </span>
+          <span class="step-metrics">
+            <span><span class="label">目标温度</span><span class="step-metric-value ${valueClass}">${fmtValue(step.target_temperature_c, 1)}</span><span class="muted">°C</span></span>
+            <span><span class="label">升温速率</span><span class="step-metric-value">${fmtValue(step.ramp_rate_c_min, 1)}</span><span class="muted">°C/min</span></span>
+            <span><span class="label">搅拌转速</span><span class="step-metric-value">${fmtValue(step.target_stirrer_rpm, 0)}</span><span class="muted">RPM</span></span>
+            <span><span class="label">压力控制</span><span class="step-metric-value">${fmtValue(step.target_pressure_mpa, 1)}</span><span class="muted">MPa</span></span>
+          </span>
+        </span>
+      </button>`;
+    }
+
+    function processStepEditorMarkup(step) {
+      if (!step) {
+        return `<section class="step-editor-panel"><h2 class="section-title">步骤配置</h2><div class="empty-state">添加第一步后在这里配置参数。</div></section>`;
+      }
+      return `<section class="step-editor-panel">
+        <h2 class="section-title">步骤 ${step.step_index} 参数</h2>
+        <div class="step-editor-fields">
+          <div class="field"><label class="label" for="processStepName">阶段名称</label><input id="processStepName" class="field-line" value="${escapeHtml(step.name)}"></div>
+          <div class="field"><label class="label" for="processStepDuration">持续时间 min</label><input id="processStepDuration" class="field-line" type="number" min="1" max="240" step="1" value="${fmtValue(step.duration_minutes, 0)}"></div>
+          <div class="field"><label class="label" for="processStepTemp">目标温度 °C</label><input id="processStepTemp" class="field-line" type="number" min="0" max="500" step="0.1" value="${fmtValue(step.target_temperature_c, 1)}"></div>
+          <div class="field"><label class="label" for="processStepRamp">升温/降温速率</label><input id="processStepRamp" class="field-line" type="number" min="-20" max="20" step="0.1" value="${fmtValue(step.ramp_rate_c_min, 1)}"></div>
+          <div class="field"><label class="label" for="processStepRpm">搅拌转速 RPM</label><input id="processStepRpm" class="field-line" type="number" min="0" max="2000" step="1" value="${fmtValue(step.target_stirrer_rpm, 0)}"></div>
+          <div class="field"><label class="label" for="processStepShake">Shake CPM</label><input id="processStepShake" class="field-line" type="number" min="0" max="60" step="1" value="${fmtValue(step.target_shake_speed_cpm, 0)}"></div>
+          <div class="field"><label class="label" for="processStepPressure">压力 MPa</label><input id="processStepPressure" class="field-line" type="number" min="0" max="10" step="0.1" value="${fmtValue(step.target_pressure_mpa, 1)}"></div>
+          <div class="field"><label class="label" for="processStepCooling">冷却方式</label><select id="processStepCooling" class="select-line"><option ${step.cooling_mode === "自然" ? "selected" : ""}>自然</option><option ${step.cooling_mode === "风冷" ? "selected" : ""}>风冷</option><option ${step.cooling_mode === "水冷" ? "selected" : ""}>水冷</option></select></div>
+        </div>
+        <button id="saveProcessStepBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">save</span> 保存此步骤</button>
+      </section>`;
+    }
+
+    function successRateForProcess(processId) {
+      const related = state.batches.filter((batch) => batch.process_id === processId && toNumber(batch.yield) !== null);
+      if (!related.length) return null;
+      return related.reduce((sum, batch) => sum + (toNumber(batch.yield) || 0), 0) / related.length;
     }
 
     function renderProgramCompare() {
       const rec = activeRecommendation();
+      if ($("#programAiTitle")) $("#programAiTitle").textContent = rec ? "AI 优化器运行中" : "AI 优化器";
+      if ($("#programAiSubtitle")) $("#programAiSubtitle").textContent = rec ? `模型 ${state.aiProvider?.model || "--"} / 后端推荐` : (state.backendError ? "实时管线暂不可用" : "等待后端推荐。");
+      if ($("#programAiReason")) $("#programAiReason").textContent = rec?.rationale || (state.backendError ? "实时管线暂不可用，工艺配置仍可编辑。" : "--");
       const current = rows([
-        ["Temp", fmtValue(sensor("temperature").value ?? currentStage().temp, 2) + " °C"],
+        ["Temp", fmtValue(sensor("temperature").value, 2) + " °C"],
         ["Pressure", fmtValue(sensor("pressure").value, 2) + " MPa"],
-        ["Stirrer", fmtValue(sensor("rpm").value ?? currentStage().rpm, 2) + " RPM"],
-        ["Shake", fmtValue(sensor("shake").value ?? currentStage().shake, 2) + " CPM"]
+        ["Stirrer", fmtValue(sensor("rpm").value, 2) + " RPM"],
+        ["Shake", fmtValue(sensor("shake").value, 2) + " CPM"]
       ]);
-      const suggested = rows([
+      const suggested = rec ? rows([
         ["Temp", fmtValue(rec.temp, 2) + " °C"],
         ["Hold", fmtValue(rec.hold, 2) + " min"],
         ["Stirrer", fmtValue(rec.rpm, 2) + " RPM"],
-        ["Lift", "+" + fmtValue(rec.lift, 2) + "%"]
-      ]);
+        ["Score", fmtValue(rec.lift, 2)]
+      ]) : rows([["状态", state.backendError ? pipelineErrorText() : "等待后端推荐"]]);
       if ($("#programCurrentCompare")) $("#programCurrentCompare").innerHTML = current;
       if ($("#programSuggestedCompare")) $("#programSuggestedCompare").innerHTML = suggested;
+      if ($("#programProcessStatusText")) $("#programProcessStatusText").textContent = state.processError ? "错误 " + state.processError.code : state.processLoading ? "读取中" : "在线";
       if ($("#programStatusText")) $("#programStatusText").textContent = state.backendError ? "错误 " + state.backendError.code : state.running ? "正常运行" : "待机";
-      if ($("#programBatchText")) $("#programBatchText").textContent = state.activeBatchId ? "BX-" + String(state.activeBatchId).padStart(4, "0") : "---";
+      if ($("#programBatchText")) $("#programBatchText").textContent = state.activeBatchId ? String(state.activeBatchId) : "---";
     }
 
     function renderStageFields() {
       const stage = currentStage();
+      if (!$("#stageFields")) return;
       $("#stageFields").innerHTML = `
         <div class="field"><label class="label" for="stageName">阶段名称</label><input id="stageName" class="field-line" value="${stage.name}"></div>
         <div class="field"><label class="label" for="stageTemp">目标温度</label><input id="stageTemp" class="field-line" type="number" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"><input id="stageTempRange" class="range-thin" type="range" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"></div>
@@ -1673,53 +2617,261 @@
       }));
     }
 
+    function processStepPayloadFromForm() {
+      const detail = selectedProcessDetail();
+      const draft = detail?.steps?.find((step) => step.id === state.selectedProcessStepId) || {};
+      return {
+        name: $("#processStepName")?.value || draft.name || "新步骤",
+        target_temperature_c: toNumber($("#processStepTemp")?.value) ?? toNumber(draft.target_temperature_c) ?? 120,
+        ramp_rate_c_min: toNumber($("#processStepRamp")?.value) ?? toNumber(draft.ramp_rate_c_min) ?? 0,
+        duration_minutes: toNumber($("#processStepDuration")?.value) ?? toNumber(draft.duration_minutes) ?? 30,
+        target_stirrer_rpm: toNumber($("#processStepRpm")?.value) ?? toNumber(draft.target_stirrer_rpm) ?? 300,
+        target_shake_speed_cpm: toNumber($("#processStepShake")?.value) ?? toNumber(draft.target_shake_speed_cpm) ?? 30,
+        target_pressure_mpa: toNumber($("#processStepPressure")?.value) ?? toNumber(draft.target_pressure_mpa) ?? 0.5,
+        cooling_mode: $("#processStepCooling")?.value || draft.cooling_mode || "自然"
+      };
+    }
+
+    function updateSelectedProcessStepDraft() {
+      const detail = selectedProcessDetail();
+      const step = detail?.steps?.find((item) => item.id === state.selectedProcessStepId);
+      if (!step) return;
+      const payload = processStepPayloadFromForm();
+      step.name = payload.name;
+      step.target_temperature_c = payload.target_temperature_c;
+      step.ramp_rate_c_min = payload.ramp_rate_c_min;
+      step.duration_minutes = payload.duration_minutes;
+      step.target_stirrer_rpm = payload.target_stirrer_rpm;
+      step.target_shake_speed_cpm = payload.target_shake_speed_cpm;
+      step.target_pressure_mpa = payload.target_pressure_mpa;
+      step.cooling_mode = payload.cooling_mode;
+    }
+
+    async function loadProcessDetail(processId) {
+      const detail = unwrapData(await apiJson(`/api/processes/${processId}`));
+      state.processDetails[processId] = detail;
+      mergeProcessSummaries([detail.process]);
+      state.processError = null;
+      return detail;
+    }
+
+    async function refreshProcesses(options = {}) {
+      if (state.processLoading) return;
+      state.processLoading = true;
+      if (state.activeTab === "program" && options.silent !== true) renderProgram();
+      try {
+        const processes = unwrapData(await apiJson("/api/processes"));
+        mergeProcessSummaries(Array.isArray(processes) ? processes : []);
+        state.processesLoaded = true;
+        state.processError = null;
+      } catch (err) {
+        state.processError = { code: err.code || 500, message: err.message || "读取工艺列表失败" };
+      } finally {
+        state.processLoading = false;
+        if (state.activeTab === "program") renderProgram();
+      }
+    }
+
+    function setProcessError(err, fallback) {
+      state.processError = { code: err.code || 500, message: err.message || fallback };
+    }
+
+    async function refreshHistoryBatches(options = {}) {
+      if (state.historyLoading) return;
+      state.historyLoading = true;
+      if (state.activeTab === "materials" && options.silent !== true) renderHistoryAnalysis();
+      try {
+        const payload = unwrapData(await apiJson("/api/batches"));
+        mergeBatches(Array.isArray(payload?.batches) ? payload.batches : [], Array.isArray(payload?.outcomes) ? payload.outcomes : []);
+        state.historyLoaded = true;
+        state.historyError = null;
+      } catch (err) {
+        state.historyError = { code: err.code || 500, message: err.message || "读取历史批次失败" };
+      } finally {
+        state.historyLoading = false;
+        if (state.activeTab === "materials") renderHistoryAnalysis();
+      }
+    }
+
+    function setHistoryError(err, fallback) {
+      state.historyError = { code: err.code || 500, message: err.message || fallback };
+    }
+
+    function bindProcessListActions() {
+      $("#createProcessBtn")?.addEventListener("click", async () => {
+        try {
+          state.processError = null;
+          state.processLoading = true;
+          renderProgram();
+          const process = unwrapData(await apiJson("/api/processes", { method: "POST", json: { name: `新工艺 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`, description: "由控制面板创建" } }));
+          mergeProcessSummaries([process]);
+          state.selectedProcessId = process.id;
+          await loadProcessDetail(process.id);
+          state.processesLoaded = true;
+          state.processError = null;
+          state.processLoading = false;
+          renderProgram();
+        } catch (err) {
+          state.processLoading = false;
+          setProcessError(err, "新增工艺失败");
+          renderProgram();
+        }
+      });
+      $$("[data-process-open]").forEach((button) => button.addEventListener("click", async () => {
+        const processId = Number(button.dataset.processOpen);
+        state.selectedProcessId = processId;
+        state.processError = null;
+        try { await loadProcessDetail(processId); }
+        catch (err) { setProcessError(err, "读取工艺失败"); }
+        renderProgram();
+      }));
+    }
+
+    function bindProcessDetailActions() {
+      $("#backToProcessListBtn")?.addEventListener("click", () => {
+        state.selectedProcessId = null;
+        state.selectedProcessStepId = null;
+        renderProgram();
+      });
+      $$("[data-step-open]").forEach((button) => button.addEventListener("click", () => {
+        state.selectedProcessStepId = Number(button.dataset.stepOpen);
+        renderProgram();
+      }));
+      ["processStepName", "processStepDuration", "processStepTemp", "processStepRamp", "processStepRpm", "processStepShake", "processStepPressure", "processStepCooling"].forEach((id) => {
+        const input = $(`#${id}`);
+        input?.addEventListener("input", updateSelectedProcessStepDraft);
+        input?.addEventListener("change", updateSelectedProcessStepDraft);
+      });
+      $("#saveProcessMetaBtn")?.addEventListener("click", async () => {
+        if (!state.selectedProcessId) return;
+        try {
+          const process = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}`, {
+            method: "PUT",
+            json: {
+              name: $("#processNameInput")?.value || selectedProcess()?.name || "未命名工艺",
+              description: $("#processDescriptionInput")?.value || "",
+              status: selectedProcess()?.status || "draft"
+            }
+          }));
+          mergeProcessSummaries([process]);
+          await loadProcessDetail(process.id);
+          renderProgram();
+        } catch (err) {
+          setProcessError(err, "保存工艺定义失败");
+          renderProgram();
+        }
+      });
+      $("#addProcessStepBtn")?.addEventListener("click", async () => {
+        if (!state.selectedProcessId) return;
+        const detail = selectedProcessDetail();
+        const last = detail?.steps?.at(-1);
+        const index = (last?.step_index || 0) + 1;
+        const defaults = {
+          name: index === 1 ? "加热" : index === 2 ? "保温" : index === 3 ? "冷却" : `步骤 ${index}`,
+          target_temperature_c: toNumber(last?.target_temperature_c) ?? 120,
+          ramp_rate_c_min: index === 3 ? -1.5 : index === 1 ? 2.5 : 0,
+          duration_minutes: index === 1 ? 45 : index === 2 ? 120 : 60,
+          target_stirrer_rpm: index === 3 ? 100 : index === 1 ? 150 : 300,
+          target_shake_speed_cpm: toNumber(last?.target_shake_speed_cpm) ?? 30,
+          target_pressure_mpa: toNumber(last?.target_pressure_mpa) ?? 0.5,
+          cooling_mode: index === 3 ? "水冷" : "自然"
+        };
+        try {
+          const step = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/steps`, { method: "POST", json: defaults }));
+          await loadProcessDetail(state.selectedProcessId);
+          state.selectedProcessStepId = step.id;
+          renderProgram();
+        } catch (err) {
+          setProcessError(err, "添加步骤失败");
+          renderProgram();
+        }
+      });
+      $("#saveProcessStepBtn")?.addEventListener("click", async () => {
+        if (!state.selectedProcessId || !state.selectedProcessStepId) return;
+        try {
+          await apiJson(`/api/processes/${state.selectedProcessId}/steps/${state.selectedProcessStepId}`, { method: "PUT", json: processStepPayloadFromForm() });
+          await loadProcessDetail(state.selectedProcessId);
+          renderProgram();
+          await pollBackend();
+        } catch (err) {
+          setProcessError(err, "保存步骤失败");
+          renderProgram();
+        }
+      });
+      $("#applyProcessBtn")?.addEventListener("click", async () => {
+        if (!state.selectedProcessId) return;
+        try {
+          const result = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/apply`, { method: "POST" }));
+          state.activeBatchId = result.batch?.id || state.activeBatchId;
+          state.completedBatchId = state.activeBatchId;
+          state.selectedProcessId = null;
+          state.selectedProcessStepId = null;
+          await pollBackend();
+          switchTab("program");
+        } catch (err) {
+          setProcessError(err, "应用工艺失败");
+          renderProgram();
+        }
+      });
+    }
+
     function renderRecipes() {
-      const list = $("#recipeList");
-      if (!list) return;
-      list.innerHTML = state.recipes.length ? state.recipes.map((item, index) => `
-        <div class="recipe-row ${index === state.selectedRecipe ? "active" : ""}" data-recipe="${index}">
-          <div style="font-weight:700">${item.name}</div>
-          <div class="muted" style="margin-top:6px">已运行 ${item.runs} 次 · 最高产率 ${fmtValue(item.best, 2)}%</div>
-        </div>`).join("") : '<div class="recipe-row"><div style="font-weight:700">Recipe buffer empty</div><div class="muted" style="margin-top:6px">Save a program as recipe first.</div></div>';
-      $$("#recipeList .recipe-row[data-recipe]").forEach((row) => row.addEventListener("click", () => { state.selectedRecipe = Number(row.dataset.recipe); renderRecipes(); }));
-      renderRecipeDetail();
+      const table = $("#batchTable");
+      if (!table) return;
+      const rowsData = displayBatches();
+      if (!rowsData.length) {
+        table.innerHTML = `<div class="batch-row" style="grid-template-columns:1fr;min-height:82px;color:var(--muted)">${state.backendError ? pipelineErrorText() : "等待后端批次数据"}</div>`;
+        return;
+      }
+      table.innerHTML = `
+        <div class="batch-row head">
+          <div>批次编号 (ID)</div><div>开始时间</div><div>结束时间</div><div>平均温度</div><div>最高压力</div><div>AI 评分</div><div>状态</div>
+        </div>
+        ${rowsData.map((batch) => {
+          const warn = batch.status !== "已完成";
+          const score = clamp(toNumber(batch.score) ?? 0, 0, 100);
+          return `<div class="batch-row ${warn ? "warn" : ""}">
+            <div>${batch.code}</div>
+            <div>${batch.start}</div>
+            <div>${batch.end}</div>
+            <div style="color:${warn ? "#ffb4ab" : "var(--green)"}">${fmtValue(batch.temp, 1)} °C</div>
+            <div>${fmtValue(batch.pressure, 1)} MPa</div>
+            <div><div class="score-bar"><span style="width:${score}%;background:${warn ? "#ffb4ab" : "var(--green)"}"></span></div><span>${fmtValue(score, 0)}%</span></div>
+            <div><span class="status-pill ${warn ? "warn" : ""}">${warn ? "△" : "●"} ${batch.status}</span></div>
+          </div>`;
+        }).join("")}
+        <div class="batch-row" style="grid-template-columns:1fr auto;min-height:64px;color:var(--muted)">
+          <div>来自后端数据管线，共 ${rowsData.length} 条记录</div>
+          <div class="mono">LIVE</div>
+        </div>`;
+    }
+
+    function displayBatches() {
+      return state.batches.slice(-25).reverse().map((batch) => ({
+        code: batch.name || `ID ${batch.id}`,
+        start: shortDateTime(batch.started_at),
+        end: shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "运行中" : "--"),
+        temp: toNumber(batch.temp),
+        pressure: toNumber(batch.pressure),
+        score: toNumber(batch.yield),
+        status: batch.finished_at || !state.running ? "已完成" : "运行中"
+      }));
+    }
+
+    function shortDateTime(iso) {
+      if (!iso) return "";
+      const date = new Date(iso);
+      if (Number.isNaN(date.getTime())) return "";
+      return `${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
     }
 
     function renderRecipeDetail() {
-      const target = $("#recipeDetail");
-      if (!target) return;
-      const item = state.recipes[state.selectedRecipe];
-      if (!item) {
-        target.innerHTML = '<div class="muted">No recipe selected.</div>';
-        return;
-      }
-      target.innerHTML = `
-        <div class="recipe-title-line"><input id="recipeTitleInput" class="recipe-title-input" value="${item.name}"><button id="loadSelectedRecipe" class="primary-btn" type="button">加载到程序</button></div>
-        <div class="kv">${rows([["Created", item.created], ["Runs", item.runs], ["Average Yield", fmtValue(item.avg, 2) + "%"], ["Best Yield", fmtValue(item.best, 2) + "%"], ["Lowest Yield", fmtValue(item.low, 2) + "%"]])}</div>
-        <h2 class="section-title" style="margin-top:18px">Stage overview</h2>
-        <table class="plain-table"><tbody>${item.stages.map((stage) => `<tr><td>${stage.name}</td><td>${fmtValue(stage.temp, 2)} °C</td><td>${fmtValue(stage.duration, 2)} min</td><td>${fmtValue(stage.rpm, 2)} RPM</td></tr>`).join("")}</tbody></table>
-        <canvas id="recipeTrend" class="trend-small" height="160" style="margin-top:18px"></canvas>
-        <canvas id="recipeScatter" class="scatter-chart" height="180" style="margin-top:18px"></canvas>
-        <div class="action-row"><button class="text-btn" type="button">导出配方 JSON</button><button id="deleteRecipe" class="primary-btn danger" type="button">删除</button></div>`;
-      $("#recipeTitleInput").addEventListener("input", (event) => { item.name = event.target.value; });
-      $("#loadSelectedRecipe").addEventListener("click", () => {
-        state.stages = item.stages.map((stage) => ({ ...stage }));
-        state.selectedStage = 0;
-        switchTab("program");
-        renderProgram();
-      });
-      $("#deleteRecipe").addEventListener("click", () => confirmDanger($("#deleteRecipe"), "确认删除", () => {
-        state.recipes.splice(state.selectedRecipe, 1);
-        state.selectedRecipe = 0;
-        renderRecipes();
-      }));
-      requestAnimationFrame(drawAll);
+      return;
     }
 
     function renderMaterials() {
       const rowsEl = $("#materialRows");
-      if (!rowsEl) return;
-      rowsEl.innerHTML = state.ingredients.map((item, index) => `
+      if (rowsEl) rowsEl.innerHTML = state.ingredients.map((item, index) => `
         <tr data-material="${index}">
           <td><input class="table-input" data-field="name" value="${item.name}"></td>
           <td><input class="table-input" data-field="lot" value="${item.lot}"></td>
@@ -1740,6 +2892,143 @@
         renderMaterials();
       }));
       renderRatio();
+      renderHistoryAnalysis();
+    }
+
+    function renderHistoryAnalysis() {
+      const root = $("#historyRoot");
+      if (!root) return;
+      if (!state.historyLoaded && !state.historyLoading) void refreshHistoryBatches({ silent: true });
+      if (state.selectedHistoryBatchId) renderHistoryDetail(root);
+      else renderHistoryList(root);
+    }
+
+    async function loadBatchDetail(batchId) {
+      const detail = unwrapData(await apiJson(`/api/batches/${batchId}`));
+      state.batchDetails[batchId] = detail;
+      return detail;
+    }
+
+    function bindHistoryListActions() {
+      $("#historyExportBtnLocal")?.addEventListener("click", () => $("#historyExportBtn")?.click());
+      $$("[data-history-open]").forEach((button) => button.addEventListener("click", async () => {
+        const batchId = Number(button.dataset.historyOpen);
+        state.selectedHistoryBatchId = batchId;
+        try { await loadBatchDetail(batchId); }
+        catch (err) { setHistoryError(err, "读取实验历史失败"); }
+        renderHistoryAnalysis();
+        requestAnimationFrame(drawHistoryTrend);
+      }));
+    }
+
+    function bindHistoryDetailActions() {
+      $("#backToHistoryListBtn")?.addEventListener("click", () => {
+        state.selectedHistoryBatchId = null;
+        renderHistoryAnalysis();
+      });
+    }
+
+    function renderHistoryList(root) {
+      const historyNotice = state.historyError
+        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>历史数据错误</strong><br>${escapeHtml(scopedErrorText("HISTORY", state.historyError))}</div>`
+        : state.backendError
+          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>实时管线状态</strong><br>${escapeHtml(pipelineErrorText())}<br>历史实验列表仍通过 /api/batches 读取。</div>`
+          : "";
+      const rowsData = state.batches.slice().reverse();
+      const list = rowsData.length
+        ? rowsData.map((batch) => {
+          const process = state.processes.find((item) => item.id === batch.process_id);
+          const score = toNumber(batch.yield);
+          return `<button class="experiment-row" type="button" data-history-open="${batch.id}">
+            <span class="experiment-row-main">
+              <span class="experiment-row-title">${escapeHtml(process?.name || batch.name || "实验批次 " + batch.id)}</span>
+              <span class="experiment-row-meta">
+                <span>批次 ID ${batch.id}</span>
+                <span>${batch.finished_at ? "已完成" : state.activeBatchId === batch.id ? "运行中" : "待记录结果"}</span>
+                <span>开始 ${shortDateTime(batch.started_at) || "--"}</span>
+                <span>产率 ${score === null ? "--" : fmtValue(score, 1) + "%"}</span>
+              </span>
+            </span>
+            <span class="experiment-row-action"><span class="material-symbols-outlined">monitoring</span> 查看学习曲线</span>
+          </button>`;
+        }).join("")
+        : `<div class="empty-state">${state.historyLoading ? "正在从 /api/batches 读取历史实验..." : state.historyError ? scopedErrorText("HISTORY", state.historyError) : "后端暂无实验批次。应用工艺后会在这里形成历史数据大类。"}</div>`;
+      root.innerHTML = `
+        <div class="history-list-head">
+          <div>
+            <h1 class="view-title" style="margin:0;border:0">历史数据</h1>
+            <div class="muted" style="margin-top:10px">按真实实验/批次归档。进入单个实验后查看拟合曲线和动态学习记录。</div>
+          </div>
+          <button id="historyExportBtnLocal" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> 导出综合报告</button>
+        </div>
+        ${historyNotice}
+        <section class="history-list-panel">${list}</section>`;
+      bindHistoryListActions();
+    }
+
+    function renderHistoryDetail(root) {
+      const batch = selectedHistoryBatch();
+      const detail = state.batchDetails[state.selectedHistoryBatchId] || null;
+      if (!batch) {
+        state.selectedHistoryBatchId = null;
+        renderHistoryAnalysis();
+        return;
+      }
+      const process = state.processes.find((item) => item.id === batch.process_id);
+      const samples = detail?.samples || [];
+      const events = detail?.events || state.recentEvents.filter((event) => event.batch_id === batch.id);
+      const outcome = detail?.outcome || null;
+      root.innerHTML = `
+        <div class="history-detail-head">
+          <div>
+            <button id="backToHistoryListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> 返回历史</button>
+            <h1 class="history-detail-title">${escapeHtml(process?.name || batch.name || "实验批次 " + batch.id)}</h1>
+            <div class="muted" style="margin-top:10px">批次 ${batch.id} | ${shortDateTime(batch.started_at) || "--"} -> ${shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "运行中" : "--")}</div>
+          </div>
+          <div class="history-detail-actions"><span class="status-pill">${samples.length} 采样点</span><span class="status-pill ${outcome ? "" : "warn"}">${outcome ? "已记录结果" : "等待产物结果"}</span></div>
+        </div>
+        <div class="history-detail-grid">
+          <section class="history-chart-panel">
+            <div class="history-title-row">
+              <div><h2 class="section-title">实验拟合曲线</h2><div class="muted">温度、压力与产物浓度来自该批次数据管线</div></div>
+              <div class="history-metric-tabs" aria-label="历史参数切换"><button type="button">温度</button><button class="active" type="button">压力</button><button type="button">浓度</button></div>
+            </div>
+            <canvas id="historyTrendChart" class="history-chart" height="320"></canvas>
+          </section>
+          <aside class="history-report">
+            <div class="recipe-title-line"><h2 class="section-title">动态学习记录</h2><span class="status-pill" id="historyConfidence">--</span></div>
+            <div id="historyClusterReport"></div>
+          </aside>
+          <section class="training-panel">
+            <div class="recipe-title-line"><h2 class="section-title">实验统计</h2><span class="status-pill">PIPELINE</span></div>
+            <div class="overview-grid" id="historyTrainingStats"></div>
+          </section>
+          <section class="process-recs">
+            <h2 class="section-title">发生了什么</h2>
+            <div id="historyRecommendations" class="log-list"></div>
+          </section>
+        </div>`;
+      if ($("#historyConfidence")) $("#historyConfidence").textContent = outcome ? `${fmtValue(clamp((outcome.yield_percent || 0), 0, 99), 1)}% 结果` : "--";
+      if ($("#historyClusterReport")) {
+        $("#historyClusterReport").innerHTML = outcome
+          ? `<div class="analysis-note"><strong>产物结果</strong><br>本次实验产率 ${fmtValue(outcome.yield_percent, 1)}%，产物比例 ${fmtValue(outcome.product_ratio, 2)}。曲线和学习记录均来自后端批次 ${batch.id}。</div>`
+          : `<div class="analysis-note warn"><strong>等待结果</strong><br>${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "该实验还没有产物结果，曲线先展示已采集过程数据。"}</div>`;
+      }
+      if ($("#historyTrainingStats")) {
+        $("#historyTrainingStats").innerHTML = [
+          ["采样点", String(samples.length)],
+          ["批次温度", fmtValue(batch.temp, 1) + " °C"],
+          ["参考记忆", String(state.aiMemory?.reference_batch_count ?? 0)],
+          ["状态", state.historyError ? `错误 ${state.historyError.code}` : (batch.finished_at ? "已完成" : "运行中")]
+        ].map(([label, value]) => `<div><div class="label">${label}</div><div class="metric">${value}</div></div>`).join("");
+      }
+      if ($("#historyRecommendations")) {
+        const lines = [];
+        if (state.aiRecommendation?.rationale) lines.push("AI 建议: " + state.aiRecommendation.rationale);
+        events.slice(0, 6).forEach((event) => lines.push(`${timeLabel(event.created_at)} ${event.event_type}: ${event.reason}`));
+        $("#historyRecommendations").innerHTML = lines.length ? lines.map((item) => `<div class="log-line">${escapeHtml(item)}</div>`).join("") : `<div class="log-line">${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "等待该实验的后端事件"}</div>`;
+      }
+      bindHistoryDetailActions();
     }
 
     function renderRatio() {
@@ -1749,32 +3038,26 @@
       if ($("#ratioNormalized")) $("#ratioNormalized").textContent = "= " + amounts.map((value) => fmtValue(value / min, 2)).join(" : ") + "（归一化）";
     }
 
-    function computeYield() {
-      const mass = toNumber($("#productMass")?.value) ?? 0;
-      const theoretical = toNumber($("#theoreticalMass")?.value) ?? 1;
-      if ($("#computedYield")) $("#computedYield").textContent = `${fmtValue((mass / theoretical) * 100, 2)}%`;
-    }
-
-    function renderProductLock() {
-      const disabled = state.running;
-      ["productName", "productMass", "sampleTime", "appearance", "theoreticalMass", "productNotes", "saveProductBtn"].forEach((id) => {
-        const el = $(`#${id}`);
-        if (el) el.disabled = disabled;
-      });
-      if ($("#finishBatchBtn")) $("#finishBatchBtn").disabled = !state.running;
-      if (!state.dataReady) $("#productLockNote").textContent = `数据管线不可用：code=${state.backendError?.code || 503}`;
-      else $("#productLockNote").textContent = disabled ? "运行中：批次结束后可编辑产物追踪。" : "批次已结束：可保存产物追踪。";
-    }
-
     function renderAI() {
       const learned = state.aiRecommendation?.basedOn ?? state.aiMemory?.reference_batch_count ?? state.batches.filter((batch) => batch.yield !== null).length;
-      const modelName = state.aiProvider?.model || "local-tpe-lite";
+      const modelName = state.aiProvider?.model || "--";
       const confidence = clamp(((toNumber(learned) ?? 0) / 50) * 100, 0, 99);
       const latestLog = state.aiLogs[0] || "Waiting for batch outcomes";
+      const rec = activeRecommendation();
+      if ($("#aiProviderStatus")) $("#aiProviderStatus").textContent = state.backendError ? `模型状态: ERROR ${state.backendError.code}` : `模型状态: ${modelName}`;
+      if ($("#aiConfidencePill")) $("#aiConfidencePill").textContent = rec ? `CONFIDENCE: ${fmtValue(confidence, 1)}%` : "--";
+      if ($("#aiIntentQuote")) $("#aiIntentQuote").textContent = rec?.rationale || (state.backendError ? pipelineErrorText() : "等待后端推荐。");
+      if ($("#aiIntentMap")) {
+        $("#aiIntentMap").innerHTML = rec ? [
+          ["TARGET_TEMP", fmtValue(rec.temp, 2) + " °C"],
+          ["TARGET_RPM", fmtValue(rec.rpm, 2) + " RPM"]
+        ].map(([label, value]) => `<div class="intent-token"><div class="label">${label}</div><div class="kv-row"><span class="k">后端推荐</span><span class="v">${value}</span></div></div>`).join("") : `<div class="intent-token"><div class="label">${state.backendError ? pipelineErrorText() : "无后端推荐"}</div></div>`;
+      }
+      if ($("#voicePipelineText")) $("#voicePipelineText").textContent = state.recentEvents[0] ? `${timeLabel(state.recentEvents[0].created_at)} ${state.recentEvents[0].event_type}` : (state.backendError ? pipelineErrorText() : "等待后端事件...");
       const aiSubtitle = document.querySelector("#view-ai .dim");
       if (aiSubtitle) aiSubtitle.textContent = "Based on " + fmtValue(learned, 2) + " backend batches";
       if ($("#aiLearnedCount")) $("#aiLearnedCount").textContent = fmtValue(learned, 0);
-      if ($("#aiLiftValue")) $("#aiLiftValue").textContent = "+" + fmtValue(activeRecommendation().lift, 2) + "%";
+      if ($("#aiLiftValue")) $("#aiLiftValue").textContent = rec ? fmtValue(rec.lift, 2) : "--";
       if ($("#aiConfidenceBar")) $("#aiConfidenceBar").style.width = confidence + "%";
       if ($("#aiOverview")) {
         $("#aiOverview").innerHTML = [
@@ -1785,36 +3068,54 @@
         ].map(([label, value], index) => `<div><div class="label">${label}</div><div class="metric">${value}</div>${index === 3 ? `<div class="progress-track" style="margin-top:8px"><div class="progress-fill" style="width:${confidence}%"></div></div>` : ""}</div>`).join("");
       }
       if ($("#aiLogList")) $("#aiLogList").innerHTML = state.aiLogs.length ? state.aiLogs.map((log) => `<div class="log-line">${log}</div>`).join("") : '<div class="log-line">Waiting for backend control events and batch results</div>';
-      const rec = activeRecommendation();
-      const currentRatio = (state.ingredients[0]?.amount || 0) / (state.ingredients[1]?.amount || 1);
-      const recTemp = toNumber(rec.temp);
+      const currentRatio = toNumber(rec?.ratio);
+      const recTemp = toNumber(rec?.temp);
       const actualTemp = toNumber(sensor("temperature").value);
-      const recRpm = toNumber(rec.rpm);
+      const recRpm = toNumber(rec?.rpm);
       const actualRpm = toNumber(sensor("rpm").value);
       const tempDelta = recTemp === null || actualTemp === null ? null : recTemp - actualTemp;
       const rpmDelta = recRpm === null || actualRpm === null ? null : recRpm - actualRpm;
-      const recRows = rows([
-        ["Target Temp", fmtValue(rec.temp, 2) + " °C (now " + fmtValue(sensor("temperature").value, 2) + " °C, " + (tempDelta === null ? "--" : (tempDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(tempDelta), 2)) + ")"],
-        ["Hold Time", fmtValue(rec.hold, 2) + " min (current " + fmtValue(currentStage().duration, 2) + " min)"],
-        ["Stirrer RPM", fmtValue(rec.rpm, 2) + " RPM (now " + fmtValue(sensor("rpm").value, 2) + " RPM, " + (rpmDelta === null ? "--" : (rpmDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(rpmDelta), 2)) + ")"],
-        ["A : B Ratio", fmtValue(rec.ratio || currentRatio, 2) + " : 1 (current " + fmtValue(currentRatio, 2) + " : 1)"],
-        ["Expected Lift", "+" + fmtValue(rec.lift, 2) + "%"]
+      const tempDeltaText = tempDelta === null ? "--" : (tempDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(tempDelta), 2);
+      const rpmDeltaText = rpmDelta === null ? "--" : (rpmDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(rpmDelta), 2);
+      const compactRecRows = rows([
+        ["Target Temp", fmtValue(rec?.temp, 2) + " °C"],
+        ["Hold Time", fmtValue(rec?.hold, 2) + " min"],
+        ["Stirrer RPM", fmtValue(rec?.rpm, 2) + " RPM"],
+        ["A : B Ratio", fmtValue(rec?.ratio || currentRatio, 2) + " : 1"],
+        ["Expected Score", fmtValue(rec?.lift, 2)]
       ]);
-      if ($("#aiRecommendation")) $("#aiRecommendation").innerHTML = recRows;
-      if ($("#aiRecommendationFull")) $("#aiRecommendationFull").innerHTML = recRows;
+      const fullRecRows = rows([
+        ["Target Temp", fmtValue(rec?.temp, 2) + " °C (now " + fmtValue(sensor("temperature").value, 2) + " °C, " + tempDeltaText + ")"],
+        ["Hold Time", fmtValue(rec?.hold, 2) + " min (current " + fmtValue(currentStage().duration, 2) + " min)"],
+        ["Stirrer RPM", fmtValue(rec?.rpm, 2) + " RPM (now " + fmtValue(sensor("rpm").value, 2) + " RPM, " + rpmDeltaText + ")"],
+        ["A : B Ratio", fmtValue(rec?.ratio || currentRatio, 2) + " : 1 (current " + fmtValue(currentRatio, 2) + " : 1)"],
+        ["Expected Score", fmtValue(rec?.lift, 2)]
+      ]);
+      if ($("#aiRecommendation")) $("#aiRecommendation").innerHTML = compactRecRows;
+      if ($("#aiRecommendationFull")) $("#aiRecommendationFull").innerHTML = fullRecRows;
+      if ($("#aiCurrentCompare")) $("#aiCurrentCompare").innerHTML = rows([
+        ["主反应釜温度", `${fmtValue(sensor("temperature").value, 1)} °C`],
+        ["搅拌器转速", `${fmtValue(sensor("rpm").value, 0)} RPM`]
+      ]);
+      if ($("#aiSuggestedCompare")) $("#aiSuggestedCompare").innerHTML = rec ? rows([
+        ["主反应釜温度", `${fmtValue(rec.temp, 1)} °C`],
+        ["搅拌器转速", `${fmtValue(rec.rpm, 0)} RPM`]
+      ]) : rows([["状态", state.backendError ? pipelineErrorText() : "等待后端推荐"]]);
     }
 
     function renderAlarms() {
       const active = activeAlarms();
-      const total = state.alarms.length;
+      const displayAlarms = active;
       const unack = state.alarms.filter((alarm) => !alarm.acknowledged).length;
-      const stats = [[active.length, "Active"], [total, "Total today"], [unack, "Unacknowledged"]].map(([num, label]) => `<div class="stat"><span class="num">${num}</span><span class="caption">${label}</span></div>`).join("");
-      if ($("#alarmStats")) $("#alarmStats").innerHTML = `<div class="alarm-stat-row">${stats}</div><canvas id="alarmDistribution" class="alarm-distribution" height="86" style="margin-top:18px"></canvas>`;
-      const activeMarkup = active.map(alarmRow).join("") || '<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">No active alarms</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>';
-      const monitorMarkup = active.map((alarm) => alarmRow(alarm).replaceAll("ack-btn", "monitor-ack")).join("") || '<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">No active alarms</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>';
+      const critical = active.filter((alarm) => alarm.level === "high" || alarm.value === "ERR").length;
+      if ($("#alarmStats")) $("#alarmStats").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill warn">${critical} 严重</span><span class="status-pill">${Math.max(0, active.length - critical)} 警告</span><span class="status-pill">${unack} 未读</span></div><canvas id="alarmDistribution" class="alarm-distribution" height="86" style="display:none"></canvas>`;
+      const emptyAlarm = `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">${state.backendError ? pipelineErrorText() : "无活动报警"}</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
+      const monitorMarkup = active.map((alarm) => alarmRow(alarm).replaceAll("ack-btn", "monitor-ack")).join("") || emptyAlarm;
       if ($("#activeAlarmRows")) $("#activeAlarmRows").innerHTML = monitorMarkup;
-      if ($("#activeAlarmRowsFull")) $("#activeAlarmRowsFull").innerHTML = activeMarkup;
-      if ($("#alarmHistoryRows")) $("#alarmHistoryRows").innerHTML = state.alarms.length ? state.alarms.slice(0, 50).map((alarm) => alarmRow(alarm, true)).join("") : '<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">No alarm history</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>';
+      if ($("#activeAlarmRowsFull")) $("#activeAlarmRowsFull").innerHTML = displayAlarms.length ? displayAlarms.map(alarmCenterItem).join("") : emptyAlarm;
+      if ($("#alarmHistoryRows")) $("#alarmHistoryRows").innerHTML = state.alarms.length ? state.alarms.slice(0, 50).map((alarm) => alarmRow(alarm, true)).join("") : emptyAlarm;
+      const detailAlarm = displayAlarms[0] || null;
+      if ($("#alarmDetail")) $("#alarmDetail").innerHTML = detailAlarm ? alarmDetailMarkup(detailAlarm) : `<div class="analysis-note">${state.backendError ? pipelineErrorText() : "无活动报警"}</div>`;
       $$(".ack-btn").forEach((button) => button.addEventListener("click", () => {
         const alarm = state.alarms.find((item) => item.id === button.dataset.ack);
         if (!alarm) return;
@@ -1825,9 +3126,114 @@
       }));
     }
 
+    function renderSettings() {
+      const onlineCount = state.deviceStatus?.online_count ?? (state.dataReady ? 1 : 0);
+      const totalCount = state.deviceStatus?.total_count ?? 1;
+      const active = activeAlarms().length;
+      const healthLabel = state.backendError ? `ERROR ${state.backendError.code}` : active ? `${active} ALARMS` : "ONLINE";
+      if ($("#settingsStatus")) $("#settingsStatus").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill">${healthLabel}</span><span class="status-pill">${onlineCount}/${totalCount} DEVICES</span></div>`;
+      if ($("#settingsHealthPill")) {
+        $("#settingsHealthPill").textContent = healthLabel;
+        $("#settingsHealthPill").className = "status-pill" + (state.backendError || active ? " warn" : "");
+      }
+      if ($("#settingsCards")) {
+        $("#settingsCards").innerHTML = [
+          ["后端服务", state.backendError ? "异常" : "在线", state.backendError ? state.backendError.message : "API 心跳正常"],
+          ["ESP32 连接", `${onlineCount}/${totalCount}`, state.dataReady ? "传感器数据接收中" : "等待数据管线"],
+          ["AI 模型", state.aiProvider?.model || "--", "建议仅在确认后应用"],
+          ["当前批次", state.activeBatchId ? String(state.activeBatchId) : "---", state.running ? "运行中" : "待机"]
+        ].map(([label, value, note]) => `<div class="settings-card"><div class="label">${label}</div><div class="settings-value">${value}</div><div class="muted">${note}</div></div>`).join("");
+      }
+      if ($("#settingsEndpoints")) {
+        $("#settingsEndpoints").innerHTML = [
+          ["monitoring", "GET", "/api/live", "运行看板、报警和实时采样"],
+          ["schema", "GET/POST", "/api/processes", "工艺列表与新增工艺定义"],
+          ["playlist_add", "POST/PUT", "/api/processes/:id/steps", "逐步配置工艺步骤并持久化"],
+          ["play_arrow", "POST", "/api/processes/:id/apply", "应用工艺并写入批次与控制目标"],
+          ["list_alt", "GET", "/api/batches", "实验历史列表与批次归档"],
+          ["monitoring", "GET", "/api/batches/:id", "单次实验历史曲线详情"],
+          ["sensors", "GET", "/api/devices/status", "ESP32 / Pi 通道健康"],
+          ["input", "POST", `/api/v1/reactor/${API_DEVICE_ID}/samples`, "外部数据管线上行样本写入"],
+          ["settings_input_component", "POST", `/api/v1/reactor/${API_DEVICE_ID}/control`, "控制目标写入，受安全限幅保护"],
+          ["psychology", "GET", "/api/recommendations/latest", "真实批次结果生成 AI 参数建议"]
+        ].map(([icon, method, path, note]) => `<div class="endpoint-row"><span class="material-symbols-outlined">${icon}</span><div><div class="label">${path}</div><div class="muted">${note}</div></div><span class="mono muted">${method}</span></div>`).join("");
+      }
+      if ($("#settingsDeviceRatio")) $("#settingsDeviceRatio").textContent = `${onlineCount}/${totalCount}`;
+      if ($("#settingsDevices")) {
+        const devices = Array.isArray(state.deviceStatus?.devices) ? state.deviceStatus.devices : [];
+        if (!devices.length) {
+          $("#settingsDevices").innerHTML = `<div class="settings-row"><span class="material-symbols-outlined">sync_problem</span><div><div class="label">无设备数据</div><div class="muted">${state.backendError ? pipelineErrorText() : "等待 /api/devices/status"}</div></div><span class="status-pill warn">waiting</span></div>`;
+          return;
+        }
+        $("#settingsDevices").innerHTML = devices.map((device) => {
+          const status = device.status || (state.dataReady ? "online" : "waiting");
+          return `<div class="settings-row"><span class="material-symbols-outlined">${device.online ? "sensors" : "sync_problem"}</span><div><div class="label">${device.device_id || device.id || "--"}</div><div class="muted">${device.last_seen_at ? "最后通信 " + timeLabel(device.last_seen_at) : "等待采样"}</div></div><span class="status-pill ${device.online ? "" : "warn"}">${status}</span></div>`;
+        }).join("");
+      }
+    }
+
+    async function applyAiRecommendation() {
+      const rec = state.aiRecommendation;
+      if (!rec) return;
+      const holdStage = state.stages.find((stage) => stage.name.toLowerCase().includes("hold")) || state.stages[0];
+      holdStage.temp = rec.temp;
+      holdStage.duration = rec.hold;
+      holdStage.rpm = rec.rpm;
+      if (toNumber(rec.shake) !== null) holdStage.shake = rec.shake;
+      sensor("temperature").target = rec.temp;
+      sensor("rpm").target = rec.rpm;
+      if (toNumber(holdStage.shake) !== null) sensor("shake").target = holdStage.shake;
+      try {
+        await apiJson(`/api/v1/reactor/${API_DEVICE_ID}/control`, {
+          method: "POST",
+          json: {
+            command_id: `ai_${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            params: {
+              heat_time: (toNumber(rec.hold) ?? 0) * 60,
+              hold_time: (toNumber(rec.stir) ?? toNumber(rec.hold) ?? 0) * 60,
+              cool_time: 180,
+              stir_speed: toNumber(rec.rpm),
+              shake_speed: toNumber(holdStage.shake),
+              target_temp: toNumber(rec.temp),
+              target_pressure: sensor("pressure").target || 0.5
+            }
+          }
+        });
+        await pollBackend();
+        switchTab("program");
+      } catch (err) {
+        state.backendError = { code: err.code || 500, message: err.message || "应用 AI 推荐失败" };
+        applyPipelineError();
+        renderPassive();
+      }
+    }
+
     function alarmRow(alarm, history = false) {
       const active = alarm.active && !alarm.acknowledged && !history;
       return `<div class="alarm-row ${active ? "active-alarm" : ""}"><div class="alarm-cell">${alarm.time}</div><div class="alarm-cell">${alarm.sensor}</div><div class="alarm-cell">${alarm.description}</div><div class="alarm-cell mono">${alarm.value}</div><div class="alarm-cell">${active ? `<button class="ack-btn" type="button" data-ack="${alarm.id}">Acknowledge</button>` : `<span class="dim">Acknowledged</span>`}</div></div>`;
+    }
+
+    function alarmCenterItem(alarm, index = 0) {
+      const critical = alarm.level === "high" || String(alarm.value).includes("ERR");
+      const icon = String(alarm.id).includes("temperature") ? "thermostat" : String(alarm.id).includes("flow") ? "speed" : critical ? "electric_bolt" : "memory";
+      return `<div class="alarm-item ${critical ? "critical" : ""}">
+        <div class="recipe-title-line" style="margin:0"><div class="alarm-item-title"><span class="material-symbols-outlined alarm-icon">${icon}</span><div><div class="label" style="color:${critical ? "#ffb4ab" : "var(--amber)"}">${alarm.id}</div><div style="font-size:24px;font-weight:700;margin-top:8px">${alarm.description}</div></div></div><span class="mono muted">${alarm.time}</span></div>
+        <p class="muted">${alarm.sensor} / 当前值 ${alarm.value}</p>
+        <div><span class="alarm-tag">级别: ${alarm.level || (critical ? "high" : "medium")}</span>${alarm.suggestion ? `<span class="alarm-tag" style="margin-left:8px">后端建议</span>` : ""}</div>
+      </div>`;
+    }
+
+    function alarmDetailMarkup(alarm) {
+      const critical = alarm.level === "high" || String(alarm.value).includes("ERR");
+      return `<div class="recipe-title-line" style="margin:0"><span class="status-pill ${critical ? "warn" : ""}">后端报警</span><button class="text-btn small-link" type="button" aria-label="more"><span class="material-symbols-outlined">more_vert</span></button></div>
+        <h2 style="font-size:38px;margin:16px 0 6px">${alarm.id}</h2>
+        <p class="muted" style="font-size:18px">${alarm.description}</p>
+        <div class="overview-grid" style="margin-top:22px;grid-template-columns:repeat(2,minmax(0,1fr))">
+          <div><div class="label">当前值</div><div class="metric" style="color:${critical ? "#ffb4ab" : "var(--amber)"}">${alarm.value}</div><div class="muted">${alarm.sensor}</div></div>
+          <div><div class="label">报警级别</div><div class="metric" style="color:var(--amber)">${alarm.level || "--"}</div><div class="muted">来自后端数据管线</div></div>
+        </div>
+        <div class="analysis-note" style="margin-top:22px"><strong style="color:var(--green)">后端建议</strong><br>${alarm.suggestion || "暂无建议。"}</div>`;
     }
 
     function tick() {
@@ -1850,8 +3256,8 @@
       drawRecipeScatter();
       drawSensitivity();
       drawLearning();
+      drawHistoryTrend();
       drawAlarmDistribution();
-      drawBigScreen();
     }
 
     function fitCanvas(canvas) {
@@ -1899,15 +3305,17 @@
       ctx.strokeStyle = c.lineStrong;
       ctx.lineWidth = 1.5;
       const y = h * 0.52;
-      drawProcessBox(ctx, 20, y - 38, 86, 76, "FEED", "A/B/C");
-      drawProcessTank(ctx, w * 0.5 - 55, y - 70, 110, 140);
-      drawProcessBox(ctx, w - 116, y - 38, 96, 76, "COND.", "FLOW");
+      const boxW = Math.min(86, Math.max(64, w * 0.2));
+      const tankW = Math.min(110, Math.max(76, w * 0.24));
+      drawProcessBox(ctx, 20, y - 38, boxW, 76, "FEED", "A/B/C");
+      drawProcessTank(ctx, w * 0.5 - tankW / 2, y - 68, tankW, 136);
+      drawProcessBox(ctx, w - boxW - 20, y - 38, boxW, 76, "COND.", "FLOW");
       ctx.beginPath();
-      ctx.moveTo(106, y); ctx.lineTo(w * 0.5 - 55, y);
-      ctx.moveTo(w * 0.5 + 55, y); ctx.lineTo(w - 116, y);
+      ctx.moveTo(20 + boxW, y); ctx.lineTo(w * 0.5 - tankW / 2, y);
+      ctx.moveTo(w * 0.5 + tankW / 2, y); ctx.lineTo(w - boxW - 20, y);
       ctx.stroke();
-      drawProcessArrow(ctx, w * 0.5 - 76, y);
-      drawProcessArrow(ctx, w - 136, y);
+      drawProcessArrow(ctx, w * 0.5 - tankW / 2 - 22, y);
+      drawProcessArrow(ctx, w - boxW - 42, y);
       ctx.fillStyle = c.success;
       ctx.fillRect(w * 0.5 - 28, y - 5, 56, 10);
       ctx.fillStyle = c.text;
@@ -1977,7 +3385,7 @@
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = c.panel; ctx.fillRect(0, 0, w, h);
       ctx.font = "500 10px JetBrains Mono, monospace";
-      ctx.fillStyle = c.dim; ctx.strokeStyle = "rgba(136,146,157,.22)"; ctx.lineWidth = 1;
+      ctx.fillStyle = c.dim; ctx.strokeStyle = "rgba(134,149,129,.28)"; ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
         const y = pad.t + (i / 4) * (h - pad.t - pad.b);
         const label = max - (i / 4) * (max - min);
@@ -1993,11 +3401,12 @@
         drawChartStatusBadge(ctx, c, pad.l, h / 2 - 18, state.backendError ? `PIPELINE ${state.backendError.code}` : "WAITING FOR PIPELINE");
         return;
       }
-      drawLine(ctx, values, key === "temperature" ? c.warning : c.text, [], selected ? 9 : 1.8, min, max, pad, w, h);
-      drawLine(ctx, target, c.primary || c.muted, [18, 14], selected ? 8 : 1.4, min, max, pad, w, h);
-      drawLine(ctx, ai, c.success, [4, 12], selected ? 5 : 1.4, min, max, pad, w, h);
+      const actualColor = key === "temperature" ? c.warning : key === "pressure" ? "#9bd1ff" : c.success;
+      drawLine(ctx, values, actualColor, [], selected ? 12 : 2, min, max, pad, w, h);
+      drawLine(ctx, target, "#9bd1ff", [12, 12], selected ? 4 : 1.5, min, max, pad, w, h);
+      drawLine(ctx, ai, c.success, [4, 12], selected ? 3 : 1.5, min, max, pad, w, h);
       if (selected) {
-        ctx.fillStyle = key === "temperature" ? c.warning : c.text;
+        ctx.fillStyle = actualColor;
         ctx.fillRect(w - 148, 24, 16, 16);
         ctx.fillStyle = c.text;
         ctx.font = "700 12px JetBrains Mono, monospace";
@@ -2130,6 +3539,56 @@
       drawScatter(canvas, scatterRows("temp"), { title: "Temperature / Yield Distribution", xLabel: "Target Temp", yLabel: "Yield %" });
     }
 
+    function drawHistoryTrend() {
+      const canvas = $("#historyTrendChart");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const c = themeColors();
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = c.panel;
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "rgba(134,149,129,.26)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 5; i += 1) {
+        const y = 24 + (i / 5) * (h - 54);
+        ctx.beginPath(); ctx.moveTo(44, y); ctx.lineTo(w - 20, y); ctx.stroke();
+      }
+      for (let i = 0; i <= 10; i += 1) {
+        const x = 44 + (i / 10) * (w - 64);
+        ctx.beginPath(); ctx.moveTo(x, 24); ctx.lineTo(x, h - 30); ctx.stroke();
+      }
+      const detail = state.selectedHistoryBatchId ? state.batchDetails[state.selectedHistoryBatchId] : null;
+      const detailSamples = Array.isArray(detail?.samples) ? detail.samples : [];
+      const tempValues = detailSamples.length
+        ? detailSamples.map((sample) => toNumber(sample.temperature_c)).filter((value) => value !== null).slice(-120)
+        : state.histories.temperature.slice(-24);
+      const pressureValues = detailSamples.length
+        ? detailSamples.map((sample) => toNumber(sample.pressure_mpa)).filter((value) => value !== null).slice(-120)
+        : state.histories.pressure.slice(-24);
+      const concentrationValues = detailSamples.length
+        ? detailSamples.map((sample) => toNumber(sample.product_concentration_percent)).filter((value) => value !== null).slice(-120)
+        : [];
+      const all = tempValues.concat(pressureValues, concentrationValues).filter(Number.isFinite);
+      if (!all.length) {
+        drawChartStatusBadge(ctx, c, 44, h / 2 - 18, state.backendError ? `PIPELINE ${state.backendError.code}` : "WAITING FOR PIPELINE");
+        return;
+      }
+      const min = all.length ? Math.min(...all) - 10 : 0;
+      const max = all.length ? Math.max(...all) + 10 : 300;
+      drawLine(ctx, tempValues, c.success, [], 3, min, max, { l: 44, r: 20, t: 24, b: 30 }, w, h);
+      drawLine(ctx, pressureValues, c.warning, [8, 6], 2, min, max, { l: 44, r: 20, t: 24, b: 30 }, w, h);
+      if (concentrationValues.length) drawLine(ctx, concentrationValues, "#9bd1ff", [3, 7], 2, min, max, { l: 44, r: 20, t: 24, b: 30 }, w, h);
+      ctx.fillStyle = c.text;
+      ctx.font = "700 13px JetBrains Mono, monospace";
+      ctx.fillText("温度", w - 110, 34);
+      ctx.fillStyle = c.warning;
+      ctx.fillText("压力", w - 110, 56);
+      if (concentrationValues.length) {
+        ctx.fillStyle = "#9bd1ff";
+        ctx.fillText("浓度", w - 110, 78);
+      }
+    }
+
     function drawSensitivity() {
       const canvas = $("#sensitivityChart");
       if (!canvas) return;
@@ -2238,44 +3697,6 @@
       });
     }
 
-    function updateBigScreenText() {
-      if (!$("#bigScreen") || $("#bigScreen").hidden) return;
-      const rec = activeRecommendation();
-      const active = activeAlarms().length;
-      const latestYield = state.batches.map((batch) => toNumber(batch.yield)).filter((value) => value !== null).at(-1);
-      $("#bigTempValue").textContent = `${fmtValue(sensor("temperature").value, 2)} °C`;
-      $("#bigYieldValue").textContent = latestYield === undefined ? "--%" : `${fmtValue(latestYield, 2)}%`;
-      $("#bigAiSummary").textContent = `Temp ${fmtValue(rec.temp, 2)} °C / RPM ${fmtValue(rec.rpm, 2)}`;
-      $("#bigAlarmValue").textContent = String(active);
-      $("#bigAlarmTile").classList.toggle("alarm", active > 0);
-    }
-
-    function drawBigScreen() {
-      if (!$("#bigScreen") || $("#bigScreen").hidden) return;
-      updateBigScreenText();
-      drawBigProgress();
-      const canvas = $("#bigTempChart");
-      if (canvas) drawMetricChart(canvas, "temperature", true);
-    }
-
-    function drawBigProgress() {
-      const canvas = $("#bigProgress");
-      if (!canvas) return;
-      const { ctx, w, h } = fitCanvas(canvas);
-      const c = themeColors();
-      const progress = stageProgress() / 100;
-      const cx = w / 2, cy = h / 2, radius = Math.min(w, h) / 2 - 10;
-      ctx.clearRect(0, 0, w, h);
-      ctx.strokeStyle = c.line; ctx.lineWidth = 10; ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI / 2, Math.PI * 1.5); ctx.stroke();
-      ctx.strokeStyle = c.success; ctx.beginPath(); ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress); ctx.stroke();
-      ctx.fillStyle = c.text; ctx.font = "700 26px JetBrains Mono, monospace"; ctx.textAlign = "center"; ctx.fillText(`${fmtValue(progress * 100, 0)}%`, cx, cy + 9); ctx.textAlign = "left";
-    }
-
-    function showBigScreen() {
-      $("#bigScreen").hidden = false;
-      drawBigScreen();
-    }
-
     function confirmDanger(button, confirmLabel, action) {
       if (!button) return;
       const original = button.dataset.originalLabel || button.textContent;
@@ -2309,7 +3730,8 @@
 
     function bindGlobal() {
       $$(".tab-btn").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
-      $("#alarmSummary").addEventListener("click", () => switchTab("alarms"));
+      $$(".nav-settings").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
+      $("#alarmSummary")?.addEventListener("click", () => switchTab("alarms"));
       $$(".chart-tab").forEach((button) => button.addEventListener("click", () => {
         state.chartMode = button.dataset.chart;
         $$(".chart-tab").forEach((item) => item.classList.toggle("active", item === button));
@@ -2321,158 +3743,45 @@
         drawMainChart();
       }));
       $$("[data-tab-jump]").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tabJump)));
-      $("#hmiStartBtn").addEventListener("click", () => $("#startProgramBtn").click());
-      $("#hmiPauseBtn").addEventListener("click", async () => {
+      $("#hmiStartBtn")?.addEventListener("click", () => switchTab("program"));
+      $("#hmiPauseBtn")?.addEventListener("click", async () => {
         try { await apiJson("/api/control/auto", { method: "POST", json: { enabled: false } }); await pollBackend(); }
         catch (err) { state.backendError = { code: err.code || 500, message: err.message || "pause auto failed" }; applyPipelineError(); renderPassive(); }
       });
-      $("#hmiApplyAiBtn").addEventListener("click", () => $("#applyAiBtn").click());
-      $("#hmiEstopBtn").addEventListener("click", () => confirmDanger($("#hmiEstopBtn"), "CONFIRM STOP", async () => {
+      $("#hmiApplyAiBtn")?.addEventListener("click", () => $("#applyAiBtn")?.click());
+      $("#hmiEstopBtn")?.addEventListener("click", () => confirmDanger($("#hmiEstopBtn"), "CONFIRM STOP", async () => {
         try { await apiJson("/api/control/emergency-stop", { method: "POST" }); await pollBackend(); }
         catch (err) { state.backendError = { code: err.code || 500, message: err.message || "emergency stop failed" }; applyPipelineError(); renderPassive(); }
       }));
-      $("#topEstopBtn").addEventListener("click", () => $("#hmiEstopBtn").click());
-      $("#monitorApplyAiBtn").addEventListener("click", () => $("#applyAiBtn").click());
-      $("#programApplyAiBtn").addEventListener("click", () => $("#applyAiBtn").click());
-      $("#addStageBtn").addEventListener("click", () => {
+      $("#topEstopBtn")?.addEventListener("click", () => $("#hmiEstopBtn")?.click());
+      $("#monitorApplyAiBtn")?.addEventListener("click", applyAiRecommendation);
+      $$("[data-step-target]").forEach((button) => button.addEventListener("click", () => {
+        const input = $(`#${button.dataset.stepTarget}`);
+        if (!input) return;
+        const step = toNumber(button.dataset.step) ?? 1;
+        const next = (toNumber(input.value) ?? 0) + step;
+        input.value = input.step && Math.abs(step) < 1 ? next.toFixed(1) : String(Math.round(next));
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }));
+      $("#addStageBtn")?.addEventListener("click", () => {
         if (state.stages.length >= 8) return;
         state.stages.push({ name: "Hold", temp: 180, rate: 0, duration: 30, rpm: 450, shake: 30, cooling: "自然" });
         state.selectedStage = state.stages.length - 1;
         renderProgram();
       });
-      $("#deleteStageBtn").addEventListener("click", () => confirmDanger($("#deleteStageBtn"), "确认删除", () => {
+      $("#deleteStageBtn")?.addEventListener("click", () => confirmDanger($("#deleteStageBtn"), "确认删除", () => {
         if (state.stages.length <= 1) return;
         state.stages.splice(state.selectedStage, 1);
         state.selectedStage = Math.max(0, state.selectedStage - 1);
         renderProgram();
       }));
-      $("#saveRecipeBtn").addEventListener("click", () => {
-        const yields = state.batches.map((batch) => batch.yield).filter((value) => value !== null);
-        const best = yields.length ? Math.max(...yields) : null;
-        const low = yields.length ? Math.min(...yields) : null;
-        state.recipes.unshift({
-          name: `Recipe ${state.recipes.length + 1}`,
-          created: new Date().toISOString().slice(0, 19).replace("T", " "),
-          runs: state.batches.length,
-          best,
-          avg: yields.length ? yields.reduce((sum, value) => sum + value, 0) / yields.length : null,
-          low,
-          bestBatch: state.batches.find((batch) => batch.yield === best)?.id || 0,
-          lowBatch: state.batches.find((batch) => batch.yield === low)?.id || 0,
-          trend: yields.slice(-5),
-          stages: state.stages.map((stage) => ({ ...stage }))
-        });
-        state.selectedRecipe = 0;
-        switchTab("recipes");
-        renderRecipes();
+      $("#loadRecipeBtn")?.addEventListener("click", () => switchTab("recipes"));
+      $("#applyAiBtn")?.addEventListener("click", applyAiRecommendation);
+      $("#historyExportBtn")?.addEventListener("click", () => {
+        const rowsCsv = ["id,start,end,temp,pressure,score,status"].concat(displayBatches().map((batch) => `${batch.code},${batch.start},${batch.end},${batch.temp},${batch.pressure},${batch.score},${batch.status}`));
+        downloadText("reactor-batches.csv", rowsCsv.join("\n"), "text/csv");
       });
-      $("#loadRecipeBtn").addEventListener("click", () => switchTab("recipes"));
-      $("#startProgramBtn").addEventListener("click", async () => {
-        const stage = currentStage();
-        try {
-          const batch = await apiJson("/api/batches/start", { method: "POST", json: { name: `program-${Date.now()}`, target_temperature_c: toNumber(stage.temp), target_stirrer_rpm: toNumber(stage.rpm), target_shake_speed_cpm: toNumber(stage.shake), heating_minutes: toNumber(state.stages[0]?.duration) ?? toNumber(stage.duration), stirring_minutes: toNumber(stage.duration) } });
-          state.activeBatchId = batch.id;
-          state.completedBatchId = batch.id;
-          await apiJson("/api/control/auto", { method: "POST", json: { enabled: true } });
-          await pollBackend();
-        } catch (err) {
-          state.backendError = { code: err.code || 500, message: err.message || "启动失败" };
-          applyPipelineError();
-          renderPassive();
-        }
-      });
-      $("#finishBatchBtn").addEventListener("click", () => confirmDanger($("#finishBatchBtn"), "确认停止", async () => {
-        const batchId = state.activeBatchId;
-        if (!batchId) return;
-        try {
-          await apiJson(`/api/batches/${batchId}/finish`, { method: "POST" });
-          state.completedBatchId = batchId;
-          state.activeBatchId = null;
-          state.running = false;
-          await pollBackend();
-          renderMaterials();
-        } catch (err) {
-          state.backendError = { code: err.code || 500, message: err.message || "结束批次失败" };
-          applyPipelineError();
-          renderPassive();
-        }
-      }));
-      $("#newRecipeBtn").addEventListener("click", () => {
-        state.recipes.unshift({ ...recipe("新建配方", 0, null, null, null, 0, 0, []), stages: state.stages.map((stage) => ({ ...stage })) });
-        state.selectedRecipe = 0;
-        renderRecipes();
-      });
-      $("#addMaterialBtn").addEventListener("click", () => {
-        state.ingredients.push({ name: "New material", lot: "LOT-", amount: 1.0, purity: 99.0 });
-        renderMaterials();
-      });
-      ["productMass", "theoreticalMass"].forEach((id) => $(`#${id}`).addEventListener("input", computeYield));
-      $("#saveProductBtn").addEventListener("click", async () => {
-        if (state.running) return;
-        const batchId = await latestFinishedBatchId();
-        if (!batchId) return;
-        const ratio = (state.ingredients[0]?.amount || 0) / Math.max(0.0001, (state.ingredients[0]?.amount || 0) + (state.ingredients[1]?.amount || 0));
-        try {
-          await apiJson("/api/product-results", { method: "POST", json: { batch_id: batchId, yield_percent: toNumber($("#computedYield").textContent.replace("%", "")) ?? 0, product_ratio: clamp(ratio, 0, 1), notes: $("#productNotes").value || "" } });
-          await pollBackend();
-        } catch (err) {
-          state.backendError = { code: err.code || 500, message: err.message || "保存产物记录失败" };
-          applyPipelineError();
-          renderPassive();
-        }
-      });
-      $("#applyAiBtn").addEventListener("click", async () => {
-        const rec = state.aiRecommendation;
-        if (!rec) return;
-        const holdStage = state.stages.find((stage) => stage.name.toLowerCase().includes("hold")) || state.stages[0];
-        holdStage.temp = rec.temp;
-        holdStage.duration = rec.hold;
-        holdStage.rpm = rec.rpm;
-        if (toNumber(rec.shake) !== null) holdStage.shake = rec.shake;
-        sensor("temperature").target = rec.temp;
-        sensor("rpm").target = rec.rpm;
-        if (toNumber(holdStage.shake) !== null) sensor("shake").target = holdStage.shake;
-        try {
-          await apiJson(`/api/v1/reactor/${API_DEVICE_ID}/control`, {
-            method: "POST",
-            json: {
-              command_id: `ai_${Date.now()}`,
-              timestamp: new Date().toISOString(),
-              params: {
-                heat_time: (toNumber(rec.hold) ?? 0) * 60,
-                hold_time: (toNumber(rec.stir) ?? toNumber(rec.hold) ?? 0) * 60,
-                cool_time: 180,
-                stir_speed: toNumber(rec.rpm),
-                shake_speed: toNumber(holdStage.shake),
-                target_temp: toNumber(rec.temp),
-                target_pressure: sensor("pressure").target || 0.5
-              }
-            }
-          });
-          await pollBackend();
-          switchTab("program");
-        } catch (err) {
-          state.backendError = { code: err.code || 500, message: err.message || "应用 AI 推荐失败" };
-          applyPipelineError();
-          renderPassive();
-        }
-      });
-      $("#bigScreenBtn").addEventListener("click", showBigScreen);
-      $("#bigScreenClose").addEventListener("click", () => { $("#bigScreen").hidden = true; });
-      window.addEventListener("keydown", (event) => { if (event.key === "Escape") $("#bigScreen").hidden = true; });
-      $("#exportTrigger").addEventListener("click", () => $("#exportBox").classList.toggle("open"));
-      $$("[data-export]").forEach((button) => button.addEventListener("click", () => {
-        const kind = button.dataset.export;
-        if (kind === "pdf") { window.print(); return; }
-        if (kind === "alarms") {
-          const rowsCsv = ["id,time,sensor,description,value,active,acknowledged"].concat(state.alarms.map((alarm) => `${alarm.id},${alarm.time},${alarm.sensor},${alarm.description},${alarm.value},${alarm.active},${alarm.acknowledged}`));
-          downloadText("reactor-alarms.csv", rowsCsv.join("\n"), "text/csv");
-        } else {
-          const rowsCsv = ["id,temp,hold,rpm,ratio,yield"].concat(state.batches.map((batch) => `${batch.id},${batch.temp},${batch.hold},${batch.rpm},${batch.ratio},${batch.yield}`));
-          downloadText("reactor-history.csv", rowsCsv.join("\n"), "text/csv");
-        }
-      }));
-      $("#sensitivityChart").addEventListener("click", () => {});
+      $("#sensitivityChart")?.addEventListener("click", () => {});
       window.addEventListener("resize", () => requestAnimationFrame(drawAll));
     }
 

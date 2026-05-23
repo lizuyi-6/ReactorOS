@@ -136,6 +136,8 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["runtime"]["latest_sample"]["pressure_mpa"], 0.0629);
     assert!(body["recent_samples"].as_array().unwrap().len() == 1);
+    assert!(body["recent_samples"][0]["batch_id"].is_null());
+    assert_eq!(body["latest_recommendation"], Value::Null);
     assert!(body["recent_batches"].is_array());
     assert!(body["recent_outcomes"].is_array());
     assert!(body["recent_events"].is_array());
@@ -210,6 +212,39 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["code"], 503);
+}
+
+#[tokio::test]
+async fn unknown_api_routes_return_json_error_code() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/does-not-exist")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 404);
+    assert_eq!(body["message"], "api route not found");
 }
 
 #[tokio::test]
@@ -477,7 +512,7 @@ async fn live_endpoint_rejects_stale_pipeline_samples() {
 }
 
 #[tokio::test]
-async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
+async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
     db.insert_sample(
@@ -518,6 +553,25 @@ async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
         },
         ..AiMemory::default()
     });
+    let batch = db
+        .create_batch("real-outcome-seed", 95.0, 450.0, 40.0, 50.0)
+        .unwrap();
+    db.finish_batch(batch.id).unwrap();
+    db.insert_product_result(&ProductResult {
+        batch_id: batch.id,
+        yield_percent: 82.0,
+        product_ratio: 0.88,
+        notes: "real product result for live recommendation".to_string(),
+    })
+    .unwrap();
+    let outcomes = db.batch_outcomes().unwrap();
+    let recommendation = reactor_edge_daemon::optimizer::recommend_with_memory(
+        &safety.optimizer,
+        Some(ai_memory.as_ref()),
+        &outcomes,
+    );
+    db.insert_recommendation(&recommendation).unwrap();
+
     let app = router(
         AppState {
             db,
@@ -543,12 +597,49 @@ async fn live_endpoint_recomputes_recommendation_from_file_memory_bounds() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["latest_recommendation"]["target_temperature_c"], 95.0);
-    assert_eq!(body["latest_recommendation"]["target_stirrer_rpm"], 450.0);
-    assert_eq!(body["latest_recommendation"]["heating_minutes"], 40.0);
-    assert_eq!(body["latest_recommendation"]["stirring_minutes"], 50.0);
+    assert_eq!(body["latest_recommendation"]["based_on_batch_count"], 1);
+    assert!(body["latest_recommendation"]["target_temperature_c"].is_number());
+    assert!(body["latest_recommendation"]["target_stirrer_rpm"].is_number());
+    assert!(body["latest_recommendation"]["heating_minutes"].is_number());
+    assert!(body["latest_recommendation"]["stirring_minutes"].is_number());
     assert_eq!(body["ai_provider"]["mode"], "local_optimizer");
     assert_eq!(body["ai_provider"]["model"], "local-tpe-lite");
+}
+
+#[tokio::test]
+async fn latest_recommendation_waits_for_real_product_results() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/recommendations/latest")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("product result data unavailable"));
 }
 
 #[tokio::test]
@@ -1035,6 +1126,256 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
     assert!(events
         .iter()
         .any(|event| event["event_type"] == "product_result_recorded"));
+}
+
+#[tokio::test]
+async fn process_configuration_persists_steps_and_applies_to_batch_history() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/processes")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "name": "RX-78 高分子聚合", "description": "lab process" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    let process_id = body["data"]["id"].as_i64().unwrap();
+
+    for (name, temp, duration, rpm, pressure) in [
+        ("加热", 120.0, 45.0, 150.0, 0.5),
+        ("保温", 120.0, 120.0, 300.0, 2.4),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/processes/{process_id}/steps"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({
+                            "name": name,
+                            "target_temperature_c": temp,
+                            "ramp_rate_c_min": 2.5,
+                            "duration_minutes": duration,
+                            "target_stirrer_rpm": rpm,
+                            "target_shake_speed_cpm": 30,
+                            "target_pressure_mpa": pressure,
+                            "cooling_mode": "自然"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/processes/{process_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), StatusCode::OK);
+    let body = to_bytes(detail.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["steps"].as_array().unwrap().len(), 2);
+
+    let applied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/processes/{process_id}/apply"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(applied.status(), StatusCode::OK);
+    let body = to_bytes(applied.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let batch_id = body["data"]["batch"]["id"].as_i64().unwrap();
+    assert_eq!(
+        body["data"]["batch"]["process_id"].as_i64().unwrap(),
+        process_id
+    );
+    assert_eq!(
+        body["data"]["applied_targets"]["temperature_c"]
+            .as_f64()
+            .unwrap(),
+        120.0
+    );
+
+    let live = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["processes"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        body["recent_batches"][0]["process_id"].as_i64().unwrap(),
+        process_id
+    );
+
+    let batch_detail = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/batches/{batch_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(batch_detail.status(), StatusCode::OK);
+    let body = to_bytes(batch_detail.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["batch"]["id"].as_i64().unwrap(), batch_id);
+    assert!(body["data"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "process_applied"));
+}
+
+#[tokio::test]
+async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let unavailable = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unavailable.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/processes")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "name": "离线可配置工艺" }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let process_id = body["data"]["id"].as_i64().unwrap();
+
+    let processes = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/processes")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(processes.status(), StatusCode::OK);
+    let body = to_bytes(processes.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"][0]["id"].as_i64().unwrap(), process_id);
+
+    let batches = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/batches")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(batches.status(), StatusCode::OK);
+    let body = to_bytes(batches.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert!(body["data"]["batches"].is_array());
+    assert!(body["data"]["outcomes"].is_array());
 }
 
 #[tokio::test]

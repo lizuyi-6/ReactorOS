@@ -1,17 +1,9 @@
 import { expect, test } from "@playwright/test";
 import {
-  assertCanvasHasInk,
   assertNoConsoleErrors,
   assertNoHorizontalOverflow,
   assertNoTextClipping
 } from "./reactor-os.helpers.mjs";
-
-const canvases = ["#processCanvas", "#mainTrend", "#stageGantt", "#alarmDist"];
-const viewports = [
-  { width: 1024, height: 600 },
-  { width: 1280, height: 800 },
-  { width: 1440, height: 900 }
-];
 
 function captureConsoleErrors(page) {
   const consoleErrors = [];
@@ -26,25 +18,8 @@ test.afterEach(async ({ page }) => {
   assertNoConsoleErrors(page);
 });
 
-for (const viewport of viewports) {
-  test(`workshop HMI prototype fits ${viewport.width}x${viewport.height}`, async ({ page }) => {
-    captureConsoleErrors(page);
-    await page.setViewportSize(viewport);
-    await page.goto("/workshop.html", { waitUntil: "domcontentloaded" });
-    await expect(page.locator("body")).toContainText("WORKSHOP DEMO / 未接入后端");
-    await expect(page.locator("[data-sensor]")).toHaveCount(7);
-
-    for (const selector of canvases) {
-      await assertCanvasHasInk(page, selector);
-    }
-    await assertNoHorizontalOverflow(page);
-    await assertNoTextClipping(page);
-  });
-}
-
-test("workshop HMI prototype is static and touch-oriented", async ({ page }) => {
+test("legacy workshop entry no longer serves local demo sensor data", async ({ page }) => {
   captureConsoleErrors(page);
-
   const apiRequests = [];
   page.on("request", request => {
     const url = request.url();
@@ -52,25 +27,13 @@ test("workshop HMI prototype is static and touch-oriented", async ({ page }) => 
   });
 
   await page.goto("/workshop.html", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("body")).toContainText("WORKSHOP DEMO / 未接入后端");
-  await expect(page.locator("body")).toContainText("Detector Signals");
-  await expect(page.locator("body")).toContainText("Operator Control");
-  await expect(page.locator("body")).toContainText("Alarm Queue");
-  await expect(page.locator("[data-sensor]")).toHaveCount(7);
-  await expect(page.locator("#startBtn")).toHaveCSS("min-height", "56px");
-  await expect(page.locator("#estopBtn")).toHaveCSS("min-height", "56px");
-  await page.locator("#pauseBtn").click();
-  await expect(page.locator("#runText")).toHaveText("PAUSED");
-  await page.locator("#startBtn").click();
-  await expect(page.locator("#runText")).toHaveText("RUNNING");
-  await page.locator("#estopBtn").click();
-  await expect(page.locator("#estopBtn")).toHaveText("CONFIRM STOP");
-  await page.locator("#estopBtn").click();
-  await expect(page.locator("#runText")).toHaveText("E-STOP");
-
-  for (const selector of canvases) {
-    await assertCanvasHasInk(page, selector);
-  }
+  await expect(page.locator("body")).toContainText("旧演示入口已停用");
+  await expect(page.locator("body")).toContainText("后端数据管线");
+  await expect(page.locator("body")).toContainText("NO LOCAL DEMO DATA");
+  await expect(page.locator("body")).not.toContainText("WORKSHOP DEMO");
+  await expect(page.locator("[data-sensor]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveCount(0);
+  await expect(page.locator("a[href='/']")).toContainText("进入真实数据管线 HMI");
   await assertNoHorizontalOverflow(page);
   await assertNoTextClipping(page);
   expect(apiRequests).toEqual([]);

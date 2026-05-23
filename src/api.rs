@@ -8,7 +8,7 @@ use axum::{
     },
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{any, get, post, put},
     Json, Router,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -23,7 +23,10 @@ use crate::{
     },
     config::SafetyConfig,
     control::{clamp_operator_targets, SafeCommand},
-    db::{Batch, BatchOutcome, ControlEvent, Db, ProductResult},
+    db::{
+        Batch, BatchOutcome, ControlEvent, Db, NewProcessStep, ProcessDefinition, ProcessDetail,
+        ProcessStep, ProductResult, SensorSampleRecord,
+    },
     memory::{AiMemory, AiMemorySummary, LimitLevel, SensorLimit},
     optimizer::{recommend_with_memory, Recommendation},
     state::{fit_tilt_angle_deg, ControlTargets, RuntimeState, SensorSnapshot, SharedState},
@@ -50,10 +53,12 @@ pub struct LiveResponse {
     pub runtime: RuntimeState,
     pub latest_recommendation: Option<Recommendation>,
     pub ai_provider: AiRecommendationProvider,
-    pub recent_samples: Vec<SensorSnapshot>,
+    pub processes: Vec<ProcessDefinition>,
+    pub recent_samples: Vec<SensorSampleRecord>,
     pub recent_batches: Vec<Batch>,
     pub recent_outcomes: Vec<BatchOutcome>,
     pub recent_events: Vec<ControlEvent>,
+    pub alarms: Vec<Value>,
     pub ai_memory: AiMemorySummary,
 }
 
@@ -88,6 +93,7 @@ pub struct DeviceStatusItem {
 #[derive(Debug, Deserialize)]
 pub struct StartBatchRequest {
     pub name: Option<String>,
+    pub process_id: Option<i64>,
     pub target_temperature_c: Option<f64>,
     pub target_stirrer_rpm: Option<f64>,
     pub target_shake_speed_cpm: Option<f64>,
@@ -101,6 +107,52 @@ pub struct ProductResultRequest {
     pub yield_percent: f64,
     pub product_ratio: f64,
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProcessRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProcessRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProcessStepRequest {
+    pub name: Option<String>,
+    pub target_temperature_c: f64,
+    pub ramp_rate_c_min: Option<f64>,
+    pub duration_minutes: f64,
+    pub target_stirrer_rpm: f64,
+    pub target_shake_speed_cpm: Option<f64>,
+    pub target_pressure_mpa: Option<f64>,
+    pub cooling_mode: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProcessApplyResponse {
+    pub process: ProcessDefinition,
+    pub batch: Batch,
+    pub applied_targets: ControlTargets,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchListResponse {
+    pub batches: Vec<Batch>,
+    pub outcomes: Vec<BatchOutcome>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchDetailResponse {
+    pub batch: Batch,
+    pub outcome: Option<BatchOutcome>,
+    pub samples: Vec<SensorSampleRecord>,
+    pub events: Vec<ControlEvent>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -189,7 +241,17 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
         .route("/api/v1/reactor/:device_id/history", get(v1_history))
         .route("/api/v1/reactor/:device_id/process", post(v1_process))
         .route("/ws/v1/reactor/:device_id/realtime", get(v1_realtime_ws))
+        .route("/api/processes", get(list_processes).post(create_process))
+        .route("/api/processes/:id", get(get_process).put(update_process))
+        .route("/api/processes/:id/steps", post(add_process_step))
+        .route(
+            "/api/processes/:id/steps/:step_id",
+            put(update_process_step),
+        )
+        .route("/api/processes/:id/apply", post(apply_process))
+        .route("/api/batches", get(list_batches))
         .route("/api/batches/start", post(start_batch))
+        .route("/api/batches/:id", get(get_batch_detail))
         .route("/api/batches/:id/finish", post(finish_batch))
         .route("/api/product-results", post(product_results))
         .route("/api/control/auto", post(set_auto))
@@ -203,6 +265,7 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
         .route("/api/test/reset", post(test_reset))
         .route("/api/test/pipeline-sample", post(test_pipeline_sample))
         .route("/api/recommendations/latest", get(latest_recommendation))
+        .route("/api/*path", any(api_not_found))
         .nest_service(
             "/",
             ServeDir::new(&assets).not_found_service(ServeFile::new(assets.join("index.html"))),
@@ -228,23 +291,198 @@ async fn health() -> Json<HealthResponse> {
 async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppError> {
     let runtime = state.runtime.read().await.clone();
     ensure_fresh_sample(&state, &runtime)?;
-    let recent_samples = state.db.recent_samples(480)?;
+    let recent_samples = state.db.recent_sample_records(480)?;
+    let processes = state.db.list_processes()?;
     let recent_batches = state.db.recent_batches(20)?;
     let recent_outcomes = state.db.recent_batch_outcomes(20)?;
     let recent_events = state.db.recent_control_events(100)?;
     let ai_memory = AiMemorySummary::from(state.ai_memory.as_ref());
-    let recommendation = current_cached_or_local_recommendation(&state)?;
+    let recommendation = state
+        .db
+        .latest_recommendation()?
+        .filter(|recommendation| recommendation.based_on_batch_count > 0);
     let ai_provider = local_provider_for(&state);
+    let alarms = alarms_for(
+        &runtime,
+        runtime.latest_sample.as_ref(),
+        state.ai_memory.as_ref(),
+    );
     Ok(Json(LiveResponse {
         runtime,
-        latest_recommendation: Some(recommendation),
+        latest_recommendation: recommendation,
         ai_provider,
+        processes,
         recent_samples,
         recent_batches,
         recent_outcomes,
         recent_events,
+        alarms,
         ai_memory,
     }))
+}
+
+async fn list_processes(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<Vec<ProcessDefinition>>>, AppError> {
+    Ok(Json(success(state.db.list_processes()?)))
+}
+
+async fn create_process(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateProcessRequest>,
+) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
+    let name = clean_label(payload.name, "未命名工艺", 80);
+    let description = clean_label(payload.description, "", 240);
+    let process = state.db.create_process(&name, &description)?;
+    state
+        .db
+        .insert_control_event(None, "process_created", None, "operator created process")?;
+    Ok(Json(success(process)))
+}
+
+async fn get_process(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+) -> Result<Json<V1Envelope<ProcessDetail>>, AppError> {
+    let Some(process) = state.db.process_detail(process_id)? else {
+        return Err(AppError::not_found("process not found"));
+    };
+    Ok(Json(success(process)))
+}
+
+async fn update_process(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+    Json(payload): Json<UpdateProcessRequest>,
+) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
+    let Some(current) = state.db.process_detail(process_id)? else {
+        return Err(AppError::not_found("process not found"));
+    };
+    let name = clean_label(payload.name, &current.process.name, 80);
+    let description = clean_label(payload.description, &current.process.description, 240);
+    let status = clean_status(payload.status.as_deref().unwrap_or(&current.process.status))?;
+    let Some(process) = state
+        .db
+        .update_process(process_id, &name, &description, status)?
+    else {
+        return Err(AppError::not_found("process not found"));
+    };
+    state
+        .db
+        .insert_control_event(None, "process_updated", None, "operator updated process")?;
+    Ok(Json(success(process)))
+}
+
+async fn add_process_step(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+    Json(payload): Json<ProcessStepRequest>,
+) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
+    let step = validate_process_step(&state.safety, payload)?;
+    let Some(step) = state.db.add_process_step(process_id, &step)? else {
+        return Err(AppError::not_found("process not found"));
+    };
+    state.db.insert_control_event(
+        None,
+        "process_step_added",
+        None,
+        "operator added process step",
+    )?;
+    Ok(Json(success(step)))
+}
+
+async fn update_process_step(
+    State(state): State<AppState>,
+    Path((process_id, step_id)): Path<(i64, i64)>,
+    Json(payload): Json<ProcessStepRequest>,
+) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
+    let step = validate_process_step(&state.safety, payload)?;
+    let Some(step) = state.db.update_process_step(process_id, step_id, &step)? else {
+        return Err(AppError::not_found("process step not found"));
+    };
+    state.db.insert_control_event(
+        None,
+        "process_step_updated",
+        None,
+        "operator updated process step",
+    )?;
+    Ok(Json(success(step)))
+}
+
+async fn apply_process(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
+    let Some(detail) = state.db.process_detail(process_id)? else {
+        return Err(AppError::not_found("process not found"));
+    };
+    if detail.steps.is_empty() {
+        return Err(AppError::bad_request(
+            "process must contain at least one step before applying",
+        ));
+    }
+    let targets = targets_from_process_steps(&state.safety, &detail.steps)?;
+    let batch = state.db.create_batch_for_process(
+        Some(process_id),
+        &detail.process.name,
+        targets.temperature_c,
+        targets.stirrer_rpm,
+        seconds_to_minutes(Some(targets.heat_time_s)),
+        seconds_to_minutes(Some(targets.hold_time_s)),
+    )?;
+    {
+        let mut runtime = state.runtime.write().await;
+        runtime.targets = targets.clone();
+        runtime.active_batch_id = Some(batch.id);
+        runtime.auto_enabled = true;
+    }
+    state.db.insert_control_event(
+        Some(batch.id),
+        "process_applied",
+        Some(&SafeCommand {
+            target_temperature_c: targets.temperature_c,
+            heat_time_s: targets.heat_time_s,
+            hold_time_s: targets.hold_time_s,
+            cool_time_s: targets.cool_time_s,
+            target_stirrer_rpm: targets.stirrer_rpm,
+            target_shake_speed_cpm: targets.shake_speed_cpm,
+            target_pressure_mpa: targets.target_pressure_mpa,
+            reason: "process applied from persisted process definition".to_string(),
+        }),
+        "process applied from persisted process definition",
+    )?;
+    let Some(process) = state.db.mark_process_applied(process_id)? else {
+        return Err(AppError::not_found("process not found"));
+    };
+    Ok(Json(success(ProcessApplyResponse {
+        process,
+        batch,
+        applied_targets: targets,
+    })))
+}
+
+async fn list_batches(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<BatchListResponse>>, AppError> {
+    Ok(Json(success(BatchListResponse {
+        batches: state.db.recent_batches(100)?,
+        outcomes: state.db.recent_batch_outcomes(100)?,
+    })))
+}
+
+async fn get_batch_detail(
+    State(state): State<AppState>,
+    Path(batch_id): Path<i64>,
+) -> Result<Json<V1Envelope<BatchDetailResponse>>, AppError> {
+    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+        return Err(AppError::not_found("batch not found"));
+    };
+    Ok(Json(success(BatchDetailResponse {
+        outcome: state.db.batch_outcome_by_id(batch_id)?,
+        samples: state.db.sample_records_for_batch(batch_id, 480)?,
+        events: state.db.control_events_for_batch(batch_id, 100)?,
+        batch,
+    })))
 }
 
 async fn devices_status(
@@ -559,7 +797,8 @@ async fn start_batch(
     let heating_minutes = round2(payload.heating_minutes.unwrap_or(60.0));
     let stirring_minutes = round2(payload.stirring_minutes.unwrap_or(60.0));
     let name = payload.name.unwrap_or_else(|| "batch".to_string());
-    let batch = state.db.create_batch(
+    let batch = state.db.create_batch_for_process(
+        payload.process_id,
         &name,
         target_temperature_c,
         target_stirrer_rpm,
@@ -767,6 +1006,13 @@ async fn latest_recommendation(
     )))
 }
 
+async fn api_not_found() -> AppError {
+    AppError {
+        status: StatusCode::NOT_FOUND,
+        message: "api route not found".to_string(),
+    }
+}
+
 async fn test_reset(State(state): State<AppState>) -> Result<StatusCode, AppError> {
     if !state.test_reset_enabled {
         return Err(AppError {
@@ -852,24 +1098,13 @@ fn ensure_fresh_sample(state: &AppState, runtime: &RuntimeState) -> Result<(), A
     Ok(())
 }
 
-fn local_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
-    let outcomes = state.db.batch_outcomes()?;
-    Ok(recommend_with_memory(
-        &state.safety.optimizer,
-        Some(&state.ai_memory),
-        &outcomes,
-    ))
-}
-
-fn current_cached_or_local_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
-    if let Some(recommendation) = state.db.latest_recommendation()? {
-        return Ok(recommendation);
-    }
-    local_recommendation(state)
-}
-
 async fn generate_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
     let outcomes = state.db.batch_outcomes()?;
+    if outcomes.is_empty() {
+        return Err(AppError::service_unavailable(
+            "product result data unavailable; waiting for finished batch outcomes",
+        ));
+    }
     let fallback =
         recommend_with_memory(&state.safety.optimizer, Some(&state.ai_memory), &outcomes);
     let Some(provider) = &state.ai_provider else {
@@ -943,6 +1178,93 @@ fn success<T>(data: T) -> V1Envelope<T> {
         message: "success".to_string(),
         data,
     }
+}
+
+fn clean_label(value: Option<String>, fallback: &str, max_chars: usize) -> String {
+    let trimmed = value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback);
+    trimmed.chars().take(max_chars).collect()
+}
+
+fn clean_status(value: &str) -> Result<&'static str, AppError> {
+    match value {
+        "draft" => Ok("draft"),
+        "applied" => Ok("applied"),
+        "archived" => Ok("archived"),
+        _ => Err(AppError::bad_request(
+            "status must be draft, applied, or archived",
+        )),
+    }
+}
+
+fn validate_process_step(
+    safety: &SafetyConfig,
+    payload: ProcessStepRequest,
+) -> Result<NewProcessStep, AppError> {
+    let name = clean_label(payload.name, "新步骤", 80);
+    validate_target_temperature(safety, payload.target_temperature_c)?;
+    let ramp_rate_c_min = payload.ramp_rate_c_min.unwrap_or(0.0);
+    validate_range("ramp_rate_c_min", ramp_rate_c_min, -20.0, 20.0)?;
+    validate_range(
+        "duration_minutes",
+        payload.duration_minutes,
+        1.0,
+        safety
+            .optimizer
+            .max_stirring_minutes
+            .max(safety.optimizer.max_heating_minutes),
+    )?;
+    validate_stir_speed(safety, payload.target_stirrer_rpm)?;
+    let target_shake_speed_cpm = payload.target_shake_speed_cpm.unwrap_or(30.0);
+    validate_range("target_shake_speed_cpm", target_shake_speed_cpm, 0.0, 60.0)?;
+    let target_pressure_mpa = payload.target_pressure_mpa.unwrap_or(0.5);
+    validate_range("target_pressure_mpa", target_pressure_mpa, 0.0, 10.0)?;
+    let cooling_mode = clean_label(payload.cooling_mode, "自然", 20);
+    Ok(NewProcessStep {
+        name,
+        target_temperature_c: round2(payload.target_temperature_c),
+        ramp_rate_c_min: round2(ramp_rate_c_min),
+        duration_minutes: round2(payload.duration_minutes),
+        target_stirrer_rpm: round2(payload.target_stirrer_rpm),
+        target_shake_speed_cpm: round2(target_shake_speed_cpm),
+        target_pressure_mpa: round2(target_pressure_mpa),
+        cooling_mode,
+    })
+}
+
+fn targets_from_process_steps(
+    safety: &SafetyConfig,
+    steps: &[ProcessStep],
+) -> Result<ControlTargets, AppError> {
+    let first = steps
+        .first()
+        .ok_or_else(|| AppError::bad_request("process must contain at least one step"))?;
+    let hold = steps.get(1).unwrap_or(first);
+    let last = steps.last().unwrap_or(first);
+    let heat_time_s =
+        (first.duration_minutes * 60.0).min(safety.optimizer.max_heating_minutes * 60.0);
+    let hold_time_s =
+        (hold.duration_minutes * 60.0).min(safety.optimizer.max_stirring_minutes * 60.0);
+    let cool_time_s = if steps.len() > 2 {
+        (last.duration_minutes * 60.0).min(3600.0)
+    } else {
+        180.0
+    };
+    Ok(clamp_operator_targets(
+        safety,
+        ControlTargets {
+            temperature_c: first.target_temperature_c,
+            heat_time_s,
+            hold_time_s,
+            cool_time_s,
+            stirrer_rpm: hold.target_stirrer_rpm,
+            shake_speed_cpm: hold.target_shake_speed_cpm,
+            target_pressure_mpa: hold.target_pressure_mpa,
+        },
+    ))
 }
 
 fn seconds_to_minutes(seconds: Option<f64>) -> f64 {
@@ -1252,6 +1574,13 @@ impl AppError {
     fn bad_request(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::BAD_REQUEST,
+            message: message.into(),
+        }
+    }
+
+    fn not_found(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::NOT_FOUND,
             message: message.into(),
         }
     }
