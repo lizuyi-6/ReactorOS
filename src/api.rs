@@ -3,8 +3,9 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use anyhow::Result;
 use axum::{
     extract::{
+        rejection::JsonRejection,
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, Query, State,
+        FromRequest, Path, Query, Request, State,
     },
     http::StatusCode,
     response::IntoResponse,
@@ -12,6 +13,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Duration, Utc};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tower_http::services::{ServeDir, ServeFile};
@@ -329,7 +331,7 @@ async fn list_processes(
 
 async fn create_process(
     State(state): State<AppState>,
-    Json(payload): Json<CreateProcessRequest>,
+    ApiJson(payload): ApiJson<CreateProcessRequest>,
 ) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
     let name = clean_label(payload.name, "未命名工艺", 80);
     let description = clean_label(payload.description, "", 240);
@@ -353,7 +355,7 @@ async fn get_process(
 async fn update_process(
     State(state): State<AppState>,
     Path(process_id): Path<i64>,
-    Json(payload): Json<UpdateProcessRequest>,
+    ApiJson(payload): ApiJson<UpdateProcessRequest>,
 ) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
     let Some(current) = state.db.process_detail(process_id)? else {
         return Err(AppError::not_found("process not found"));
@@ -376,7 +378,7 @@ async fn update_process(
 async fn add_process_step(
     State(state): State<AppState>,
     Path(process_id): Path<i64>,
-    Json(payload): Json<ProcessStepRequest>,
+    ApiJson(payload): ApiJson<ProcessStepRequest>,
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
     let step = validate_process_step(&state.safety, payload)?;
     let Some(step) = state.db.add_process_step(process_id, &step)? else {
@@ -394,7 +396,7 @@ async fn add_process_step(
 async fn update_process_step(
     State(state): State<AppState>,
     Path((process_id, step_id)): Path<(i64, i64)>,
-    Json(payload): Json<ProcessStepRequest>,
+    ApiJson(payload): ApiJson<ProcessStepRequest>,
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
     let step = validate_process_step(&state.safety, payload)?;
     let Some(step) = state.db.update_process_step(process_id, step_id, &step)? else {
@@ -495,7 +497,7 @@ async fn devices_status(
 async fn v1_control(
     State(state): State<AppState>,
     Path(device_id): Path<String>,
-    Json(payload): Json<V1ControlRequest>,
+    ApiJson(payload): ApiJson<V1ControlRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     let auto_start = payload.auto_start.unwrap_or(false);
     let already_running = state.runtime.read().await.active_batch_id.is_some();
@@ -562,7 +564,7 @@ async fn v1_control(
 async fn v1_pipeline_sample(
     State(state): State<AppState>,
     Path(device_id): Path<String>,
-    Json(payload): Json<PipelineSampleRequest>,
+    ApiJson(payload): ApiJson<PipelineSampleRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     let sample = accept_pipeline_sample(&state, payload).await?;
     Ok(Json(success(json!({
@@ -686,7 +688,7 @@ async fn v1_history(
 async fn v1_process(
     State(state): State<AppState>,
     Path(device_id): Path<String>,
-    Json(payload): Json<V1ProcessRequest>,
+    ApiJson(payload): ApiJson<V1ProcessRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     if payload.phases.is_empty() {
         return Err(AppError::bad_request("phases must not be empty"));
@@ -777,7 +779,7 @@ async fn v1_process(
 
 async fn start_batch(
     State(state): State<AppState>,
-    Json(payload): Json<StartBatchRequest>,
+    ApiJson(payload): ApiJson<StartBatchRequest>,
 ) -> Result<Json<Batch>, AppError> {
     let targets = {
         let runtime = state.runtime.read().await;
@@ -858,7 +860,7 @@ async fn finish_batch(
 
 async fn product_results(
     State(state): State<AppState>,
-    Json(payload): Json<ProductResultRequest>,
+    ApiJson(payload): ApiJson<ProductResultRequest>,
 ) -> Result<Json<AiRecommendationEnvelope>, AppError> {
     if !(0.0..=100.0).contains(&payload.yield_percent) {
         return Err(AppError::bad_request(
@@ -889,7 +891,7 @@ async fn product_results(
 
 async fn set_auto(
     State(state): State<AppState>,
-    Json(payload): Json<AutoRequest>,
+    ApiJson(payload): ApiJson<AutoRequest>,
 ) -> Result<StatusCode, AppError> {
     {
         let mut runtime = state.runtime.write().await;
@@ -910,7 +912,7 @@ async fn set_auto(
 
 async fn set_manual_lock(
     State(state): State<AppState>,
-    Json(payload): Json<ManualLockRequest>,
+    ApiJson(payload): ApiJson<ManualLockRequest>,
 ) -> Result<StatusCode, AppError> {
     {
         let mut runtime = state.runtime.write().await;
@@ -931,7 +933,7 @@ async fn set_manual_lock(
 
 async fn set_targets(
     State(state): State<AppState>,
-    Json(payload): Json<TargetRequest>,
+    ApiJson(payload): ApiJson<TargetRequest>,
 ) -> Result<Json<ControlTargets>, AppError> {
     let targets = clamp_operator_targets(&state.safety, {
         let current = state.runtime.read().await.targets.clone();
@@ -1030,7 +1032,7 @@ async fn test_reset(State(state): State<AppState>) -> Result<StatusCode, AppErro
 
 async fn test_pipeline_sample(
     State(state): State<AppState>,
-    Json(payload): Json<PipelineSampleRequest>,
+    ApiJson(payload): ApiJson<PipelineSampleRequest>,
 ) -> Result<Json<SensorSnapshot>, AppError> {
     if !state.test_reset_enabled {
         return Err(AppError {
@@ -1177,6 +1179,24 @@ fn success<T>(data: T) -> V1Envelope<T> {
         code: 0,
         message: "success".to_string(),
         data,
+    }
+}
+
+pub struct ApiJson<T>(pub T);
+
+#[async_trait::async_trait]
+impl<S, T> FromRequest<S> for ApiJson<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned,
+{
+    type Rejection = AppError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        Json::<T>::from_request(req, state)
+            .await
+            .map(|Json(value)| Self(value))
+            .map_err(AppError::from_json_rejection)
     }
 }
 
@@ -1596,6 +1616,13 @@ impl AppError {
         Self {
             status: StatusCode::SERVICE_UNAVAILABLE,
             message: message.into(),
+        }
+    }
+
+    fn from_json_rejection(rejection: JsonRejection) -> Self {
+        Self {
+            status: rejection.status(),
+            message: rejection.body_text(),
         }
     }
 }

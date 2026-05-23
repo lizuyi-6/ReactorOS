@@ -366,6 +366,54 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
 }
 
 #[tokio::test]
+async fn malformed_pipeline_sample_returns_json_error_code() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/reactor/reactor_001/samples")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "temperature_c": "not-a-number",
+                        "pressure_mpa": 0.3,
+                        "stirrer_rpm": 500.0,
+                        "shake_speed_cpm": 34.0,
+                        "tilt_state": 1,
+                        "flow_rate_l_min": 2.5,
+                        "product_concentration_percent": 42.0,
+                        "ph": 6.9
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 422);
+    assert!(body["message"].as_str().unwrap().contains("temperature_c"));
+    assert!(body["data"]["error"].as_str().unwrap().contains("f64"));
+}
+
+#[tokio::test]
 async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
     let safety = Arc::new(safety());
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
