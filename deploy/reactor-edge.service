@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 User=pi
 Group=pi
-ExecStart=/usr/local/bin/reactor-edge-daemon \
+WorkingDirectory=/opt/reactor-edge
+ExecStart=/opt/reactor-edge/bin/reactor-edge-daemon \
   --config /etc/reactor-edge/device.toml \
   --safety /etc/reactor-edge/safety.toml \
   --memory /etc/reactor-edge/ai_memory.toml \
@@ -20,9 +21,13 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/var/lib/reactor-edge
-# Optional real AI provider. Keep the key in an EnvironmentFile outside git:
-# EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
+ReadWritePaths=-/var/lib/reactor-edge
+# Required when using config/device.json_bridge.toml with /project/control.json.
+# Adjust this path if json_bridge.control_path points elsewhere.
+ReadWritePaths=-/project
+# Optional real AI provider. Keep the key in this EnvironmentFile outside git.
+# If STEPFUN_AI_ENABLED=true is set there, startup fails when the key is missing.
+EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 
 [Install]
 WantedBy=multi-user.target

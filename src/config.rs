@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -9,6 +12,8 @@ pub struct DeviceConfig {
     pub serial: SerialConfig,
     pub modbus: ModbusConfig,
     pub esp32: Esp32Config,
+    #[serde(default)]
+    pub json_bridge: JsonBridgeConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -17,6 +22,7 @@ pub enum DeviceMode {
     Pipeline,
     Modbus,
     Esp32Serial,
+    JsonBridge,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,6 +47,69 @@ pub struct Esp32Config {
     pub command_prefix: String,
     pub checksum: bool,
     pub max_line_bytes: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct JsonBridgeConfig {
+    pub state_path: PathBuf,
+    pub control_path: PathBuf,
+    pub max_state_age_ms: i64,
+    pub request_id_prefix: String,
+    pub speed_steps_per_cycle: f64,
+    pub speed_deadband_cpm: f64,
+    pub temperature_deadband_c: f64,
+    pub relay_temperature_control: bool,
+    #[serde(default)]
+    pub adc: JsonBridgeAdcConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct JsonBridgeAdcConfig {
+    pub sensor: Option<JsonBridgeAdcSensor>,
+    pub scale: f64,
+    pub offset: f64,
+    pub min_valid: f64,
+    pub max_valid: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum JsonBridgeAdcSensor {
+    TemperatureC,
+    PressureMpa,
+    StirrerRpm,
+    ShakeSpeedCpm,
+    FlowRateLMin,
+    ProductConcentrationPercent,
+    Ph,
+}
+
+impl Default for JsonBridgeConfig {
+    fn default() -> Self {
+        Self {
+            state_path: PathBuf::from("/project/state.json"),
+            control_path: PathBuf::from("/project/control.json"),
+            max_state_age_ms: 6_000,
+            request_id_prefix: "reactor-os".to_string(),
+            speed_steps_per_cycle: 200.0,
+            speed_deadband_cpm: 1.0,
+            temperature_deadband_c: 1.0,
+            relay_temperature_control: false,
+            adc: JsonBridgeAdcConfig::default(),
+        }
+    }
+}
+
+impl Default for JsonBridgeAdcConfig {
+    fn default() -> Self {
+        Self {
+            sensor: None,
+            scale: 1.0,
+            offset: 0.0,
+            min_valid: 0.0,
+            max_valid: 4095.0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

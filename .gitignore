@@ -3,11 +3,14 @@
 /.vscode/
 /.env
 /node_modules/
+/frontend/dist/
 /test-results/
 /playwright-report/
+dist/
 data/*.sqlite3
 data/*.sqlite3-*
 data/*.db
 data/*.db-*
+config/reactor-edge.env
 .playwright-mcp/
 *.log

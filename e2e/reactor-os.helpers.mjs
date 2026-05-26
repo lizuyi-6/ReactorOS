@@ -79,7 +79,10 @@ export async function preparePage(page, request) {
   page.on("console", message => {
     if (message.type() !== "error") return;
     const text = message.text();
-    if (text.includes("Failed to load resource") && text.includes("ERR_CONNECTION_TIMED_OUT")) {
+    if (
+      text.includes("Failed to load resource") &&
+      (text.includes("ERR_CONNECTION_TIMED_OUT") || text.includes("ERR_CONNECTION_CLOSED"))
+    ) {
       return;
     }
     consoleErrors.push(text);

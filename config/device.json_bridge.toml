@@ -1,0 +1,59 @@
+mode = "json_bridge"
+
+[serial]
+port = "/dev/ttyUSB0"
+baudrate = 115200
+parity = "N"
+stopbits = 1
+bytesize = 8
+timeout_ms = 1000
+
+[modbus]
+slave_id = 1
+
+[esp32]
+frame_prefix = "RX"
+command_prefix = "TX"
+checksum = true
+max_line_bytes = 256
+
+[json_bridge]
+state_path = "/project/state.json"
+control_path = "/project/control.json"
+max_state_age_ms = 6000
+request_id_prefix = "reactor-os"
+speed_steps_per_cycle = 200.0
+speed_deadband_cpm = 1.0
+temperature_deadband_c = 1.0
+relay_temperature_control = false
+
+[json_bridge.adc]
+sensor = "product_concentration_percent"
+scale = 0.0244200244
+offset = 0.0
+min_valid = 0.0
+max_valid = 100.0
+
+[modbus.registers.temperature_c]
+address = 0
+scale = 0.1
+offset = 0.0
+min_valid = 0.0
+max_valid = 500.0
+
+[modbus.registers.stirrer_rpm]
+address = 1
+scale = 1.0
+offset = 0.0
+min_valid = 0.0
+max_valid = 2000.0
+
+[modbus.registers.target_temperature_c]
+address = 10
+scale = 0.1
+offset = 0.0
+
+[modbus.registers.target_stirrer_rpm]
+address = 11
+scale = 1.0
+offset = 0.0

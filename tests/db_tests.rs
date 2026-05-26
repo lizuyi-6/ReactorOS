@@ -4,6 +4,22 @@ use reactor_edge_daemon::{
     optimizer::recommend,
     state::SensorSnapshot,
 };
+use std::sync::Arc;
+
+fn sample(index: usize) -> SensorSnapshot {
+    SensorSnapshot {
+        temperature_c: 170.0 + index as f64,
+        pressure_mpa: 0.2,
+        stirrer_rpm: 450.0,
+        shake_speed_cpm: 30.0,
+        tilt_state: (index % 2) as u8,
+        tilt_angle_deg: 12.5,
+        flow_rate_l_min: 2.5,
+        product_concentration_percent: 62.4,
+        ph: 7.18,
+        captured_at: Utc::now(),
+    }
+}
 
 #[test]
 fn batch_result_and_recommendation_round_trip() {
@@ -65,4 +81,49 @@ fn persists_extended_sensor_sample() {
     assert_eq!(sample.shake_speed_cpm, 30.0);
     assert_eq!(sample.tilt_state, 1);
     assert_eq!(sample.tilt_angle_deg, 12.5);
+}
+
+#[test]
+fn file_database_allows_parallel_reads_while_writing_samples() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Arc::new(Db::open(dir.path().join("reactor.sqlite3")).unwrap());
+
+    let writer = {
+        let db = Arc::clone(&db);
+        std::thread::spawn(move || {
+            for index in 0..80 {
+                db.insert_sample(None, &sample(index)).unwrap();
+            }
+        })
+    };
+
+    let readers: Vec<_> = (0..4)
+        .map(|_| {
+            let db = Arc::clone(&db);
+            std::thread::spawn(move || {
+                for _ in 0..40 {
+                    let _ = db.recent_sample_records(20).unwrap();
+                    let _ = db.recent_samples(20).unwrap();
+                }
+            })
+        })
+        .collect();
+
+    writer.join().unwrap();
+    for reader in readers {
+        reader.join().unwrap();
+    }
+
+    assert_eq!(db.recent_sample_records(100).unwrap().len(), 80);
+}
+
+#[test]
+fn migration_creates_indexes_for_hot_history_queries() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let indexes = db.index_names_for_diagnostics().unwrap();
+
+    assert!(indexes.contains(&"idx_sensor_samples_captured_id".to_string()));
+    assert!(indexes.contains(&"idx_sensor_samples_batch_id_id".to_string()));
+    assert!(indexes.contains(&"idx_control_events_batch_id_id".to_string()));
 }

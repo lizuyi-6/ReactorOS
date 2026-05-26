@@ -1,6 +1,10 @@
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex, MutexGuard,
+    },
+    time::Duration,
 };
 
 use anyhow::{Context, Result};
@@ -10,9 +14,34 @@ use serde::Serialize;
 
 use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
 
+const READ_CONNECTIONS: usize = 2;
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 #[derive(Clone)]
 pub struct Db {
-    conn: Arc<Mutex<Connection>>,
+    inner: Arc<DbInner>,
+}
+
+struct DbInner {
+    write: Mutex<Connection>,
+    reads: Vec<Mutex<Connection>>,
+    next_read: AtomicUsize,
+}
+
+enum DbConnectionGuard<'a> {
+    Write(MutexGuard<'a, Connection>),
+    Read(MutexGuard<'a, Connection>),
+}
+
+impl std::ops::Deref for DbConnectionGuard<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Write(conn) => conn,
+            Self::Read(conn) => conn,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,6 +92,20 @@ pub struct ControlEvent {
     pub target_stirrer_rpm: Option<f64>,
     pub target_shake_speed_cpm: Option<f64>,
     pub reason: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DemoAlarm {
+    pub id: i64,
+    pub alarm_type: String,
+    pub sensor: String,
+    pub level: String,
+    pub message: String,
+    pub current_value: Option<f64>,
+    pub limit_value: Option<f64>,
+    pub suggestion: String,
+    pub active: bool,
     pub created_at: DateTime<Utc>,
 }
 
@@ -121,25 +164,40 @@ impl Db {
                 format!("failed to create database directory {}", parent.display())
             })?;
         }
-        let conn = Connection::open(path.as_ref())
+        let write = open_configured_connection(path.as_ref())
             .with_context(|| format!("failed to open database {}", path.as_ref().display()))?;
-        let db = Self {
-            conn: Arc::new(Mutex::new(conn)),
-        };
+        let mut reads = Vec::with_capacity(READ_CONNECTIONS);
+        for _ in 0..READ_CONNECTIONS {
+            reads.push(Mutex::new(
+                open_configured_connection(path.as_ref()).with_context(|| {
+                    format!("failed to open database reader {}", path.as_ref().display())
+                })?,
+            ));
+        }
+        let db = Self::from_connections(write, reads);
         db.migrate()?;
         Ok(db)
     }
 
     pub fn open_memory() -> Result<Self> {
-        let db = Self {
-            conn: Arc::new(Mutex::new(Connection::open_in_memory()?)),
-        };
+        let db =
+            Self::from_connections(configure_connection(Connection::open_in_memory()?)?, vec![]);
         db.migrate()?;
         Ok(db)
     }
 
+    fn from_connections(write: Connection, reads: Vec<Mutex<Connection>>) -> Self {
+        Self {
+            inner: Arc::new(DbInner {
+                write: Mutex::new(write),
+                reads,
+                next_read: AtomicUsize::new(0),
+            }),
+        }
+    }
+
     pub fn migrate(&self) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute_batch(
             r#"
             PRAGMA journal_mode=WAL;
@@ -236,8 +294,22 @@ impl Db {
                 rationale TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS demo_alarms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alarm_type TEXT NOT NULL,
+                sensor TEXT NOT NULL,
+                level TEXT NOT NULL,
+                message TEXT NOT NULL,
+                current_value REAL,
+                limit_value REAL,
+                suggestion TEXT NOT NULL DEFAULT '',
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            );
             "#,
         )?;
+        create_indexes(&conn)?;
         let has_legacy_pressure_kpa = column_exists(&conn, "sensor_samples", "pressure_kpa")?;
         add_column_if_missing(
             &conn,
@@ -292,6 +364,16 @@ impl Db {
         Ok(())
     }
 
+    pub fn demo_seed_exists(&self) -> Result<bool> {
+        let conn = self.read_conn()?;
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM control_events WHERE event_type = 'demo_seed_applied'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
     pub fn create_batch(
         &self,
         name: &str,
@@ -320,7 +402,7 @@ impl Db {
         stirring_minutes: f64,
     ) -> Result<Batch> {
         let now = Utc::now();
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO batches
@@ -353,7 +435,7 @@ impl Db {
 
     pub fn create_process(&self, name: &str, description: &str) -> Result<ProcessDefinition> {
         let now = Utc::now();
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO processes (name, description, status, version, created_at, updated_at)
@@ -383,7 +465,7 @@ impl Db {
         status: &str,
     ) -> Result<Option<ProcessDefinition>> {
         let now = Utc::now();
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         let changed = conn.execute(
             r#"
             UPDATE processes
@@ -399,7 +481,7 @@ impl Db {
     }
 
     pub fn list_processes(&self) -> Result<Vec<ProcessDefinition>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT p.id, p.name, p.description, p.status, p.version,
@@ -420,7 +502,7 @@ impl Db {
     }
 
     pub fn process_detail(&self, process_id: i64) -> Result<Option<ProcessDetail>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let Some(process) = process_summary_by_id(&conn, process_id)? else {
             return Ok(None);
         };
@@ -433,7 +515,7 @@ impl Db {
         process_id: i64,
         step: &NewProcessStep,
     ) -> Result<Option<ProcessStep>> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         if process_summary_by_id(&conn, process_id)?.is_none() {
             return Ok(None);
         }
@@ -476,7 +558,7 @@ impl Db {
         step: &NewProcessStep,
     ) -> Result<Option<ProcessStep>> {
         let now = Utc::now();
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         let changed = conn.execute(
             r#"
             UPDATE process_steps
@@ -514,7 +596,7 @@ impl Db {
 
     pub fn mark_process_applied(&self, process_id: i64) -> Result<Option<ProcessDefinition>> {
         let now = Utc::now();
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         let changed = conn.execute(
             r#"
             UPDATE processes
@@ -530,7 +612,7 @@ impl Db {
     }
 
     pub fn finish_batch(&self, batch_id: i64) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             "UPDATE batches SET finished_at = ?1 WHERE id = ?2 AND finished_at IS NULL",
             params![Utc::now().to_rfc3339(), batch_id],
@@ -539,7 +621,7 @@ impl Db {
     }
 
     pub fn insert_sample(&self, batch_id: Option<i64>, sample: &SensorSnapshot) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO sensor_samples
@@ -565,7 +647,7 @@ impl Db {
     }
 
     pub fn recent_samples(&self, limit: usize) -> Result<Vec<SensorSnapshot>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT temperature_c, pressure_mpa, stirrer_rpm,
@@ -600,7 +682,7 @@ impl Db {
     }
 
     pub fn recent_sample_records(&self, limit: usize) -> Result<Vec<SensorSampleRecord>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
@@ -644,7 +726,7 @@ impl Db {
         limit: usize,
         offset: usize,
     ) -> Result<Vec<SensorSampleRecord>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
@@ -696,7 +778,7 @@ impl Db {
         command: Option<&SafeCommand>,
         reason: &str,
     ) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO control_events
@@ -716,8 +798,74 @@ impl Db {
         Ok(())
     }
 
+    pub fn insert_demo_alarm(
+        &self,
+        alarm_type: &str,
+        sensor: &str,
+        level: &str,
+        message: &str,
+        current_value: Option<f64>,
+        limit_value: Option<f64>,
+        suggestion: &str,
+    ) -> Result<()> {
+        let conn = self.write_conn()?;
+        conn.execute(
+            r#"
+            INSERT INTO demo_alarms
+                (alarm_type, sensor, level, message, current_value, limit_value, suggestion, active, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)
+            "#,
+            params![
+                alarm_type,
+                sensor,
+                level,
+                message,
+                current_value,
+                limit_value,
+                suggestion,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn recent_demo_alarms(&self, limit: usize) -> Result<Vec<DemoAlarm>> {
+        let conn = self.read_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, alarm_type, sensor, level, message, current_value, limit_value,
+                   suggestion, active, created_at
+            FROM demo_alarms
+            ORDER BY id DESC
+            LIMIT ?1
+            "#,
+        )?;
+        let rows = stmt.query_map([limit as i64], |row| {
+            let created_at: String = row.get(9)?;
+            Ok(DemoAlarm {
+                id: row.get(0)?,
+                alarm_type: row.get(1)?,
+                sensor: row.get(2)?,
+                level: row.get(3)?,
+                message: row.get(4)?,
+                current_value: row.get(5)?,
+                limit_value: row.get(6)?,
+                suggestion: row.get(7)?,
+                active: row.get::<_, i64>(8)? != 0,
+                created_at: parse_dt(&created_at)?,
+            })
+        })?;
+
+        let mut alarms = Vec::new();
+        for row in rows {
+            alarms.push(row?);
+        }
+        alarms.reverse();
+        Ok(alarms)
+    }
+
     pub fn insert_product_result(&self, result: &ProductResult) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO product_results (batch_id, yield_percent, product_ratio, notes, created_at)
@@ -740,7 +888,7 @@ impl Db {
     }
 
     pub fn insert_recommendation(&self, recommendation: &Recommendation) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute(
             r#"
             INSERT INTO ai_recommendations
@@ -763,7 +911,7 @@ impl Db {
     }
 
     pub fn latest_recommendation(&self) -> Result<Option<Recommendation>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         conn.query_row(
             r#"
             SELECT based_on_batch_count, target_temperature_c, target_stirrer_rpm,
@@ -790,7 +938,7 @@ impl Db {
     }
 
     pub fn batch_outcomes(&self) -> Result<Vec<BatchOutcome>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
@@ -821,7 +969,7 @@ impl Db {
     }
 
     pub fn recent_batch_outcomes(&self, limit: usize) -> Result<Vec<BatchOutcome>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
@@ -853,7 +1001,7 @@ impl Db {
     }
 
     pub fn recent_batches(&self, limit: usize) -> Result<Vec<Batch>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
@@ -890,7 +1038,7 @@ impl Db {
     }
 
     pub fn batch_by_id(&self, batch_id: i64) -> Result<Option<Batch>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         conn.query_row(
             r#"
             SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
@@ -923,7 +1071,7 @@ impl Db {
     }
 
     pub fn batch_outcome_by_id(&self, batch_id: i64) -> Result<Option<BatchOutcome>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         conn.query_row(
             r#"
             SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
@@ -955,7 +1103,7 @@ impl Db {
         batch_id: i64,
         limit: usize,
     ) -> Result<Vec<SensorSampleRecord>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
@@ -994,7 +1142,7 @@ impl Db {
     }
 
     pub fn recent_control_events(&self, limit: usize) -> Result<Vec<ControlEvent>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm, reason, created_at
@@ -1029,7 +1177,7 @@ impl Db {
         batch_id: i64,
         limit: usize,
     ) -> Result<Vec<ControlEvent>> {
-        let conn = self.lock()?;
+        let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm, reason, created_at
@@ -1061,12 +1209,13 @@ impl Db {
     }
 
     pub fn clear_runtime_data_for_tests(&self) -> Result<()> {
-        let conn = self.lock()?;
+        let conn = self.write_conn()?;
         conn.execute_batch(
             r#"
             DELETE FROM ai_recommendations;
             DELETE FROM product_results;
             DELETE FROM control_events;
+            DELETE FROM demo_alarms;
             DELETE FROM sensor_samples;
             DELETE FROM batches;
             DELETE FROM process_steps;
@@ -1076,10 +1225,42 @@ impl Db {
         Ok(())
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
-        self.conn
+    #[doc(hidden)]
+    pub fn index_names_for_diagnostics(&self) -> Result<Vec<String>> {
+        let conn = self.read_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'index' AND name NOT LIKE 'sqlite_%'
+            ORDER BY name ASC
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut indexes = Vec::new();
+        for row in rows {
+            indexes.push(row?);
+        }
+        Ok(indexes)
+    }
+
+    fn write_conn(&self) -> Result<DbConnectionGuard<'_>> {
+        self.inner
+            .write
             .lock()
-            .map_err(|_| anyhow::anyhow!("database lock poisoned"))
+            .map(DbConnectionGuard::Write)
+            .map_err(|_| anyhow::anyhow!("database write lock poisoned"))
+    }
+
+    fn read_conn(&self) -> Result<DbConnectionGuard<'_>> {
+        if self.inner.reads.is_empty() {
+            return self.write_conn();
+        }
+        let index = self.inner.next_read.fetch_add(1, Ordering::Relaxed) % self.inner.reads.len();
+        self.inner.reads[index]
+            .lock()
+            .map(DbConnectionGuard::Read)
+            .map_err(|_| anyhow::anyhow!("database read lock poisoned"))
     }
 }
 
@@ -1183,6 +1364,39 @@ fn touch_process(conn: &Connection, process_id: i64) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE processes SET updated_at = ?1 WHERE id = ?2",
         params![Utc::now().to_rfc3339(), process_id],
+    )?;
+    Ok(())
+}
+
+fn open_configured_connection(path: &Path) -> Result<Connection> {
+    configure_connection(Connection::open(path)?)
+}
+
+fn configure_connection(conn: Connection) -> Result<Connection> {
+    conn.busy_timeout(SQLITE_BUSY_TIMEOUT)?;
+    conn.execute_batch(
+        r#"
+        PRAGMA foreign_keys=ON;
+        PRAGMA journal_mode=WAL;
+        "#,
+    )?;
+    Ok(conn)
+}
+
+fn create_indexes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_sensor_samples_captured_id
+            ON sensor_samples(captured_at, id);
+        CREATE INDEX IF NOT EXISTS idx_sensor_samples_batch_id_id
+            ON sensor_samples(batch_id, id);
+        CREATE INDEX IF NOT EXISTS idx_control_events_batch_id_id
+            ON control_events(batch_id, id);
+        CREATE INDEX IF NOT EXISTS idx_process_steps_process_index
+            ON process_steps(process_id, step_index);
+        CREATE INDEX IF NOT EXISTS idx_product_results_batch_id
+            ON product_results(batch_id);
+        "#,
     )?;
     Ok(())
 }

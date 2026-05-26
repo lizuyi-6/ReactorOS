@@ -39,7 +39,26 @@ pub struct RuntimeState {
     pub manual_lock: bool,
     pub emergency_stop: bool,
     pub active_batch_id: Option<i64>,
+    pub last_sensor_error: Option<String>,
     pub last_control_error: Option<String>,
+    pub device_status: Option<DeviceStatusSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceStatusSnapshot {
+    pub connected: bool,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub last_frame_ok: bool,
+    pub relay: Option<u8>,
+    pub motor: Option<u8>,
+    pub tilt: Option<u8>,
+    pub speed_delay_us: Option<u64>,
+    pub port: Option<String>,
+    pub baudrate: Option<u32>,
+    pub last_command_request_id: Option<String>,
+    pub last_command_ok: Option<bool>,
+    pub last_command_error: Option<String>,
+    pub updated_at: DateTime<Utc>,
 }
 
 pub type SharedState = Arc<RwLock<RuntimeState>>;
@@ -61,7 +80,9 @@ impl RuntimeState {
             manual_lock: safety.control.manual_lock_default,
             emergency_stop: false,
             active_batch_id: None,
+            last_sensor_error: None,
             last_control_error: None,
+            device_status: None,
         }
     }
 }

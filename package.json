@@ -4,10 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "frontend:dev": "vite --config frontend/vite.config.ts",
+    "frontend:build": "vite build --config frontend/vite.config.ts",
+    "simulate:device": "node scripts/simulate-device.js",
+    "simulate:device:once": "node scripts/simulate-device.js --once --strict",
+    "qemu:lubancat2": "powershell -ExecutionPolicy Bypass -File scripts\\run-lubancat2-qemu.ps1",
+    "qemu:lubancat2:smoke": "powershell -ExecutionPolicy Bypass -File scripts\\run-lubancat2-qemu.ps1 --smoke",
+    "qemu:lubancat2:visual": "node scripts/visual-click-lubancat2-qemu.mjs",
+    "qemu:lubancat2:perf": "node scripts/perf-lubancat2-qemu.mjs",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed"
   },
   "devDependencies": {
-    "@playwright/test": "1.55.1"
+    "@playwright/test": "1.55.1",
+    "typescript": "5.9.3",
+    "vite": "7.2.4",
+    "vite-plugin-singlefile": "2.3.0"
   }
 }

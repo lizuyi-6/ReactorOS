@@ -1,0 +1,22 @@
+[Unit]
+Description=ReactorOS Chromium HMI Kiosk
+After=graphical.target reactor-edge.service
+Wants=graphical.target reactor-edge.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/opt/reactor-edge
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=REACTOR_OS_URL=http://127.0.0.1:8000/
+Environment=REACTOR_OS_HEALTH_URL=http://127.0.0.1:8000/health
+Environment=REACTOR_OS_WAIT_SECONDS=60
+Environment=REACTOR_OS_LOW_LOAD=1
+ExecStart=/opt/reactor-edge/kiosk/run-chromium-kiosk.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target

@@ -7,15 +7,117 @@ use axum::{
 use chrono::Utc;
 use reactor_edge_daemon::{
     api::{router, AppState},
-    config::{ControlConfig, OptimizerBounds, SafetyConfig, StirrerSafety, TemperatureSafety},
+    config::{
+        ControlConfig, DeviceMode, OptimizerBounds, SafetyConfig, StirrerSafety, TemperatureSafety,
+    },
+    control::SafeCommand,
     db::{Db, ProductResult},
+    demo::seed_demo_context,
+    device::{
+        ComponentActionCapability, ComponentControlCommand, ComponentControlOutcome,
+        DeviceComponentCapability, PipelineDevice, ReactorDevice, SharedDevice,
+    },
     memory::{
         AiMemory, ForbiddenZone, MemoryOptimizerBounds, RecommendationMemory, ReferenceBatch,
     },
-    state::{RuntimeState, SensorSnapshot, SharedState},
+    state::{ControlTargets, DeviceStatusSnapshot, RuntimeState, SensorSnapshot, SharedState},
 };
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
+
+fn test_device() -> SharedDevice {
+    Arc::new(PipelineDevice)
+}
+
+#[derive(Default)]
+struct TestComponentDevice;
+
+#[async_trait::async_trait]
+impl ReactorDevice for TestComponentDevice {
+    async fn read_sample(&self) -> anyhow::Result<SensorSnapshot> {
+        Err(anyhow::anyhow!("test device is driven by pipeline samples"))
+    }
+
+    async fn write_targets(&self, _command: &SafeCommand) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn control_capabilities(&self) -> Vec<DeviceComponentCapability> {
+        vec![
+            DeviceComponentCapability {
+                component_id: "shake_stepper".to_string(),
+                component_type: "stepper_motor".to_string(),
+                label: "Shake Vessel Stepper".to_string(),
+                controllable: true,
+                actions: vec![
+                    ComponentActionCapability {
+                        action: "start".to_string(),
+                        label: "Start".to_string(),
+                        value_type: "none".to_string(),
+                        min: None,
+                        max: None,
+                        unit: None,
+                    },
+                    ComponentActionCapability {
+                        action: "stop".to_string(),
+                        label: "Stop".to_string(),
+                        value_type: "none".to_string(),
+                        min: None,
+                        max: None,
+                        unit: None,
+                    },
+                ],
+            },
+            DeviceComponentCapability {
+                component_id: "stirrer_motor".to_string(),
+                component_type: "motor".to_string(),
+                label: "Stirrer Motor".to_string(),
+                controllable: true,
+                actions: vec![ComponentActionCapability {
+                    action: "set_rpm".to_string(),
+                    label: "Set RPM".to_string(),
+                    value_type: "number".to_string(),
+                    min: Some(0.0),
+                    max: Some(2000.0),
+                    unit: Some("RPM".to_string()),
+                }],
+            },
+        ]
+    }
+
+    async fn write_component(
+        &self,
+        command: &ComponentControlCommand,
+        targets: &ControlTargets,
+        _safety: &SafetyConfig,
+    ) -> anyhow::Result<Option<ComponentControlOutcome>> {
+        Ok(Some(ComponentControlOutcome {
+            component_id: command.component_id.clone(),
+            action: command.action.clone(),
+            command: None,
+            targets: Some(SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: if command.action == "stop" {
+                    0.0
+                } else {
+                    targets.shake_speed_cpm.max(30.0)
+                },
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: "test component control".to_string(),
+            }),
+            message: "test component command accepted".to_string(),
+        }))
+    }
+}
+
+fn component_test_device() -> SharedDevice {
+    Arc::new(TestComponentDevice)
+}
+
 use tower::ServiceExt;
 
 fn safety() -> SafetyConfig {
@@ -55,6 +157,133 @@ fn memory() -> Arc<AiMemory> {
     Arc::new(AiMemory::default())
 }
 
+fn fresh_sample(
+    temperature_c: f64,
+    pressure_mpa: f64,
+    stirrer_rpm: f64,
+    shake_speed_cpm: f64,
+    product_concentration_percent: f64,
+) -> SensorSnapshot {
+    SensorSnapshot {
+        temperature_c,
+        pressure_mpa,
+        stirrer_rpm,
+        shake_speed_cpm,
+        tilt_state: 1,
+        tilt_angle_deg: 12.5,
+        flow_rate_l_min: 2.2,
+        product_concentration_percent,
+        ph: 6.04,
+        captured_at: Utc::now(),
+    }
+}
+
+async fn install_runtime_sample(runtime: &SharedState, db: &Db, sample: SensorSnapshot) {
+    db.insert_sample(None, &sample).unwrap();
+    let mut state = runtime.write().await;
+    state.latest_sample = Some(sample);
+}
+
+fn add_simple_process(db: &Db, name: &str) -> i64 {
+    let process = db.create_process(name, "ai control test").unwrap();
+    db.add_process_step(
+        process.id,
+        &reactor_edge_daemon::db::NewProcessStep {
+            name: "heat".to_string(),
+            target_temperature_c: 90.0,
+            ramp_rate_c_min: 2.0,
+            duration_minutes: 30.0,
+            target_stirrer_rpm: 240.0,
+            target_shake_speed_cpm: 24.0,
+            target_pressure_mpa: 0.5,
+            cooling_mode: "natural".to_string(),
+        },
+    )
+    .unwrap();
+    process.id
+}
+
+fn add_ai_outcomes(db: &Db) {
+    for (name, temp, rpm, heat, stir, yield_percent, ratio) in [
+        ("ai-low", 70.0, 220.0, 40.0, 35.0, 52.0, 0.60),
+        ("ai-mid", 92.0, 420.0, 70.0, 65.0, 78.0, 0.82),
+        ("ai-best", 102.0, 560.0, 90.0, 80.0, 86.0, 0.91),
+    ] {
+        let batch = db.create_batch(name, temp, rpm, heat, stir).unwrap();
+        db.finish_batch(batch.id).unwrap();
+        db.insert_product_result(&ProductResult {
+            batch_id: batch.id,
+            yield_percent,
+            product_ratio: ratio,
+            notes: "ai master control seed".to_string(),
+        })
+        .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn demo_context_seeds_ai_and_process_data_without_sensor_samples() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let ai_memory = memory();
+    assert!(seed_demo_context(&db, &safety, &ai_memory).unwrap());
+    assert!(!seed_demo_context(&db, &safety, &ai_memory).unwrap());
+    assert!(db.recent_samples(10).unwrap().is_empty());
+
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory,
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let live_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let demo_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/demo/context")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(demo_response.status(), StatusCode::OK);
+    let body = to_bytes(demo_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["demo"], true);
+    assert!(body["data"]["sensor_data_policy"]
+        .as_str()
+        .unwrap()
+        .contains("never fabricates"));
+    assert!(body["data"]["processes"].as_array().unwrap().len() >= 2);
+    assert!(body["data"]["recent_batches"].as_array().unwrap().len() >= 6);
+    assert!(body["data"]["recent_outcomes"].as_array().unwrap().len() >= 6);
+    assert!(body["data"]["demo_alarms"].as_array().unwrap().len() >= 2);
+    assert!(body["data"]["latest_recommendation"]["target_temperature_c"].is_number());
+}
+
 #[tokio::test]
 async fn health_endpoint_works() {
     let safety = Arc::new(safety());
@@ -63,6 +292,8 @@ async fn health_endpoint_works() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -113,6 +344,8 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -144,6 +377,54 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
 }
 
 #[tokio::test]
+async fn live_endpoint_supports_lightweight_limits_for_low_power_clients() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    for index in 0..5 {
+        let mut sample = fresh_sample(35.0 + index as f64, 0.06, 300.0 + index as f64, 30.0, 12.0);
+        sample.captured_at = Utc::now() + chrono::Duration::milliseconds(index);
+        db.insert_sample(None, &sample).unwrap();
+    }
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live?sample_limit=2&include_processes=false&include_batches=false&include_events=false")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["recent_samples"].as_array().unwrap().len(), 2);
+    assert_eq!(body["recent_batches"].as_array().unwrap().len(), 0);
+    assert_eq!(body["recent_outcomes"].as_array().unwrap().len(), 0);
+    assert_eq!(body["recent_events"].as_array().unwrap().len(), 0);
+    assert_eq!(body["processes"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
     let safety = Arc::new(safety());
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
@@ -151,6 +432,8 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -215,6 +498,256 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
 }
 
 #[tokio::test]
+async fn live_endpoint_returns_service_unavailable_when_current_device_read_has_failed() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = Some(SensorSnapshot {
+            temperature_c: 64.25,
+            pressure_mpa: 0.5,
+            stirrer_rpm: 125.18,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 1.2,
+            product_concentration_percent: 50.0,
+            ph: 6.15,
+            captured_at: Utc::now(),
+        });
+        state.last_sensor_error =
+            Some("json bridge last upstream frame failed XOR check".to_string());
+    }
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("failed XOR check"));
+}
+
+#[tokio::test]
+async fn devices_status_counts_online_json_bridge_even_when_sample_is_incomplete() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.last_sensor_error =
+            Some("json bridge state missing required sensor field temperature_c".to_string());
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(1),
+            motor: Some(1),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: Some("reactor-os-1".to_string()),
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["online_count"], 1);
+    assert_eq!(body["data"]["devices"][0]["online"], true);
+    assert_eq!(body["data"]["devices"][0]["status"], "error");
+    assert_eq!(body["data"]["devices"][0]["relay"], 1);
+    assert_eq!(body["data"]["devices"][0]["motor"], 1);
+    assert_eq!(body["data"]["devices"][0]["tilt"], 1);
+    assert_eq!(body["data"]["devices"][0]["port"], "/dev/ttyUSB0");
+    assert!(body["data"]["devices"][0]["sensors"].is_array());
+    assert_eq!(
+        body["data"]["devices"][0]["sensors"][0]["value"],
+        Value::Null
+    );
+    assert_eq!(body["data"]["devices"][0]["sensors"][0]["status"], "error");
+    assert!(body["data"]["devices"][0]["components"].is_array());
+    assert!(body["data"]["sensors"].is_array());
+    assert!(body["data"]["components"].is_array());
+}
+
+#[tokio::test]
+async fn device_capabilities_endpoint_lists_components_and_blocks_unknown_component() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices/capabilities")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["devices"][0]["mode"], "pipeline");
+    assert!(body["data"]["devices"][0]["components"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/devices/reactor_001/components/shake_stepper/control")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"action":"stop"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 404);
+    assert!(body["message"].as_str().unwrap().contains("component"));
+}
+
+#[tokio::test]
+async fn device_status_groups_sensors_and_controllable_components_by_device() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(72.34, 0.12, 321.45, 18.5, 33.3)).await;
+    {
+        let mut state = runtime.write().await;
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(1),
+            motor: Some(1),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: Some("reactor-os-2".to_string()),
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: component_test_device(),
+            device_mode: DeviceMode::JsonBridge,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/devices/status")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let device = &body["data"]["devices"][0];
+    assert_eq!(device["online"], true);
+    assert_eq!(device["sensors"][0]["sensor_id"], "temperature_c");
+    assert_eq!(device["sensors"][0]["value"], 72.34);
+    assert_eq!(device["sensors"][0]["status"], "online");
+    assert!(device["sensors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|sensor| sensor["sensor_id"] == "stirrer_rpm"
+            && sensor["component_id"] == "stirrer_motor"));
+    assert!(device["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|component| component["component_id"] == "stirrer_motor"
+            && component["actions"][0]["action"] == "set_rpm"));
+}
+
+#[tokio::test]
 async fn unknown_api_routes_return_json_error_code() {
     let safety = Arc::new(safety());
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
@@ -222,6 +755,8 @@ async fn unknown_api_routes_return_json_error_code() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -256,6 +791,8 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -373,6 +910,8 @@ async fn malformed_pipeline_sample_returns_json_error_code() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -421,6 +960,8 @@ async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -464,6 +1005,8 @@ async fn test_pipeline_sample_endpoint_wraps_the_v1_pipeline_for_e2e() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -534,6 +1077,8 @@ async fn live_endpoint_rejects_stale_pipeline_samples() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -624,6 +1169,8 @@ async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory,
             ai_provider: None,
@@ -662,6 +1209,8 @@ async fn latest_recommendation_waits_for_real_product_results() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -719,6 +1268,8 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -801,6 +1352,8 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -915,6 +1468,8 @@ async fn v1_control_rejects_values_outside_interface_document_ranges() {
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -966,6 +1521,8 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
         AppState {
             db: Db::open_memory().unwrap(),
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1034,6 +1591,8 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1207,6 +1766,8 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1350,6 +1911,538 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
 }
 
 #[tokio::test]
+async fn process_start_and_stop_manage_active_batch_and_auto_control() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let process = db
+        .create_process("process lifecycle", "start stop")
+        .unwrap();
+    db.add_process_step(
+        process.id,
+        &reactor_edge_daemon::db::NewProcessStep {
+            name: "heat".to_string(),
+            target_temperature_c: 90.0,
+            ramp_rate_c_min: 2.0,
+            duration_minutes: 30.0,
+            target_stirrer_rpm: 240.0,
+            target_shake_speed_cpm: 24.0,
+            target_pressure_mpa: 0.5,
+            cooling_mode: "natural".to_string(),
+        },
+    )
+    .unwrap();
+    db.add_process_step(
+        process.id,
+        &reactor_edge_daemon::db::NewProcessStep {
+            name: "hold".to_string(),
+            target_temperature_c: 90.0,
+            ramp_rate_c_min: 0.0,
+            duration_minutes: 45.0,
+            target_stirrer_rpm: 420.0,
+            target_shake_speed_cpm: 36.0,
+            target_pressure_mpa: 0.8,
+            cooling_mode: "natural".to_string(),
+        },
+    )
+    .unwrap();
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let started = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/processes/{}/start", process.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(started.status(), StatusCode::OK);
+    let body = to_bytes(started.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["status"], "running");
+    assert_eq!(body["data"]["batch"]["process_id"], process.id);
+    let batch_id = body["data"]["batch"]["id"].as_i64().unwrap();
+    assert_eq!(body["data"]["applied_targets"]["temperature_c"], 90.0);
+    assert_eq!(body["data"]["applied_targets"]["stirrer_rpm"], 420.0);
+    assert_eq!(body["data"]["applied_targets"]["shake_speed_cpm"], 36.0);
+
+    let live = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["runtime"]["active_batch_id"], batch_id);
+    assert_eq!(body["runtime"]["auto_enabled"], true);
+    assert!(body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "process_started"));
+
+    let conflict = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/processes/{}/start", process.id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(conflict.status(), StatusCode::CONFLICT);
+    let body = to_bytes(conflict.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 409);
+    assert!(body["message"].as_str().unwrap().contains("busy"));
+
+    let stopped = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/processes/current/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stopped.status(), StatusCode::OK);
+    let body = to_bytes(stopped.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["stopped_batch_id"], batch_id);
+    assert_eq!(body["data"]["active_batch_id"], Value::Null);
+    assert_eq!(body["data"]["auto_enabled"], false);
+    assert_eq!(body["data"]["stopped_targets"]["shake_speed_cpm"], 0.0);
+    assert_eq!(body["data"]["batch"]["finished_at"].is_string(), true);
+
+    let live = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["runtime"]["active_batch_id"], Value::Null);
+    assert_eq!(body["runtime"]["auto_enabled"], false);
+    assert!(body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "process_stopped"));
+}
+
+#[tokio::test]
+async fn process_stop_without_active_batch_returns_json_error_code() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 35.4,
+            pressure_mpa: 0.0629,
+            stirrer_rpm: 300.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.2,
+            product_concentration_percent: 12.9,
+            ph: 6.04,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/processes/current/stop")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 409);
+    assert!(body["message"].as_str().unwrap().contains("no active"));
+}
+
+#[tokio::test]
+async fn ai_master_control_rejects_missing_sensor_sample_with_json_error_code() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ai/control")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"dry_run": false}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 503);
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("sensor data unavailable"));
+}
+
+#[tokio::test]
+async fn ai_master_control_dry_run_plans_process_and_shake_without_side_effects() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    add_simple_process(&db, "ai dry process");
+    add_ai_outcomes(&db);
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(35.4, 0.0629, 300.0, 0.0, 12.9)).await;
+    {
+        let mut state = runtime.write().await;
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(0),
+            motor: Some(0),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: None,
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime: runtime.clone(),
+            device: component_test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/ai/control")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "dry_run": true,
+                        "allow_process_start": true,
+                        "allow_component_control": true
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["dry_run"], true);
+    assert!(body["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["action_type"] == "process_start" && action["status"] == "planned"));
+    assert!(body["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |action| action["action_type"] == "component_control" && action["status"] == "planned"
+        ));
+    assert_eq!(runtime.read().await.active_batch_id, None);
+}
+
+#[tokio::test]
+async fn ai_master_control_execute_starts_process_and_audits_decision() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let process_id = add_simple_process(&db, "ai execute process");
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(35.4, 0.0629, 300.0, 0.0, 12.9)).await;
+    {
+        let mut state = runtime.write().await;
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(0),
+            motor: Some(0),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: None,
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: component_test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ai/control")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "dry_run": false,
+                        "preferred_process_id": process_id,
+                        "allow_target_adjustment": false
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["dry_run"], false);
+    assert!(body["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["action_type"] == "process_start" && action["status"] == "executed"));
+    let live = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["runtime"]["active_batch_id"].is_i64());
+    assert!(body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "ai_process_started"));
+    assert!(body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "ai_master_decision"));
+}
+
+#[tokio::test]
+async fn ai_master_control_stops_active_process_when_product_concentration_is_high() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let process_id = add_simple_process(&db, "ai stop process");
+    let batch = db
+        .create_batch_for_process(Some(process_id), "running", 90.0, 300.0, 30.0, 45.0)
+        .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(90.0, 0.0629, 300.0, 24.0, 96.0)).await;
+    {
+        let mut state = runtime.write().await;
+        state.active_batch_id = Some(batch.id);
+        state.auto_enabled = true;
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(0),
+            motor: Some(1),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: None,
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: component_test_device(),
+            device_mode: DeviceMode::Pipeline,
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ai/control")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "dry_run": false,
+                        "allow_process_stop": true,
+                        "allow_target_adjustment": false
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["action_type"] == "process_stop" && action["status"] == "executed"));
+
+    let live = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["runtime"]["active_batch_id"], Value::Null);
+    assert!(body["recent_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "ai_process_stopped"));
+}
+
+#[tokio::test]
 async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -1358,6 +2451,8 @@ async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1496,6 +2591,8 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
         AppState {
             db,
             runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
             safety,
             ai_memory: ai_memory.clone(),
             ai_provider: None,

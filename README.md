@@ -59,7 +59,7 @@ Dockerfile                      构建、测试、运行镜像
 - 后端：Rust + Tokio + Axum。
 - 数据库：SQLite，本地文件存储。
 - 前端：单个 `static/index.html`，原生 HTML/CSS/JavaScript，无前端框架和打包器。
-- 通信：默认外部数据管线，硬件联调使用 ESP32 Serial；配置中保留 Modbus RTU 映射。
+- 通信：默认外部数据管线，硬件联调支持 ESP32 Serial、JSON 文件桥接；配置中保留 Modbus RTU 映射。
 - 部署：单二进制 + `systemd`，也支持 Docker Compose。
 
 ## 快速启动
@@ -83,6 +83,103 @@ Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/api/live
 Invoke-RestMethod http://127.0.0.1:8000/api/devices/status
 ```
+
+## 鲁班猫 2 Debian 10 交付构建
+
+鲁班猫 2 使用 RK3568 / ARM64 / Cortex-A55，继续采用电脑侧交叉编译，不在开发板上编译。推荐生成鲁班猫 2 专用包，包内 systemd 默认用户为 `cat`，Chromium kiosk 默认使用 `/home/cat/.Xauthority`。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-lubancat2-debian10.ps1
+```
+
+WSL/Linux 环境可用：
+
+```bash
+./scripts/build-lubancat2-debian10.sh
+```
+
+生成结果位于 `dist/`，最新鲁班猫 2 包路径记录在 `dist/latest-lubancat2-debian10-package.txt`。开发板只需要安装 `ca-certificates`、`libudev1`、`chromium`/`chromium-browser`、`curl`、`x11-xserver-utils` 等运行依赖，然后解压包运行 `./run.sh ./config/device.json_bridge.toml`。
+
+详细流程见 [docs/lubancat2_debian10_deploy.md](docs/lubancat2_debian10_deploy.md)。
+
+## 通用 A55 Debian 10 交付构建
+
+开发板性能低时，不要在板子上编译。推荐在电脑侧用 Docker 交叉编译并生成完整运行包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-a55-debian10.ps1
+```
+
+WSL/Linux 环境可用：
+
+```bash
+./scripts/build-a55-debian10.sh
+```
+
+生成结果位于 `dist/`，最新包路径记录在 `dist/latest-a55-debian10-package.txt`。开发板只需要安装 `ca-certificates`、`libudev1`、`chromium`/`chromium-browser`、`curl`、`x11-xserver-utils` 等运行依赖，然后解压包运行 `./run.sh ./config/device.json_bridge.toml`。
+
+详细流程见 [docs/a55_debian10_pc_build.md](docs/a55_debian10_pc_build.md)。
+
+## 客户演示数据
+
+如果需要给客户展示工艺管理、历史批次、告警队列和 AI 学习推荐，可以在启动时加入：
+
+```bash
+./reactor-edge-daemon \
+  --config config/device.json_bridge.toml \
+  --safety config/safety.toml \
+  --memory config/ai_memory.toml \
+  --db data/reactor.sqlite3 \
+  --assets static \
+  --bind 0.0.0.0:8000 \
+  --seed-demo-context
+```
+
+演示种子只写入：
+
+- 工艺定义和工艺步骤。
+- 历史批次、人工录入产率和产物比例。
+- AI 推荐结果。
+- 非传感器类演示告警和操作事件。
+
+它不会写入 `sensor_samples`，也不会设置 `runtime.latest_sample`。因此没有真实 `state.json`、ESP32 或外部管线数据时，`/api/live` 仍然返回 `503`，传感器区域仍显示真实错误码。前端会从 `/api/demo/context` 读取演示上下文，用来展示 AI 和工艺功能。
+
+## 本地模拟下游设备
+
+本地开发或客户演示时，可以启动一个显式的外部模拟设备，把数据按真实管线写入后端。这个脚本不属于生产采集逻辑，也不会让前端或后端在缺数据时自动造假；停止脚本后，传感器数据仍会按超时规则变成错误状态。
+
+默认 `docker-compose.yml` 使用 `config/device.toml` 的 `pipeline` 模式，先启动后端：
+
+```powershell
+docker compose up --build reactor-edge
+```
+
+然后在另一个终端启动模拟设备：
+
+```powershell
+npm run simulate:device
+```
+
+只打一帧样本用于验收：
+
+```powershell
+npm run simulate:device:once
+```
+
+脚本默认每秒向 `POST /api/v1/reactor/reactor_001/samples` 上报温度、压力、搅拌转速、摇罐速度、二值倾角、流量、浓度和 pH。可选参数示例：
+
+```powershell
+node scripts\simulate-device.js --profile production --interval-ms 1000
+node scripts\simulate-device.js --url http://127.0.0.1:8000 --device-id reactor_001
+```
+
+如果要模拟 `state.json/control.json` 读写分离桥接协议：
+
+```powershell
+node scripts\simulate-device.js --mode json-bridge --state data\simulator\state.json --control data\simulator\control.json
+```
+
+JSON 桥接模式会持续写入 `state.json`，并监听 ReactorOS 写入的 `control.json`，支持 `motor`、`speed`、`relay` 三类命令。开发板部署时仍应由真实下游桥接程序写入 `state.json`。
 
 ## 本地开发
 
@@ -154,11 +251,43 @@ TX|v=1|heat_time=300|hold_time=600|cool_time=180|target_temp=120.0|stir_speed=85
 
 协议细节见 [docs/esp32_protocol.md](docs/esp32_protocol.md)，示例固件见 [firmware/esp32_reactor_bridge/esp32_reactor_bridge.ino](firmware/esp32_reactor_bridge/esp32_reactor_bridge.ino)。
 
+## JSON 文件桥接接入
+
+如果下游串口桥已经按文件读写分离工作，使用 `json_bridge` 模式：
+
+- `state.json`：下游持续写入当前状态，ReactorOS 只读。
+- `control.json`：ReactorOS 原子写入控制命令，下游只读并下发串口。
+
+启动示例：
+
+```bash
+./reactor-edge-daemon \
+  --config config/device.json_bridge.toml \
+  --safety config/safety.toml \
+  --memory config/ai_memory.toml \
+  --db data/reactor.sqlite3 \
+  --assets static \
+  --bind 0.0.0.0:8000
+```
+
+默认路径：
+
+```toml
+[json_bridge]
+state_path = "/project/state.json"
+control_path = "/project/control.json"
+max_state_age_ms = 6000
+```
+
+`state.json` 必须提供真实传感器字段；缺少温度、压力、转速、摇罐速度、流量、浓度或 pH 时，后端会返回错误，不会补本地假数据。摇罐倾角传感器只需要回传 `tilt = 0|1` 或 `status` bit2，ReactorOS 会在软件侧拟合 `tilt_angle_deg` 曲线。
+
+`control.json` 每次写入都会生成新的 `request_id`，并只使用下游文档约定的 `motor`、`speed`、`relay` 等命令。详细字段见 [docs/json_bridge_protocol.md](docs/json_bridge_protocol.md)。
+
 ## 配置说明
 
 ### `config/device.toml`
 
-设备通信配置。默认 `mode = "pipeline"`，只接受外部管线流入的数据，不在后端造数。硬件模式使用 `config/device.esp32.toml`。
+设备通信配置。默认 `mode = "pipeline"`，只接受外部管线流入的数据，不在后端造数。ESP32 串口模式使用 `config/device.esp32.toml`，JSON 文件桥接模式使用 `config/device.json_bridge.toml`。
 
 ### `config/safety.toml`
 
@@ -192,18 +321,34 @@ Copy-Item .env.example .env
 STEPFUN_AI_ENABLED=true
 STEPFUN_API_KEY=你的密钥
 STEPFUN_BASE_URL=https://api.stepfun.com/v1
+STEPFUN_API_TYPE=chat_completions
 STEPFUN_MODEL=step-3.6
 STEPFUN_REASONING_EFFORT=medium
 STEPFUN_TIMEOUT_SECONDS=20
 ```
 
-实现使用 Chat Completions 接口：
+默认使用 Chat Completions 接口：
 
 ```text
 POST https://api.stepfun.com/v1/chat/completions
 model: step-3.6
 reasoning_effort: low | medium | high
 ```
+
+如果要切到 StepFun 新的 Messages API：
+
+```env
+STEPFUN_BASE_URL=https://api.stepfun.com
+STEPFUN_API_TYPE=messages
+```
+
+对应完整请求路径：
+
+```text
+POST https://api.stepfun.com/v1/messages
+```
+
+`STEPFUN_BASE_URL` 填 `https://api.stepfun.com` 或 `https://api.stepfun.com/v1` 都可以，后端会自动归一化到 `/v1`。
 
 调用策略：
 
@@ -226,6 +371,9 @@ EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 | `GET` | `/health` | 服务健康检查 |
 | `GET` | `/api/live` | Web UI 实时聚合数据 |
 | `GET` | `/api/devices/status` | 当前在线设备数量和设备状态 |
+| `POST` | `/api/processes/:id/start` | 启动工艺流程，创建活动批次并写入安全限幅后的目标 |
+| `POST` | `/api/processes/current/stop` | 停止当前工艺流程，结束活动批次并关闭自动控制 |
+| `POST` | `/api/processes/:id/stop` | 停止指定工艺的活动批次，不匹配时返回 `409` |
 | `POST` | `/api/batches/start` | 启动批次并写入目标参数 |
 | `POST` | `/api/batches/:id/finish` | 结束批次 |
 | `POST` | `/api/product-results` | 录入产率和产物比例 |
@@ -242,6 +390,8 @@ EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
 | `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket |
 
 本地 E2E 使用的 `/api/test/reset` 和 `/api/test/pipeline-sample` 只有在启动参数包含 `--enable-test-reset` 时可用，生产部署不要开启。
+
+工艺流程启停是生产控制入口：启动接口会拒绝急停、人工锁定、已有活动批次和缺少新鲜传感器数据的状态；停止接口会写入停止目标、关闭自动控制、结束当前批次并生成 `process_stopped` 审计事件。`/api/processes/:id/apply` 仍保留为兼容别名，但内部走同一套启动安全门。
 
 设备状态接口示例：
 

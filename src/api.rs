@@ -23,12 +23,13 @@ use crate::{
         fallback_envelope, local_envelope, stepfun_envelope, AiProvider, AiRecommendationEnvelope,
         AiRecommendationProvider,
     },
-    config::SafetyConfig,
+    config::{DeviceMode, SafetyConfig},
     control::{clamp_operator_targets, SafeCommand},
     db::{
-        Batch, BatchOutcome, ControlEvent, Db, NewProcessStep, ProcessDefinition, ProcessDetail,
-        ProcessStep, ProductResult, SensorSampleRecord,
+        Batch, BatchOutcome, ControlEvent, Db, DemoAlarm, NewProcessStep, ProcessDefinition,
+        ProcessDetail, ProcessStep, ProductResult, SensorSampleRecord,
     },
+    device::{ComponentControlCommand, ComponentControlOutcome, SharedDevice},
     memory::{AiMemory, AiMemorySummary, LimitLevel, SensorLimit},
     optimizer::{recommend_with_memory, Recommendation},
     state::{fit_tilt_angle_deg, ControlTargets, RuntimeState, SensorSnapshot, SharedState},
@@ -38,6 +39,8 @@ use crate::{
 pub struct AppState {
     pub db: Db,
     pub runtime: SharedState,
+    pub device: SharedDevice,
+    pub device_mode: DeviceMode,
     pub safety: Arc<SafetyConfig>,
     pub ai_memory: Arc<AiMemory>,
     pub ai_provider: Option<Arc<AiProvider>>,
@@ -65,6 +68,20 @@ pub struct LiveResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DemoContextResponse {
+    pub demo: bool,
+    pub sensor_data_policy: &'static str,
+    pub latest_recommendation: Option<Recommendation>,
+    pub ai_provider: AiRecommendationProvider,
+    pub processes: Vec<ProcessDefinition>,
+    pub recent_batches: Vec<Batch>,
+    pub recent_outcomes: Vec<BatchOutcome>,
+    pub recent_events: Vec<ControlEvent>,
+    pub demo_alarms: Vec<DemoAlarm>,
+    pub ai_memory: AiMemorySummary,
+}
+
+#[derive(Debug, Serialize)]
 pub struct V1Envelope<T> {
     pub code: i32,
     pub message: String,
@@ -76,6 +93,8 @@ pub struct DeviceStatusSummary {
     pub total_count: usize,
     pub online_count: usize,
     pub devices: Vec<DeviceStatusItem>,
+    pub sensors: Vec<DeviceSensorItem>,
+    pub components: Vec<DeviceComponentItem>,
 }
 
 #[derive(Debug, Serialize)]
@@ -89,7 +108,85 @@ pub struct DeviceStatusItem {
     pub stale_after_ms: i64,
     pub active_batch_id: Option<i64>,
     pub emergency_stop: bool,
+    pub last_sensor_error: Option<String>,
     pub last_control_error: Option<String>,
+    pub relay: Option<u8>,
+    pub motor: Option<u8>,
+    pub tilt: Option<u8>,
+    pub speed_delay_us: Option<u64>,
+    pub port: Option<String>,
+    pub baudrate: Option<u32>,
+    pub last_command_request_id: Option<String>,
+    pub last_command_ok: Option<bool>,
+    pub last_command_error: Option<String>,
+    pub sensors: Vec<DeviceSensorItem>,
+    pub components: Vec<DeviceComponentItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceSensorItem {
+    pub sensor_id: String,
+    pub label: String,
+    pub unit: String,
+    pub status: String,
+    pub value: Option<f64>,
+    pub target: Option<f64>,
+    pub source: String,
+    pub component_id: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceComponentItem {
+    pub component_id: String,
+    pub component_type: String,
+    pub label: String,
+    pub controllable: bool,
+    pub status: String,
+    pub state: Value,
+    pub actions: Vec<ComponentActionItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ComponentActionItem {
+    pub action: String,
+    pub label: String,
+    pub value_type: String,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub unit: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceCapabilitiesResponse {
+    pub total_count: usize,
+    pub online_count: usize,
+    pub devices: Vec<DeviceCapabilityDevice>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceCapabilityDevice {
+    pub device_id: String,
+    pub device_role: String,
+    pub mode: String,
+    pub online: bool,
+    pub status: String,
+    pub sensors: Vec<DeviceSensorItem>,
+    pub components: Vec<DeviceComponentItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ComponentControlRequest {
+    pub action: String,
+    pub value: Option<Value>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ComponentControlResponse {
+    pub device_id: String,
+    pub component: DeviceComponentItem,
+    pub outcome: Option<ComponentControlOutcome>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -141,6 +238,17 @@ pub struct ProcessApplyResponse {
     pub process: ProcessDefinition,
     pub batch: Batch,
     pub applied_targets: ControlTargets,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProcessStopResponse {
+    pub stopped_batch_id: i64,
+    pub process_id: Option<i64>,
+    pub batch: Batch,
+    pub active_batch_id: Option<i64>,
+    pub auto_enabled: bool,
+    pub stopped_targets: ControlTargets,
 }
 
 #[derive(Debug, Serialize)]
@@ -195,6 +303,14 @@ pub struct V1ControlParams {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct LiveQuery {
+    pub sample_limit: Option<usize>,
+    pub include_processes: Option<bool>,
+    pub include_batches: Option<bool>,
+    pub include_events: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct V1HistoryQuery {
     pub start_time: Option<String>,
     pub end_time: Option<String>,
@@ -228,13 +344,70 @@ pub struct PipelineSampleRequest {
     pub ph: f64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AiControlRequest {
+    pub intent: Option<String>,
+    pub mode: Option<String>,
+    pub dry_run: Option<bool>,
+    pub allow_process_start: Option<bool>,
+    pub allow_process_stop: Option<bool>,
+    pub allow_component_control: Option<bool>,
+    pub allow_target_adjustment: Option<bool>,
+    pub preferred_process_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AiControlResponse {
+    pub mode: String,
+    pub dry_run: bool,
+    pub decision: String,
+    pub rationale: String,
+    pub recommended_targets: Option<ControlTargets>,
+    pub safety: AiControlSafety,
+    pub actions: Vec<AiControlAction>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AiControlSafety {
+    pub fresh_sample_required: bool,
+    pub sensor_fresh: bool,
+    pub emergency_stop: bool,
+    pub manual_lock: bool,
+    pub device_online: bool,
+    pub active_batch_id: Option<i64>,
+    pub high_alarm_count: usize,
+    pub warning_alarm_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AiControlAction {
+    pub action_type: String,
+    pub target: String,
+    pub status: String,
+    pub message: String,
+    pub result: Option<Value>,
+}
+
 pub fn router(state: AppState, assets: PathBuf) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/live", get(live))
+        .route("/api/demo/context", get(demo_context))
         .route("/api/devices/status", get(devices_status))
         .route("/api/v1/devices/status", get(devices_status))
+        .route("/api/devices/capabilities", get(devices_capabilities))
+        .route("/api/v1/devices/capabilities", get(devices_capabilities))
+        .route(
+            "/api/devices/:device_id/components/:component_id/control",
+            post(control_component),
+        )
+        .route(
+            "/api/v1/devices/:device_id/components/:component_id/control",
+            post(control_component),
+        )
         .route("/api/v1/reactor/:device_id/control", post(v1_control))
+        .route("/api/ai/control", post(ai_control))
+        .route("/api/v1/ai/control", post(ai_control))
         .route(
             "/api/v1/reactor/:device_id/samples",
             post(v1_pipeline_sample),
@@ -251,6 +424,13 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
             put(update_process_step),
         )
         .route("/api/processes/:id/apply", post(apply_process))
+        .route("/api/processes/:id/start", post(start_process))
+        .route("/api/processes/:id/stop", post(stop_process_by_id))
+        .route("/api/processes/current/stop", post(stop_current_process))
+        .route("/api/v1/processes/:id/apply", post(apply_process))
+        .route("/api/v1/processes/:id/start", post(start_process))
+        .route("/api/v1/processes/:id/stop", post(stop_process_by_id))
+        .route("/api/v1/processes/current/stop", post(stop_current_process))
         .route("/api/batches", get(list_batches))
         .route("/api/batches/start", post(start_batch))
         .route("/api/batches/:id", get(get_batch_detail))
@@ -290,18 +470,37 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
-async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppError> {
+async fn live(
+    State(state): State<AppState>,
+    Query(query): Query<LiveQuery>,
+) -> Result<Json<LiveResponse>, AppError> {
     let runtime = state.runtime.read().await.clone();
     ensure_fresh_sample(&state, &runtime)?;
-    let recent_samples = state.db.recent_sample_records(480)?;
-    let processes = state.db.list_processes()?;
-    let recent_batches = state.db.recent_batches(20)?;
-    let recent_outcomes = state.db.recent_batch_outcomes(20)?;
-    let recent_events = state.db.recent_control_events(100)?;
+    let sample_limit = query.sample_limit.unwrap_or(480).clamp(1, 480);
+    let recent_samples = state.db.recent_sample_records(sample_limit)?;
+    let processes = if query.include_processes.unwrap_or(true) {
+        state.db.list_processes()?
+    } else {
+        Vec::new()
+    };
+    let (recent_batches, recent_outcomes) = if query.include_batches.unwrap_or(true) {
+        (
+            state.db.recent_batches(20)?,
+            state.db.recent_batch_outcomes(20)?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    let recent_events = if query.include_events.unwrap_or(true) {
+        state.db.recent_control_events(100)?
+    } else {
+        Vec::new()
+    };
     let ai_memory = AiMemorySummary::from(state.ai_memory.as_ref());
     let recommendation = state
         .db
         .latest_recommendation()?
+        .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
         .filter(|recommendation| recommendation.based_on_batch_count > 0);
     let ai_provider = local_provider_for(&state);
     let alarms = alarms_for(
@@ -321,6 +520,28 @@ async fn live(State(state): State<AppState>) -> Result<Json<LiveResponse>, AppEr
         alarms,
         ai_memory,
     }))
+}
+
+async fn demo_context(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<DemoContextResponse>>, AppError> {
+    Ok(Json(success(DemoContextResponse {
+        demo: true,
+        sensor_data_policy:
+            "demo context excludes sensor_samples and never fabricates runtime sensor values",
+        latest_recommendation: state
+            .db
+            .latest_recommendation()?
+            .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
+            .filter(|recommendation| recommendation.based_on_batch_count > 0),
+        ai_provider: local_provider_for(&state),
+        processes: state.db.list_processes()?,
+        recent_batches: state.db.recent_batches(20)?,
+        recent_outcomes: state.db.recent_batch_outcomes(20)?,
+        recent_events: state.db.recent_control_events(100)?,
+        demo_alarms: state.db.recent_demo_alarms(20)?,
+        ai_memory: AiMemorySummary::from(state.ai_memory.as_ref()),
+    })))
 }
 
 async fn list_processes(
@@ -415,12 +636,48 @@ async fn apply_process(
     State(state): State<AppState>,
     Path(process_id): Path<i64>,
 ) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
+    let response = start_process_lifecycle(&state, process_id, "process_applied").await?;
+    Ok(Json(success(response)))
+}
+
+async fn start_process(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
+    let response = start_process_lifecycle(&state, process_id, "process_started").await?;
+    Ok(Json(success(response)))
+}
+
+async fn stop_process_by_id(
+    State(state): State<AppState>,
+    Path(process_id): Path<i64>,
+) -> Result<Json<V1Envelope<ProcessStopResponse>>, AppError> {
+    let response = stop_process_lifecycle(&state, Some(process_id), "process_stopped").await?;
+    Ok(Json(success(response)))
+}
+
+async fn stop_current_process(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<ProcessStopResponse>>, AppError> {
+    let response = stop_process_lifecycle(&state, None, "process_stopped").await?;
+    Ok(Json(success(response)))
+}
+
+async fn start_process_lifecycle(
+    state: &AppState,
+    process_id: i64,
+    event_type: &'static str,
+) -> Result<ProcessApplyResponse, AppError> {
+    {
+        let runtime = state.runtime.read().await;
+        ensure_process_can_start(state, &runtime)?;
+    }
     let Some(detail) = state.db.process_detail(process_id)? else {
         return Err(AppError::not_found("process not found"));
     };
     if detail.steps.is_empty() {
         return Err(AppError::bad_request(
-            "process must contain at least one step before applying",
+            "process must contain at least one step before starting",
         ));
     }
     let targets = targets_from_process_steps(&state.safety, &detail.steps)?;
@@ -432,6 +689,35 @@ async fn apply_process(
         seconds_to_minutes(Some(targets.heat_time_s)),
         seconds_to_minutes(Some(targets.hold_time_s)),
     )?;
+    let start_reason = if event_type == "process_applied" {
+        "process applied from persisted process definition"
+    } else {
+        "process started from persisted process definition"
+    };
+    if let Err(err) = start_process_on_device(state, &targets).await {
+        let error_message = err.message.clone();
+        if let Err(audit_err) = state.db.insert_control_event(
+            Some(batch.id),
+            "process_start_failed",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: format!("process start failed before activation: {error_message}"),
+            }),
+            "process start failed before activation",
+        ) {
+            tracing::warn!("failed to persist process_start_failed audit event: {audit_err}");
+        }
+        if let Err(finish_err) = state.db.finish_batch(batch.id) {
+            tracing::warn!("failed to mark failed process start batch finished: {finish_err}");
+        }
+        return Err(err);
+    }
     {
         let mut runtime = state.runtime.write().await;
         runtime.targets = targets.clone();
@@ -440,7 +726,7 @@ async fn apply_process(
     }
     state.db.insert_control_event(
         Some(batch.id),
-        "process_applied",
+        event_type,
         Some(&SafeCommand {
             target_temperature_c: targets.temperature_c,
             heat_time_s: targets.heat_time_s,
@@ -449,18 +735,152 @@ async fn apply_process(
             target_stirrer_rpm: targets.stirrer_rpm,
             target_shake_speed_cpm: targets.shake_speed_cpm,
             target_pressure_mpa: targets.target_pressure_mpa,
-            reason: "process applied from persisted process definition".to_string(),
+            reason: start_reason.to_string(),
         }),
-        "process applied from persisted process definition",
+        start_reason,
     )?;
     let Some(process) = state.db.mark_process_applied(process_id)? else {
         return Err(AppError::not_found("process not found"));
     };
-    Ok(Json(success(ProcessApplyResponse {
+    Ok(ProcessApplyResponse {
         process,
         batch,
         applied_targets: targets,
-    })))
+        status: "running".to_string(),
+    })
+}
+
+async fn stop_process_lifecycle(
+    state: &AppState,
+    expected_process_id: Option<i64>,
+    event_type: &'static str,
+) -> Result<ProcessStopResponse, AppError> {
+    let (batch_id, targets) = {
+        let runtime = state.runtime.read().await;
+        let Some(batch_id) = runtime.active_batch_id else {
+            return Err(AppError::conflict("no active process batch to stop"));
+        };
+        (batch_id, runtime.targets.clone())
+    };
+
+    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+        return Err(AppError::not_found("active batch not found"));
+    };
+    if let Some(process_id) = expected_process_id {
+        if batch.process_id != Some(process_id) {
+            return Err(AppError::conflict(format!(
+                "active batch belongs to process {:?}, not process {process_id}",
+                batch.process_id
+            )));
+        }
+    }
+
+    let stopped_targets = process_stop_targets(state, &targets);
+    stop_process_on_device(state, &stopped_targets).await?;
+    state.db.finish_batch(batch_id)?;
+    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+        return Err(AppError::not_found("stopped batch not found"));
+    };
+    {
+        let mut runtime = state.runtime.write().await;
+        if runtime.active_batch_id == Some(batch_id) {
+            runtime.active_batch_id = None;
+        }
+        runtime.auto_enabled = false;
+    }
+    state.db.insert_control_event(
+        Some(batch_id),
+        event_type,
+        Some(&SafeCommand {
+            target_temperature_c: stopped_targets.temperature_c,
+            heat_time_s: stopped_targets.heat_time_s,
+            hold_time_s: stopped_targets.hold_time_s,
+            cool_time_s: stopped_targets.cool_time_s,
+            target_stirrer_rpm: stopped_targets.stirrer_rpm,
+            target_shake_speed_cpm: stopped_targets.shake_speed_cpm,
+            target_pressure_mpa: stopped_targets.target_pressure_mpa,
+            reason: stop_process_reason(event_type).to_string(),
+        }),
+        stop_process_reason(event_type),
+    )?;
+    Ok(ProcessStopResponse {
+        stopped_batch_id: batch_id,
+        process_id: batch.process_id,
+        batch,
+        active_batch_id: None,
+        auto_enabled: false,
+        stopped_targets,
+    })
+}
+
+fn ensure_process_can_start(state: &AppState, runtime: &RuntimeState) -> Result<(), AppError> {
+    if runtime.active_batch_id.is_some() {
+        return Err(AppError::conflict(
+            "device is busy running an active process batch",
+        ));
+    }
+    if runtime.emergency_stop {
+        return Err(AppError::conflict(
+            "emergency stop is active; process start blocked",
+        ));
+    }
+    if runtime.manual_lock {
+        return Err(AppError::conflict(
+            "manual lock is active; process start blocked",
+        ));
+    }
+    ensure_fresh_sample(state, runtime)
+}
+
+async fn start_process_on_device(
+    state: &AppState,
+    targets: &ControlTargets,
+) -> Result<(), AppError> {
+    let command = safe_command_from_runtime_targets(
+        targets,
+        "process start target write accepted by safety gate",
+    );
+    state.device.write_targets(&command).await.map_err(|err| {
+        AppError::service_unavailable(format!("device process start command failed: {err}"))
+    })
+}
+
+async fn stop_process_on_device(
+    state: &AppState,
+    targets: &ControlTargets,
+) -> Result<(), AppError> {
+    let command = safe_command_from_runtime_targets(targets, "process stop target write");
+    state.device.write_targets(&command).await.map_err(|err| {
+        AppError::service_unavailable(format!("device process stop command failed: {err}"))
+    })
+}
+
+fn process_stop_targets(state: &AppState, current: &ControlTargets) -> ControlTargets {
+    let mut targets = clamp_operator_targets(
+        &state.safety,
+        ControlTargets {
+            temperature_c: state.safety.temperature.min_c,
+            heat_time_s: 0.0,
+            hold_time_s: 0.0,
+            cool_time_s: 0.0,
+            stirrer_rpm: state.safety.stirrer.min_rpm,
+            shake_speed_cpm: 0.0,
+            target_pressure_mpa: current.target_pressure_mpa,
+        },
+    );
+    targets.heat_time_s = 0.0;
+    targets.hold_time_s = 0.0;
+    targets.cool_time_s = 0.0;
+    targets.shake_speed_cpm = 0.0;
+    targets
+}
+
+fn stop_process_reason(event_type: &str) -> &'static str {
+    if event_type == "ai_process_stopped" {
+        "process stopped by AI master control after safety evaluation"
+    } else {
+        "process stopped by operator"
+    }
 }
 
 async fn list_batches(
@@ -492,6 +912,540 @@ async fn devices_status(
 ) -> Result<Json<V1Envelope<DeviceStatusSummary>>, AppError> {
     let runtime = state.runtime.read().await.clone();
     Ok(Json(success(device_status_summary(&state, &runtime))))
+}
+
+async fn devices_capabilities(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<DeviceCapabilitiesResponse>>, AppError> {
+    let runtime = state.runtime.read().await.clone();
+    let summary = device_status_summary(&state, &runtime);
+    let device = &summary.devices[0];
+    Ok(Json(success(DeviceCapabilitiesResponse {
+        total_count: summary.total_count,
+        online_count: summary.online_count,
+        devices: vec![DeviceCapabilityDevice {
+            device_id: device.device_id.clone(),
+            device_role: device.device_role.clone(),
+            mode: device_mode_label(&state.device_mode).to_string(),
+            online: device.online,
+            status: device.status.clone(),
+            sensors: device.sensors.clone(),
+            components: device.components.clone(),
+        }],
+    })))
+}
+
+async fn control_component(
+    State(state): State<AppState>,
+    Path((device_id, component_id)): Path<(String, String)>,
+    ApiJson(payload): ApiJson<ComponentControlRequest>,
+) -> Result<Json<V1Envelope<ComponentControlResponse>>, AppError> {
+    let response = execute_component_control(
+        &state,
+        &device_id,
+        &component_id,
+        payload,
+        "component_control",
+    )
+    .await?;
+    Ok(Json(success(response)))
+}
+
+async fn execute_component_control(
+    state: &AppState,
+    device_id: &str,
+    component_id: &str,
+    payload: ComponentControlRequest,
+    event_type: &'static str,
+) -> Result<ComponentControlResponse, AppError> {
+    if device_id != "reactor_001" {
+        return Err(AppError::not_found("device not found"));
+    }
+
+    let runtime = state.runtime.read().await.clone();
+    let capabilities = component_items(&state, &runtime);
+    let Some(component) = capabilities
+        .iter()
+        .find(|component| component.component_id == component_id)
+        .cloned()
+    else {
+        return Err(AppError::not_found("component not found"));
+    };
+    if !component.controllable {
+        return Err(AppError::bad_request("component is not controllable"));
+    }
+    if !component
+        .actions
+        .iter()
+        .any(|action| action.action == payload.action)
+    {
+        return Err(AppError::bad_request("component action is not supported"));
+    }
+    if runtime.emergency_stop {
+        return Err(AppError::conflict(
+            "emergency stop is active; component control blocked",
+        ));
+    }
+    if runtime.manual_lock {
+        return Err(AppError::conflict(
+            "manual lock is active; component control blocked",
+        ));
+    }
+    if runtime
+        .device_status
+        .as_ref()
+        .map(|status| !status.connected || !status.last_frame_ok)
+        .unwrap_or(false)
+    {
+        return Err(AppError::service_unavailable(
+            "device status is not healthy; component control blocked",
+        ));
+    }
+
+    let command = ComponentControlCommand {
+        component_id: component_id.to_string(),
+        action: payload.action.clone(),
+        value: payload.value.clone(),
+    };
+    let outcome = state
+        .device
+        .write_component(&command, &runtime.targets, &state.safety)
+        .await?;
+
+    if let Some(outcome) = &outcome {
+        if let Some(targets) = &outcome.targets {
+            let mut runtime = state.runtime.write().await;
+            runtime.targets = ControlTargets {
+                temperature_c: targets.target_temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                stirrer_rpm: targets.target_stirrer_rpm,
+                shake_speed_cpm: targets.target_shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+            };
+        }
+    }
+
+    let audit_reason = payload.reason.unwrap_or_else(|| {
+        format!(
+            "operator component control {}:{}",
+            component_id, payload.action
+        )
+    });
+    let audit_command = outcome
+        .as_ref()
+        .and_then(|outcome| outcome.targets.clone())
+        .unwrap_or_else(|| safe_command_from_runtime_targets(&runtime.targets, &audit_reason));
+    state.db.insert_control_event(
+        runtime.active_batch_id,
+        event_type,
+        Some(&audit_command),
+        &audit_reason,
+    )?;
+
+    Ok(ComponentControlResponse {
+        device_id: device_id.to_string(),
+        component,
+        outcome,
+    })
+}
+
+async fn ai_control(
+    State(state): State<AppState>,
+    ApiJson(payload): ApiJson<AiControlRequest>,
+) -> Result<Json<V1Envelope<AiControlResponse>>, AppError> {
+    let dry_run = payload.dry_run.unwrap_or(true);
+    let allow_process_start = payload.allow_process_start.unwrap_or(true);
+    let allow_process_stop = payload.allow_process_stop.unwrap_or(true);
+    let allow_component_control = payload.allow_component_control.unwrap_or(true);
+    let allow_target_adjustment = payload.allow_target_adjustment.unwrap_or(true);
+    let requested_intent = payload
+        .intent
+        .as_deref()
+        .or(payload.mode.as_deref())
+        .unwrap_or("optimize_and_control")
+        .to_string();
+
+    let runtime = state.runtime.read().await.clone();
+    ensure_fresh_sample(&state, &runtime)?;
+    let safety = ai_control_safety(&state, &runtime);
+    if safety.emergency_stop {
+        return Err(AppError::conflict(
+            "emergency stop is active; AI master control blocked",
+        ));
+    }
+    if safety.manual_lock {
+        return Err(AppError::conflict(
+            "manual lock is active; AI master control blocked",
+        ));
+    }
+    if !safety.device_online {
+        return Err(AppError::service_unavailable(
+            "device is offline or unhealthy; AI master control blocked",
+        ));
+    }
+    let process_start_blocked_by_alarm =
+        safety.high_alarm_count > 0 && allow_process_start && runtime.active_batch_id.is_none();
+
+    let recommendation = match state
+        .db
+        .latest_recommendation()?
+        .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
+        .filter(|recommendation| recommendation.based_on_batch_count > 0)
+    {
+        Some(recommendation) => Some(recommendation),
+        None if allow_target_adjustment => {
+            let recommendation = generate_recommendation(&state).await?;
+            state.db.insert_recommendation(&recommendation)?;
+            Some(recommendation)
+        }
+        None => None,
+    };
+    let recommended_targets = recommendation
+        .as_ref()
+        .map(|recommendation| ai_targets_from_recommendation(&state, &runtime, recommendation));
+    let mut actions = Vec::new();
+    let mut decision = "hold".to_string();
+    let mut rationale = format!(
+        "AI master-control intent '{requested_intent}' evaluated with live pipeline data and safety interlocks"
+    );
+
+    if let Some(targets) = recommended_targets.as_ref() {
+        if allow_target_adjustment && targets_differ(&runtime.targets, targets) {
+            decision = "adjust_targets".to_string();
+            actions.push(AiControlAction {
+                action_type: "target_adjustment".to_string(),
+                target: "/api/v1/reactor/reactor_001/control".to_string(),
+                status: if dry_run { "planned" } else { "executed" }.to_string(),
+                message: "apply latest AI batch recommendation to safe runtime targets".to_string(),
+                result: None,
+            });
+            if !dry_run {
+                apply_ai_targets(
+                    &state,
+                    targets.clone(),
+                    "AI master control adjusted targets",
+                )
+                .await?;
+                actions.last_mut().expect("target action exists").result =
+                    Some(json!({ "targets": targets }));
+            }
+        }
+    } else if allow_target_adjustment {
+        actions.push(AiControlAction {
+            action_type: "target_adjustment".to_string(),
+            target: "/api/recommendations/latest".to_string(),
+            status: "skipped".to_string(),
+            message: "no persisted recommendation yet; waiting for finished batch outcomes"
+                .to_string(),
+            result: None,
+        });
+    }
+
+    let selected_process = select_ai_process(&state, payload.preferred_process_id)?;
+    if runtime.active_batch_id.is_none() && allow_process_start && !process_start_blocked_by_alarm {
+        if let Some(process) = selected_process {
+            decision = if decision == "adjust_targets" {
+                "adjust_targets_and_start_process".to_string()
+            } else {
+                "start_process".to_string()
+            };
+            actions.push(AiControlAction {
+                action_type: "process_start".to_string(),
+                target: format!("/api/processes/{}/start", process.id),
+                status: if dry_run { "planned" } else { "executed" }.to_string(),
+                message: format!("AI selected runnable process '{}'", process.name),
+                result: None,
+            });
+            if !dry_run {
+                let started =
+                    start_process_lifecycle(&state, process.id, "ai_process_started").await?;
+                actions.last_mut().expect("process action exists").result =
+                    Some(serde_json::to_value(started).map_err(anyhow::Error::from)?);
+            }
+        } else {
+            actions.push(AiControlAction {
+                action_type: "process_start".to_string(),
+                target: "/api/processes/:id/start".to_string(),
+                status: "skipped".to_string(),
+                message: "no runnable process definition with at least one step".to_string(),
+                result: None,
+            });
+        }
+    } else if process_start_blocked_by_alarm {
+        actions.push(AiControlAction {
+            action_type: "process_start".to_string(),
+            target: "/api/processes/:id/start".to_string(),
+            status: "blocked".to_string(),
+            message: "high level alarm is active; AI process start blocked".to_string(),
+            result: None,
+        });
+    }
+
+    let runtime_after_process = if dry_run {
+        let mut planned = runtime.clone();
+        if actions
+            .iter()
+            .any(|action| action.action_type == "process_start" && action.status == "planned")
+        {
+            planned.active_batch_id = Some(-1);
+        }
+        planned
+    } else {
+        state.runtime.read().await.clone()
+    };
+    if runtime_after_process.active_batch_id.is_some() {
+        let sample = runtime_after_process.latest_sample.as_ref();
+        if allow_process_stop && should_ai_stop_process(sample, &safety) {
+            decision = "stop_process".to_string();
+            actions.push(AiControlAction {
+                action_type: "process_stop".to_string(),
+                target: "/api/processes/current/stop".to_string(),
+                status: if dry_run { "planned" } else { "executed" }.to_string(),
+                message: "AI stop condition met from live concentration or alarm state".to_string(),
+                result: None,
+            });
+            if !dry_run {
+                let stopped = stop_process_lifecycle(&state, None, "ai_process_stopped").await?;
+                actions.last_mut().expect("stop action exists").result =
+                    Some(serde_json::to_value(stopped).map_err(anyhow::Error::from)?);
+            }
+        } else if allow_component_control {
+            let component_runtime = state.runtime.read().await.clone();
+            if let Some(action) = plan_shake_component_action(
+                &state,
+                &component_runtime,
+                recommended_targets.as_ref(),
+            ) {
+                if decision == "hold" {
+                    decision = "control_shake_vessel".to_string();
+                } else if !decision.contains("shake") {
+                    decision.push_str("_and_control_shake");
+                }
+                actions.push(AiControlAction {
+                    action_type: "component_control".to_string(),
+                    target: format!(
+                        "/api/devices/reactor_001/components/shake_stepper/control:{}",
+                        action.action
+                    ),
+                    status: if dry_run { "planned" } else { "executed" }.to_string(),
+                    message: "AI controls shake vessel stepper through component safety gate"
+                        .to_string(),
+                    result: None,
+                });
+                if !dry_run {
+                    let component = execute_component_control(
+                        &state,
+                        "reactor_001",
+                        "shake_stepper",
+                        action,
+                        "ai_component_control",
+                    )
+                    .await?;
+                    actions.last_mut().expect("component action exists").result =
+                        Some(serde_json::to_value(component).map_err(anyhow::Error::from)?);
+                }
+            }
+        }
+    }
+
+    if actions.iter().any(|action| action.status == "blocked") {
+        decision = "hold".to_string();
+    }
+
+    if actions.is_empty() {
+        rationale.push_str("; no control action was necessary");
+        actions.push(AiControlAction {
+            action_type: "hold".to_string(),
+            target: "safety_supervisor".to_string(),
+            status: "skipped".to_string(),
+            message:
+                "system is already within AI target envelope or no allowed action is available"
+                    .to_string(),
+            result: None,
+        });
+    }
+
+    if !dry_run {
+        let audit_command = recommended_targets
+            .as_ref()
+            .map(|targets| safe_command_from_runtime_targets(targets, "AI master decision"));
+        state.db.insert_control_event(
+            state.runtime.read().await.active_batch_id,
+            "ai_master_decision",
+            audit_command.as_ref(),
+            &format!(
+                "{decision}; {}",
+                actions
+                    .iter()
+                    .map(|action| format!("{}={}", action.action_type, action.status))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )?;
+    }
+
+    Ok(Json(success(AiControlResponse {
+        mode: "ai_master_control".to_string(),
+        dry_run,
+        decision,
+        rationale,
+        recommended_targets,
+        safety,
+        actions,
+    })))
+}
+
+fn ai_control_safety(state: &AppState, runtime: &RuntimeState) -> AiControlSafety {
+    let alarms = alarms_for(
+        runtime,
+        runtime.latest_sample.as_ref(),
+        state.ai_memory.as_ref(),
+    );
+    let high_alarm_count = alarms
+        .iter()
+        .filter(|alarm| alarm.get("level").and_then(Value::as_str) == Some("high"))
+        .count();
+    let warning_alarm_count = alarms
+        .iter()
+        .filter(|alarm| alarm.get("level").and_then(Value::as_str) == Some("medium"))
+        .count();
+    AiControlSafety {
+        fresh_sample_required: true,
+        sensor_fresh: ensure_fresh_sample(state, runtime).is_ok(),
+        emergency_stop: runtime.emergency_stop,
+        manual_lock: runtime.manual_lock,
+        device_online: device_status_summary(state, runtime).online_count > 0,
+        active_batch_id: runtime.active_batch_id,
+        high_alarm_count,
+        warning_alarm_count,
+    }
+}
+
+fn ai_targets_from_recommendation(
+    state: &AppState,
+    runtime: &RuntimeState,
+    recommendation: &Recommendation,
+) -> ControlTargets {
+    clamp_operator_targets(
+        &state.safety,
+        ControlTargets {
+            temperature_c: recommendation.target_temperature_c,
+            heat_time_s: recommendation.heating_minutes * 60.0,
+            hold_time_s: recommendation.stirring_minutes * 60.0,
+            cool_time_s: runtime.targets.cool_time_s,
+            stirrer_rpm: recommendation.target_stirrer_rpm,
+            shake_speed_cpm: runtime.targets.shake_speed_cpm,
+            target_pressure_mpa: runtime.targets.target_pressure_mpa,
+        },
+    )
+}
+
+fn targets_differ(current: &ControlTargets, next: &ControlTargets) -> bool {
+    (current.temperature_c - next.temperature_c).abs() > 0.01
+        || (current.heat_time_s - next.heat_time_s).abs() > 0.01
+        || (current.hold_time_s - next.hold_time_s).abs() > 0.01
+        || (current.cool_time_s - next.cool_time_s).abs() > 0.01
+        || (current.stirrer_rpm - next.stirrer_rpm).abs() > 0.01
+        || (current.shake_speed_cpm - next.shake_speed_cpm).abs() > 0.01
+        || (current.target_pressure_mpa - next.target_pressure_mpa).abs() > 0.01
+}
+
+async fn apply_ai_targets(
+    state: &AppState,
+    targets: ControlTargets,
+    reason: &str,
+) -> Result<(), AppError> {
+    let command = safe_command_from_runtime_targets(&targets, reason);
+    state.device.write_targets(&command).await.map_err(|err| {
+        AppError::service_unavailable(format!("AI target write to device failed: {err}"))
+    })?;
+    {
+        let mut runtime = state.runtime.write().await;
+        runtime.targets = targets.clone();
+    }
+    state
+        .db
+        .insert_control_event(None, "ai_targets_updated", Some(&command), reason)?;
+    Ok(())
+}
+
+fn select_ai_process(
+    state: &AppState,
+    preferred_process_id: Option<i64>,
+) -> Result<Option<ProcessDefinition>, AppError> {
+    if let Some(process_id) = preferred_process_id {
+        let Some(detail) = state.db.process_detail(process_id)? else {
+            return Err(AppError::not_found("preferred process not found"));
+        };
+        if detail.steps.is_empty() {
+            return Err(AppError::bad_request(
+                "preferred process must contain at least one step",
+            ));
+        }
+        return Ok(Some(detail.process));
+    }
+    let processes = state.db.list_processes()?;
+    if let Some(process) = processes
+        .iter()
+        .find(|process| process.step_count > 0 && process.status == "applied")
+        .cloned()
+    {
+        return Ok(Some(process));
+    }
+    Ok(processes.into_iter().find(|process| process.step_count > 0))
+}
+
+fn should_ai_stop_process(sample: Option<&SensorSnapshot>, safety: &AiControlSafety) -> bool {
+    sample
+        .map(|sample| sample.product_concentration_percent >= 95.0)
+        .unwrap_or(false)
+        || (safety.high_alarm_count > 0 && safety.active_batch_id.is_some())
+}
+
+fn plan_shake_component_action(
+    state: &AppState,
+    runtime: &RuntimeState,
+    recommended_targets: Option<&ControlTargets>,
+) -> Option<ComponentControlRequest> {
+    let components = component_items(state, runtime);
+    if !components
+        .iter()
+        .any(|component| component.component_id == "shake_stepper" && component.controllable)
+    {
+        return None;
+    }
+    let target_shake_speed = recommended_targets
+        .map(|targets| targets.shake_speed_cpm)
+        .unwrap_or(runtime.targets.shake_speed_cpm);
+    let motor_running = runtime
+        .device_status
+        .as_ref()
+        .and_then(|status| status.motor)
+        .map(|motor| motor == 1)
+        .unwrap_or_else(|| {
+            runtime
+                .latest_sample
+                .as_ref()
+                .map(|sample| sample.shake_speed_cpm > 0.01)
+                .unwrap_or(false)
+        });
+    if target_shake_speed > 0.01 && !motor_running {
+        Some(ComponentControlRequest {
+            action: "start".to_string(),
+            value: None,
+            reason: Some("AI master control started shake vessel stepper".to_string()),
+        })
+    } else if target_shake_speed <= 0.01 && motor_running {
+        Some(ComponentControlRequest {
+            action: "stop".to_string(),
+            value: None,
+            reason: Some("AI master control stopped shake vessel stepper".to_string()),
+        })
+    } else {
+        None
+    }
 }
 
 async fn v1_control(
@@ -1056,6 +2010,7 @@ async fn accept_pipeline_sample(
     let active_batch_id = {
         let mut runtime = state.runtime.write().await;
         runtime.latest_sample = Some(sample.clone());
+        runtime.last_sensor_error = None;
         runtime.last_control_error = None;
         runtime.active_batch_id
     };
@@ -1087,6 +2042,11 @@ fn pipeline_sample_from_request(
 }
 
 fn ensure_fresh_sample(state: &AppState, runtime: &RuntimeState) -> Result<(), AppError> {
+    if let Some(error) = &runtime.last_sensor_error {
+        return Err(AppError::service_unavailable(format!(
+            "sensor data unavailable; {error}"
+        )));
+    }
     let Some(sample) = &runtime.latest_sample else {
         return Err(AppError::service_unavailable(
             "sensor data unavailable; waiting for ESP32/data pipeline sample",
@@ -1115,7 +2075,7 @@ async fn generate_recommendation(state: &AppState) -> Result<Recommendation, App
     let Some(provider) = &state.ai_provider else {
         return Ok(fallback);
     };
-    match provider
+    provider
         .recommend(
             &state.safety.optimizer,
             &state.ai_memory,
@@ -1123,18 +2083,12 @@ async fn generate_recommendation(state: &AppState) -> Result<Recommendation, App
             &fallback,
         )
         .await
-    {
-        Ok(recommendation) => Ok(recommendation),
-        Err(err) => {
-            tracing::warn!("StepFun recommendation failed; falling back to local optimizer: {err}");
-            let mut recommendation = fallback;
-            recommendation.rationale = format!(
-                "StepFun 调用失败，已回退本地优化器：{}",
-                recommendation.rationale
-            );
-            Ok(recommendation)
-        }
-    }
+        .map_err(|err| {
+            tracing::warn!("StepFun recommendation failed without local fallback: {err}");
+            AppError::service_unavailable(format!(
+                "StepFun AI provider unavailable; recommendation was not generated by local rules: {err}"
+            ))
+        })
 }
 
 async fn recommendation_envelope(
@@ -1144,19 +2098,13 @@ async fn recommendation_envelope(
     let Some(provider) = &state.ai_provider else {
         return local_envelope(recommendation);
     };
-    if recommendation.rationale.starts_with("StepFun 调用失败") {
-        fallback_envelope(
-            recommendation,
-            provider.model_name(),
-            "StepFun request failed; local optimizer fallback was used",
-        )
-    } else if recommendation.rationale.starts_with("StepFun:") {
+    if recommendation.rationale.starts_with("StepFun:") {
         stepfun_envelope(recommendation, provider.model_name())
     } else {
         fallback_envelope(
             recommendation,
             provider.model_name(),
-            "StepFun output was rejected by safety validation; local optimizer fallback was used",
+            "cached recommendation was not generated by StepFun; regenerate recommendation before AI master control",
         )
     }
 }
@@ -1164,7 +2112,7 @@ async fn recommendation_envelope(
 fn local_provider_for(state: &AppState) -> AiRecommendationProvider {
     if let Some(provider) = &state.ai_provider {
         AiRecommendationProvider {
-            mode: "stepfun_configured_cached_or_local".to_string(),
+            mode: "stepfun_configured".to_string(),
             model: provider.model_name().to_string(),
             fallback_reason: None,
         }
@@ -1175,6 +2123,10 @@ fn local_provider_for(state: &AppState) -> AiRecommendationProvider {
             fallback_reason: None,
         }
     }
+}
+
+fn provider_allows_recommendation(state: &AppState, recommendation: &Recommendation) -> bool {
+    state.ai_provider.is_none() || recommendation.rationale.starts_with("StepFun:")
 }
 
 fn success<T>(data: T) -> V1Envelope<T> {
@@ -1404,10 +2356,14 @@ fn parse_required_time(value: Option<&str>, field: &str) -> Result<DateTime<Utc>
 
 fn device_status_summary(state: &AppState, runtime: &RuntimeState) -> DeviceStatusSummary {
     let device = device_status_item("reactor_001", "reactor_bridge", state, runtime);
+    let sensors = device.sensors.clone();
+    let components = device.components.clone();
     DeviceStatusSummary {
         total_count: 1,
         online_count: usize::from(device.online),
         devices: vec![device],
+        sensors,
+        components,
     }
 }
 
@@ -1419,6 +2375,7 @@ fn device_status_item(
 ) -> DeviceStatusItem {
     let now = Utc::now();
     let stale_after_ms = state.safety.control.sensor_timeout_ms;
+    let bridge_status = runtime.device_status.as_ref();
     let (last_seen_at, last_seen_age_ms, sample_fresh) = match &runtime.latest_sample {
         Some(sample) => {
             let age = now
@@ -1432,14 +2389,45 @@ fn device_status_item(
         }
         None => (None, None, false),
     };
+    let (last_seen_at, last_seen_age_ms) =
+        if let Some(last_seen) = bridge_status.and_then(|status| status.last_seen_at.as_ref()) {
+            (
+                Some(last_seen.to_rfc3339()),
+                Some(now.signed_duration_since(last_seen).num_milliseconds()),
+            )
+        } else {
+            (last_seen_at, last_seen_age_ms)
+        };
+    let bridge_online = bridge_status
+        .map(|status| {
+            status.connected
+                && status.last_frame_ok
+                && status
+                    .last_seen_at
+                    .as_ref()
+                    .map(|last_seen| {
+                        now.signed_duration_since(last_seen).num_milliseconds() <= stale_after_ms
+                    })
+                    .unwrap_or(false)
+        })
+        .unwrap_or(sample_fresh);
     let status = if runtime.emergency_stop {
         "error"
-    } else if !sample_fresh {
+    } else if bridge_status
+        .map(|status| !status.connected || !status.last_frame_ok)
+        .unwrap_or(false)
+    {
+        "error"
+    } else if !sample_fresh && !bridge_online {
         if runtime.latest_sample.is_some() {
             "stale"
         } else {
             "offline"
         }
+    } else if !sample_fresh && runtime.last_sensor_error.is_some() {
+        "error"
+    } else if runtime.last_sensor_error.is_some() {
+        "error"
     } else if runtime.last_control_error.is_some() {
         "error"
     } else if runtime.active_batch_id.is_some() {
@@ -1448,22 +2436,251 @@ fn device_status_item(
         "idle"
     };
 
+    let sensors = sensor_items(state, runtime, sample_fresh);
+    let components = component_items(state, runtime);
+
     DeviceStatusItem {
         device_id: device_id.to_string(),
         device_role: device_role.to_string(),
-        online: sample_fresh && !runtime.emergency_stop && runtime.last_control_error.is_none(),
+        online: bridge_online && !runtime.emergency_stop,
         status: status.to_string(),
         last_seen_at,
         last_seen_age_ms,
         stale_after_ms,
         active_batch_id: runtime.active_batch_id,
         emergency_stop: runtime.emergency_stop,
+        last_sensor_error: runtime.last_sensor_error.clone(),
         last_control_error: runtime.last_control_error.clone(),
+        relay: bridge_status.and_then(|status| status.relay),
+        motor: bridge_status.and_then(|status| status.motor),
+        tilt: bridge_status.and_then(|status| status.tilt),
+        speed_delay_us: bridge_status.and_then(|status| status.speed_delay_us),
+        port: bridge_status.and_then(|status| status.port.clone()),
+        baudrate: bridge_status.and_then(|status| status.baudrate),
+        last_command_request_id: bridge_status
+            .and_then(|status| status.last_command_request_id.clone()),
+        last_command_ok: bridge_status.and_then(|status| status.last_command_ok),
+        last_command_error: bridge_status.and_then(|status| status.last_command_error.clone()),
+        sensors,
+        components,
+    }
+}
+
+fn sensor_items(
+    state: &AppState,
+    runtime: &RuntimeState,
+    sample_fresh: bool,
+) -> Vec<DeviceSensorItem> {
+    let sample = runtime.latest_sample.as_ref();
+    let sample_updated_at = sample.map(|sample| sample.captured_at.to_rfc3339());
+    let status_for = |value: Option<f64>, stale_status: &str| -> String {
+        if runtime.emergency_stop {
+            "blocked".to_string()
+        } else if runtime.last_sensor_error.is_some() {
+            "error".to_string()
+        } else if value.is_none() {
+            "unavailable".to_string()
+        } else if !sample_fresh {
+            stale_status.to_string()
+        } else {
+            "online".to_string()
+        }
+    };
+    let item = |sensor_id: &str,
+                label: &str,
+                unit: &str,
+                value: Option<f64>,
+                target: Option<f64>,
+                component_id: Option<&str>|
+     -> DeviceSensorItem {
+        DeviceSensorItem {
+            sensor_id: sensor_id.to_string(),
+            label: label.to_string(),
+            unit: unit.to_string(),
+            status: status_for(value, "stale"),
+            value: value.map(round2),
+            target: target.map(round2),
+            source: device_mode_label(&state.device_mode).to_string(),
+            component_id: component_id.map(ToString::to_string),
+            updated_at: sample_updated_at.clone(),
+        }
+    };
+    vec![
+        item(
+            "temperature_c",
+            "Temperature",
+            "C",
+            sample.map(|sample| sample.temperature_c),
+            Some(runtime.targets.temperature_c),
+            Some("temperature_controller"),
+        ),
+        item(
+            "pressure_mpa",
+            "Pressure",
+            "MPa",
+            sample.map(|sample| sample.pressure_mpa),
+            Some(runtime.targets.target_pressure_mpa),
+            None,
+        ),
+        item(
+            "stirrer_rpm",
+            "Stirrer RPM",
+            "RPM",
+            sample.map(|sample| sample.stirrer_rpm),
+            Some(runtime.targets.stirrer_rpm),
+            Some("stirrer_motor"),
+        ),
+        item(
+            "shake_speed_cpm",
+            "Shake Vessel Speed",
+            "CPM",
+            sample.map(|sample| sample.shake_speed_cpm),
+            Some(runtime.targets.shake_speed_cpm),
+            Some("shake_stepper"),
+        ),
+        item(
+            "tilt_state",
+            "Tilt Binary State",
+            "0/1",
+            sample.map(|sample| sample.tilt_state as f64),
+            None,
+            Some("shake_stepper"),
+        ),
+        item(
+            "tilt_angle_deg",
+            "Fitted Tilt Angle",
+            "deg",
+            sample.map(|sample| sample.tilt_angle_deg),
+            None,
+            Some("shake_stepper"),
+        ),
+        item(
+            "flow_rate_l_min",
+            "Flow Rate",
+            "L/min",
+            sample.map(|sample| sample.flow_rate_l_min),
+            None,
+            None,
+        ),
+        item(
+            "product_concentration_percent",
+            "Product Concentration",
+            "%",
+            sample.map(|sample| sample.product_concentration_percent),
+            None,
+            None,
+        ),
+        item("ph", "pH", "", sample.map(|sample| sample.ph), None, None),
+    ]
+}
+
+fn component_items(state: &AppState, runtime: &RuntimeState) -> Vec<DeviceComponentItem> {
+    let status = runtime.device_status.as_ref();
+    state
+        .device
+        .control_capabilities()
+        .into_iter()
+        .map(|capability| {
+            let state_value = match capability.component_id.as_str() {
+                "shake_stepper" => json!({
+                    "motor": status.and_then(|status| status.motor),
+                    "tilt": status.and_then(|status| status.tilt),
+                    "speed_delay_us": status.and_then(|status| status.speed_delay_us),
+                    "target_shake_speed_cpm": runtime.targets.shake_speed_cpm,
+                    "current_shake_speed_cpm": runtime.latest_sample.as_ref().map(|sample| sample.shake_speed_cpm)
+                }),
+                "heater_relay" => json!({
+                    "relay": status.and_then(|status| status.relay),
+                    "target_temperature_c": runtime.targets.temperature_c,
+                    "current_temperature_c": runtime.latest_sample.as_ref().map(|sample| sample.temperature_c)
+                }),
+                "temperature_controller" => json!({
+                    "target_temperature_c": runtime.targets.temperature_c,
+                    "current_temperature_c": runtime.latest_sample.as_ref().map(|sample| sample.temperature_c)
+                }),
+                "stirrer_motor" => json!({
+                    "target_stirrer_rpm": runtime.targets.stirrer_rpm,
+                    "current_stirrer_rpm": runtime.latest_sample.as_ref().map(|sample| sample.stirrer_rpm)
+                }),
+                _ => json!({}),
+            };
+            let component_status = if runtime.emergency_stop {
+                "blocked"
+            } else if runtime.manual_lock {
+                "locked"
+            } else if status
+                .map(|status| !status.connected || !status.last_frame_ok)
+                .unwrap_or(false)
+            {
+                "error"
+            } else {
+                match capability.component_id.as_str() {
+                    "shake_stepper" if status.and_then(|status| status.motor) == Some(1) => {
+                        "running"
+                    }
+                    "heater_relay" if status.and_then(|status| status.relay) == Some(1) => "on",
+                    "stirrer_motor" if runtime
+                        .latest_sample
+                        .as_ref()
+                        .map(|sample| sample.stirrer_rpm > 0.01)
+                        .unwrap_or(false) =>
+                    {
+                        "running"
+                    }
+                    _ => "idle",
+                }
+            };
+            DeviceComponentItem {
+                component_id: capability.component_id,
+                component_type: capability.component_type,
+                label: capability.label,
+                controllable: capability.controllable,
+                status: component_status.to_string(),
+                state: state_value,
+                actions: capability
+                    .actions
+                    .into_iter()
+                    .map(|action| ComponentActionItem {
+                        action: action.action,
+                        label: action.label,
+                        value_type: action.value_type,
+                        min: action.min,
+                        max: action.max,
+                        unit: action.unit,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+fn safe_command_from_runtime_targets(targets: &ControlTargets, reason: &str) -> SafeCommand {
+    SafeCommand {
+        target_temperature_c: targets.temperature_c,
+        heat_time_s: targets.heat_time_s,
+        hold_time_s: targets.hold_time_s,
+        cool_time_s: targets.cool_time_s,
+        target_stirrer_rpm: targets.stirrer_rpm,
+        target_shake_speed_cpm: targets.shake_speed_cpm,
+        target_pressure_mpa: targets.target_pressure_mpa,
+        reason: reason.to_string(),
+    }
+}
+
+fn device_mode_label(mode: &DeviceMode) -> &'static str {
+    match mode {
+        DeviceMode::Pipeline => "pipeline",
+        DeviceMode::Modbus => "modbus",
+        DeviceMode::Esp32Serial => "esp32_serial",
+        DeviceMode::JsonBridge => "json_bridge",
     }
 }
 
 fn device_status(runtime: &RuntimeState) -> &'static str {
-    if runtime.emergency_stop || runtime.last_control_error.is_some() {
+    if runtime.emergency_stop
+        || runtime.last_sensor_error.is_some()
+        || runtime.last_control_error.is_some()
+    {
         "error"
     } else if runtime.active_batch_id.is_some() {
         "running"
@@ -1473,7 +2690,10 @@ fn device_status(runtime: &RuntimeState) -> &'static str {
 }
 
 fn phase_for(runtime: &RuntimeState) -> &'static str {
-    if runtime.emergency_stop || runtime.last_control_error.is_some() {
+    if runtime.emergency_stop
+        || runtime.last_sensor_error.is_some()
+        || runtime.last_control_error.is_some()
+    {
         "error"
     } else if runtime.active_batch_id.is_some() {
         "heating"
@@ -1506,6 +2726,13 @@ fn alarms_for(
         alarms.push(json!({
             "type": "communication_error",
             "level": "medium",
+            "message": error
+        }));
+    }
+    if let Some(error) = &runtime.last_sensor_error {
+        alarms.push(json!({
+            "type": "sensor_error",
+            "level": "high",
             "message": error
         }));
     }

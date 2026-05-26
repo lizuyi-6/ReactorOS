@@ -76,6 +76,22 @@ fn hardware_esp32_template_is_valid() {
 }
 
 #[test]
+fn hardware_json_bridge_template_is_valid() {
+    let config = load_device_config("config/device.json_bridge.toml").unwrap();
+
+    assert_eq!(config.mode, DeviceMode::JsonBridge);
+    assert_eq!(
+        config.json_bridge.state_path.to_string_lossy(),
+        "/project/state.json"
+    );
+    assert_eq!(
+        config.json_bridge.control_path.to_string_lossy(),
+        "/project/control.json"
+    );
+    assert_eq!(config.json_bridge.max_state_age_ms, 6000);
+}
+
+#[test]
 fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
     let memory = load_ai_memory("config/ai_memory.toml").unwrap();
     let safety: SafetyConfig =

@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ReactorOS - 化学反应釜智能上位机</title>
+  <title>ReactorOS - 鍖栧鍙嶅簲閲滄櫤鑳戒笂浣嶆満</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+  <noscript><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"></noscript>
   <style>
     :root {
       --bg: #0e0e10;
@@ -225,7 +227,14 @@
     .tab-btn.active:hover, .nav-settings.active:hover { background: #4a4a4d; color: var(--green); }
     .nav-icon { font-size: 34px; color: inherit; }
     .tab-btn .material-symbols-outlined, .nav-settings .material-symbols-outlined {
+      width: 42px;
+      max-width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      overflow: hidden;
+      text-align: center;
       font-size: 34px;
+      line-height: 42px;
       font-variation-settings: "FILL" 0, "wght" 600, "GRAD" 0, "opsz" 24;
     }
     .tab-btn.active .material-symbols-outlined, .nav-settings.active .material-symbols-outlined {
@@ -546,7 +555,7 @@
     }
     .control-cell { min-height: 96px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
     .setpoint { margin-top: 10px; color: var(--text); font-size: 22px; font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
-    .actions, .hmi-actions { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; padding: 0 18px 18px; }
+    .actions, .hmi-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; padding: 0 18px 18px; }
 
     .primary-btn, .secondary-btn, .text-btn, .ack-btn, .export-menu button, .export-trigger {
       min-height: 48px;
@@ -634,6 +643,67 @@
       min-height: 70px;
       font-size: 22px;
       letter-spacing: .12em;
+    }
+    .ai-master-panel {
+      border: 2px solid #2e86de;
+      background: var(--surface-low);
+      padding: 22px;
+    }
+    .ai-master-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+    .ai-master-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+    .ai-master-actions .primary-btn,
+    .ai-master-actions .secondary-btn {
+      min-height: 68px;
+      width: 100%;
+    }
+    .ai-master-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .ai-master-cell {
+      min-height: 76px;
+      border: 1px solid var(--line);
+      background: var(--surface-card);
+      padding: 12px;
+    }
+    .ai-master-action-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .ai-master-action-item {
+      display: grid;
+      grid-template-columns: 148px 112px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      min-height: 52px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      padding: 10px 12px;
+    }
+    .ai-master-action-item.executed { border-left: 5px solid var(--green); }
+    .ai-master-action-item.planned { border-left: 5px solid #2e86de; }
+    .ai-master-action-item.blocked { border-left: 5px solid var(--red); }
+    .ai-master-action-item.skipped { border-left: 5px solid var(--amber); }
+    .ai-master-status {
+      color: var(--text);
+      font-family: var(--font-data);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
     }
     .recipe-card > .panel-title {
       min-height: 66px;
@@ -1341,6 +1411,52 @@
     }
     .settings-row:last-child, .endpoint-row:last-child { border-bottom: 0; }
     .settings-row .material-symbols-outlined, .endpoint-row .material-symbols-outlined { color: var(--green); }
+    .device-tree { display: grid; gap: 14px; }
+    .device-node { border: 1px solid var(--line); background: var(--surface); }
+    .device-node-head {
+      display: grid;
+      grid-template-columns: 42px minmax(0,1fr) auto;
+      gap: 14px;
+      align-items: center;
+      min-height: 76px;
+      padding: 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    .device-node-body { display: grid; gap: 10px; padding: 14px 16px 16px; }
+    .device-subtitle {
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0,1fr));
+      gap: 10px;
+    }
+    .sensor-chip {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) auto;
+      gap: 8px;
+      min-height: 76px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: var(--surface-low);
+    }
+    .sensor-chip .sensor-value {
+      color: var(--text);
+      font-family: var(--font-data);
+      font-size: 18px;
+      font-weight: 800;
+      margin-top: 8px;
+    }
+    .component-row .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
     .setting-switch {
       position: relative;
       width: 58px;
@@ -1424,7 +1540,7 @@
       .top-title { display: none; }
       .top-status { overflow-x: auto; padding: 0 10px; border-top: 1px solid var(--line); }
       .sidebar { top: 136px; right: 0; width: auto; height: 72px; flex-direction: row; overflow-x: auto; }
-      .tab-btn, .nav-settings { min-width: 112px; min-height: 72px; height: 72px; border-left: 0; border-bottom: 4px solid transparent; }
+      .tab-btn, .nav-settings { min-width: 124px; min-height: 72px; height: 72px; border-left: 0; border-bottom: 4px solid transparent; }
       .tab-btn.active { border-left: 0; border-bottom-color: var(--green); }
       .nav-settings { border-top: 0; }
       .sidebar-spacer { display: none; }
@@ -1500,44 +1616,43 @@
 <body>
   <div class="screen-shell">
     <header class="topbar">
-      <div class="brand-block">
-        <span class="symbol brand-mark">⏻</span>
+      <div class="brand-block" style="cursor: pointer;" onclick="window.location.href='landing.html'" title="返回星宿系统官网">
+        <span class="symbol brand-mark">R</span>
         <div>
           <div class="brand">reactor-edge-daemon</div>
           <div class="brand-sub">ReactorOS HMI</div>
         </div>
       </div>
-      <div class="top-title"><span id="pageTitle">运行看板</span></div>
+      <div class="top-title"><span id="pageTitle">Monitor</span></div>
       <div class="top-status">
         <span class="status-chip"><span id="runDot" class="state-dot warning"></span><span id="runState">Waiting</span></span>
         <span class="status-chip"><span id="pipelineDot" class="state-dot warning"></span><span id="pipelineState">Pipeline</span></span>
         <span id="runClock" class="clock">00:00:00</span>
         <span id="wallClock" class="clock">--:--:--</span>
-        <button id="topEstopBtn" class="top-estop-btn" type="button">△ 急停</button>
+        <button id="topEstopBtn" class="top-estop-btn" type="button">E-STOP</button>
       </div>
     </header>
 
     <nav class="sidebar tabs" aria-label="Main navigation">
-      <button class="tab-btn active" type="button" data-tab="monitor"><span class="material-symbols-outlined nav-icon">dashboard</span><span>运行看板</span></button>
-      <button class="tab-btn" type="button" data-tab="recipes"><span class="material-symbols-outlined nav-icon">inventory_2</span><span>批次管理</span></button>
-      <button class="tab-btn" type="button" data-tab="program"><span class="material-symbols-outlined nav-icon">settings_input_component</span><span>控制面板</span></button>
-      <button class="tab-btn" type="button" data-tab="ai"><span class="material-symbols-outlined nav-icon">biotech</span><span>AI 实验室</span></button>
-      <button class="tab-btn" type="button" data-tab="materials"><span class="material-symbols-outlined nav-icon">history</span><span>历史数据</span></button>
-      <button class="tab-btn" type="button" data-tab="alarms"><span class="material-symbols-outlined nav-icon">warning</span><span>报警中心</span></button>
-      <div class="sidebar-spacer"></div>
-      <button class="nav-settings" type="button" data-tab="settings"><span class="material-symbols-outlined nav-icon">settings</span><span>设置</span></button>
+      <button class="tab-btn" type="button" onclick="window.location.href='landing.html'"><span class="material-symbols-outlined nav-icon">home</span><span>Home</span></button>
+      <button class="tab-btn active" type="button" data-tab="monitor"><span class="material-symbols-outlined nav-icon">dashboard</span><span>Monitor</span></button>
+      <button class="tab-btn" type="button" data-tab="recipes"><span class="material-symbols-outlined nav-icon">inventory_2</span><span>Batches</span></button>
+      <button class="tab-btn" type="button" data-tab="program"><span class="material-symbols-outlined nav-icon">settings_input_component</span><span>Control</span></button>
+      <button class="tab-btn" type="button" data-tab="ai"><span class="material-symbols-outlined nav-icon">biotech</span><span>AI Lab</span></button>
+      <button class="tab-btn" type="button" data-tab="materials"><span class="material-symbols-outlined nav-icon">history</span><span>History</span></button>
+      <button class="tab-btn" type="button" data-tab="alarms"><span class="material-symbols-outlined nav-icon">warning</span><span>Alarms</span></button>
+      <button class="nav-settings" type="button" data-tab="settings"><span class="material-symbols-outlined nav-icon">settings</span><span>Settings</span></button>
     </nav>
-
     <main class="main">
       <section id="view-monitor" class="view active hmi-view">
         <div class="monitor-heading">
-          运行看板
-          <div class="monitor-subheading">实时反应釜状态、AI 建议与过程历史</div>
+          Monitor
+          <div class="monitor-subheading">Realtime reactor state, AI recommendation, and process history</div>
         </div>
         <div class="status-strip">
-          <div id="systemHealthBlock" class="status-block"><span class="state-dot"></span><span id="systemHealthText">系统健康: 等待</span></div>
-          <div id="esp32HealthBlock" class="status-block"><span class="symbol">⌁</span><span id="esp32HealthText">ESP32 连接: 检查中</span></div>
-          <div id="autoHealthBlock" class="status-block auto"><span class="symbol">▣</span><span id="autoHealthText">自动控制: 待机</span></div>
+          <div id="systemHealthBlock" class="status-block"><span class="state-dot"></span><span id="systemHealthText">System health: waiting</span></div>
+          <div id="esp32HealthBlock" class="status-block"><span class="symbol">LINK</span><span id="esp32HealthText">ESP32 link: checking</span></div>
+          <div id="autoHealthBlock" class="status-block auto"><span class="symbol">AUTO</span><span id="autoHealthText">Auto control: standby</span></div>
         </div>
         <div class="hmi-grid">
           <section class="center-stack">
@@ -1556,13 +1671,13 @@
               </div>
               <div class="hero-readouts" id="heroReadouts"></div>
               <div id="monitorCharts" class="monitor-chart-grid">
-                <div class="chart-card active" data-chart-card="temperature"><div class="chart-card-title"><span>过程历史</span><span>Temp °C</span></div><canvas id="mainChart" class="large-chart" data-chart="temperature" height="320"></canvas></div>
-                <div class="chart-card" data-chart-card="pressure"><div class="chart-card-title"><span>压力趋势</span><span>MPa</span></div><canvas id="pressureChart" class="large-chart" data-chart="pressure" height="180"></canvas></div>
-                <div class="chart-card" data-chart-card="rpm"><div class="chart-card-title"><span>搅拌趋势</span><span>RPM</span></div><canvas id="rpmChart" class="large-chart" data-chart="rpm" height="180"></canvas></div>
-                <div class="chart-card" data-chart-card="concentration"><div class="chart-card-title"><span>浓度趋势</span><span>%</span></div><canvas id="concentrationChart" class="large-chart" data-chart="concentration" height="180"></canvas></div>
-                <div class="chart-card" data-chart-card="shake"><div class="chart-card-title"><span>摇罐速度</span><span>CPM</span></div><canvas id="shakeChart" class="large-chart" data-chart="shake" height="180"></canvas></div>
-                <div class="chart-card" data-chart-card="tilt"><div class="chart-card-title"><span>拟合倾角</span><span>deg</span></div><canvas id="tiltChart" class="large-chart" data-chart="tilt" height="180"></canvas></div>
-                <div class="chart-card" data-chart-card="flow"><div class="chart-card-title"><span>冷却流量</span><span>L/min</span></div><canvas id="flowChart" class="large-chart" data-chart="flow" height="180"></canvas></div>
+                <div class="chart-card active" data-chart-card="temperature"><div class="chart-card-title"><span>Process History</span><span>Temp degC</span></div><canvas id="mainChart" class="large-chart" data-chart="temperature" height="320"></canvas></div>
+                <div class="chart-card" data-chart-card="pressure"><div class="chart-card-title"><span>Pressure Trend</span><span>MPa</span></div><canvas id="pressureChart" class="large-chart" data-chart="pressure" height="180"></canvas></div>
+                <div class="chart-card" data-chart-card="rpm"><div class="chart-card-title"><span>Stirrer Trend</span><span>RPM</span></div><canvas id="rpmChart" class="large-chart" data-chart="rpm" height="180"></canvas></div>
+                <div class="chart-card" data-chart-card="concentration"><div class="chart-card-title"><span>Concentration Trend</span><span>%</span></div><canvas id="concentrationChart" class="large-chart" data-chart="concentration" height="180"></canvas></div>
+                <div class="chart-card" data-chart-card="shake"><div class="chart-card-title"><span>Shake Speed</span><span>CPM</span></div><canvas id="shakeChart" class="large-chart" data-chart="shake" height="180"></canvas></div>
+                <div class="chart-card" data-chart-card="tilt"><div class="chart-card-title"><span>Fitted Tilt</span><span>deg</span></div><canvas id="tiltChart" class="large-chart" data-chart="tilt" height="180"></canvas></div>
+                <div class="chart-card" data-chart-card="flow"><div class="chart-card-title"><span>Cooling Flow</span><span>L/min</span></div><canvas id="flowChart" class="large-chart" data-chart="flow" height="180"></canvas></div>
               </div>
               <div class="progress-row">
                 <span id="stageProgressLabel">Stage</span>
@@ -1586,14 +1701,15 @@
             <section class="panel control-panel">
               <div class="panel-head"><div class="panel-title">Operator Control</div><div id="controlStatus" class="dim mono">Safety limited writes</div></div>
               <div class="control-grid">
-                <div class="control-cell"><div class="label">Target Temp</div><div id="setTemp" class="setpoint">-- °C</div></div>
+                <div class="control-cell"><div class="label">Target Temp</div><div id="setTemp" class="setpoint">-- degC</div></div>
                 <div class="control-cell"><div class="label">Target RPM</div><div id="setRpm" class="setpoint">-- RPM</div></div>
                 <div class="control-cell"><div class="label">Shake Target</div><div id="setShake" class="setpoint">-- CPM</div></div>
                 <div class="control-cell"><div class="label">Hold Time</div><div id="setHold" class="setpoint">-- min</div></div>
                 <div class="control-cell"><div class="label">Active Batch</div><div id="setBatch" class="setpoint">---</div></div>
               </div>
               <div class="actions hmi-actions">
-                <button id="hmiStartBtn" class="primary-btn hmi-action" type="button">START</button>
+                <button id="hmiStartBtn" class="primary-btn hmi-action" type="button">START PROCESS</button>
+                <button id="hmiStopBtn" class="primary-btn danger hmi-action" type="button">STOP PROCESS</button>
                 <button id="hmiPauseBtn" class="secondary-btn hmi-action" type="button">PAUSE AUTO</button>
                 <button id="hmiApplyAiBtn" class="primary-btn hmi-action" type="button">APPLY AI</button>
                 <button id="hmiEstopBtn" class="primary-btn danger hmi-action" type="button">E-STOP</button>
@@ -1604,25 +1720,25 @@
           <section class="right-stack">
             <section class="panel ai-card">
               <div class="panel-title">
-                <span class="ai-card-title-left"><span class="material-symbols-outlined">psychology</span><span>AI 指令中心</span></span>
-                <span class="model-badge" id="monitorModelBadge">模型: --</span>
+                <span class="ai-card-title-left"><span class="material-symbols-outlined">psychology</span><span>AI Command Center</span></span>
+                <span class="model-badge" id="monitorModelBadge">Model: --</span>
               </div>
               <div class="ai-command-body">
-                <div class="ai-advice" id="monitorAiAdvice">等待后端 AI 推荐。</div>
+                <div class="ai-advice" id="monitorAiAdvice">Waiting for backend AI recommendation.</div>
                 <div class="monitor-target-grid">
-                  <div class="monitor-target"><div class="label">目标温度</div><div id="monitorTargetTemp" class="monitor-target-value">-- °C</div></div>
-                  <div class="monitor-target"><div class="label">目标转速</div><div id="monitorTargetRpm" class="monitor-target-value">--</div></div>
+                  <div class="monitor-target"><div class="label">Target Temp</div><div id="monitorTargetTemp" class="monitor-target-value">-- degC</div></div>
+                  <div class="monitor-target"><div class="label">Target RPM</div><div id="monitorTargetRpm" class="monitor-target-value">--</div></div>
                 </div>
-                <button id="monitorApplyAiBtn" class="primary-btn monitor-ai-action" type="button"><span class="material-symbols-outlined">bolt</span> 应用 AI 参数</button>
+                <button id="monitorApplyAiBtn" class="primary-btn monitor-ai-action" type="button"><span class="material-symbols-outlined">bolt</span> Apply AI Params</button>
               </div>
             </section>
             <section class="panel recipe-card">
-              <div class="panel-title"><span>当前批次</span><span id="batchId" class="batch-code-badge">ID: --</span></div>
+              <div class="panel-title"><span>Current Batch</span><span id="batchId" class="batch-code-badge">ID: --</span></div>
               <div class="muted">Started <span id="batchStart">--:--:--</span></div>
               <div class="kv" id="batchSummary"></div>
               <div class="batch-actions">
-                <button class="secondary-btn" type="button" data-tab-jump="recipes">查看日志</button>
-                <button class="text-btn" type="button" data-tab-jump="program">手动覆盖</button>
+                <button class="secondary-btn" type="button" data-tab-jump="recipes">View Log</button>
+                <button class="text-btn" type="button" data-tab-jump="program">Manual Override</button>
               </div>
             </section>
             <section class="panel alarm-card">
@@ -1641,15 +1757,15 @@
       </section>
 
       <section id="view-recipes" class="view">
-        <h1 class="view-title">批次管理</h1>
+        <h1 class="view-title">Batch Management</h1>
         <div class="batch-table-layout">
           <div class="batch-toolbar">
-            <input class="field-line" placeholder="搜索批次编号 / 状态..." aria-label="搜索批次">
-            <input class="field-line" value="" placeholder="开始日期" aria-label="开始日期">
-            <input class="field-line" value="" placeholder="结束日期" aria-label="结束日期">
-            <button class="text-btn" type="button"><span class="material-symbols-outlined">filter_list</span> 高级筛选</button>
-            <button id="historyExportBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> 导出数据</button>
-            <button class="primary-btn" type="button" data-tab-jump="materials"><span class="material-symbols-outlined">psychology</span> 动态学习总览</button>
+            <input class="field-line" placeholder="Search batch ID / status" aria-label="Search batches">
+            <input class="field-line" value="" placeholder="Start date" aria-label="Start date">
+            <input class="field-line" value="" placeholder="End date" aria-label="End date">
+            <button class="text-btn" type="button"><span class="material-symbols-outlined">filter_list</span> Advanced Filter</button>
+            <button id="historyExportBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> Export Data</button>
+            <button class="primary-btn" type="button" data-tab-jump="materials"><span class="material-symbols-outlined">psychology</span> Learning Overview</button>
           </div>
           <section class="batch-table" id="batchTable"></section>
         </div>
@@ -1664,31 +1780,47 @@
       </section>
 
       <section id="view-ai" class="view">
-        <div class="recipe-title-line"><div><h1 class="view-title" style="margin:0;border:0">AI 辅助控制中心</h1><div class="muted">实时后端推荐与参数优化</div></div><div class="nlp-badge"><span class="state-dot"></span><span id="aiProviderStatus">模型状态: --</span></div></div>
+        <div class="recipe-title-line"><div><h1 class="view-title" style="margin:0;border:0">AI Assisted Control Center</h1><div class="muted">Realtime backend recommendation and parameter optimization</div></div><div class="nlp-badge"><span class="state-dot"></span><span id="aiProviderStatus">Model status --</span></div></div>
         <div class="ai-control-grid">
           <div class="ai-left-stack">
             <section class="ai-intent-panel">
-              <div class="recipe-title-line"><h2 class="section-title">推荐来源</h2><span class="status-pill" id="aiConfidencePill">--</span></div>
-              <div class="intent-quote" id="aiIntentQuote">等待后端推荐。</div>
+              <div class="recipe-title-line"><h2 class="section-title">Recommendation Source</h2><span class="status-pill" id="aiConfidencePill">--</span></div>
+              <div class="intent-quote" id="aiIntentQuote">Waiting for backend recommendation.</div>
               <div class="intent-map" id="aiIntentMap"></div>
             </section>
             <section class="ai-preview-panel" style="margin-top:24px">
-              <h2 class="section-title">参数应用预览</h2>
+              <h2 class="section-title">Parameter Application Preview</h2>
               <div class="preview-compare">
-                <div class="preview-box"><div class="label">当前系统状态</div><div class="kv" id="aiCurrentCompare"></div></div>
-                <div class="compare-arrow">→</div>
-                <div class="preview-box suggested"><div class="label">AI 建议目标</div><div class="kv" id="aiSuggestedCompare"></div></div>
+                <div class="preview-box"><div class="label">Current System State</div><div class="kv" id="aiCurrentCompare"></div></div>
+                <div class="compare-arrow">-&gt;</div>
+                <div class="preview-box suggested"><div class="label">AI Suggested Targets</div><div class="kv" id="aiSuggestedCompare"></div></div>
               </div>
-              <div class="action-row" style="border:0;padding-right:0"><button class="text-btn" type="button">忽略</button><button id="applyAiBtn" class="primary-btn" type="button">确认应用建议</button></div>
+              <div class="action-row" style="border:0;padding-right:0"><button class="text-btn" type="button">Ignore</button><button id="applyAiBtn" class="primary-btn" type="button">Apply Recommendation</button></div>
+            </section>
+            <section class="ai-master-panel" style="margin-top:24px">
+              <div class="ai-master-head">
+                <div>
+                  <h2 class="section-title" style="margin:0 0 8px">AI Master Control</h2>
+                  <div class="muted">AI can start/stop process flow and control shake vessel components through the safety executor.</div>
+                </div>
+                <span class="status-pill" id="aiMasterMode">SUPERVISED</span>
+              </div>
+              <div class="ai-master-grid" id="aiMasterSafety"></div>
+              <div class="ai-master-actions">
+                <button id="aiDryRunBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">rule</span> PREVIEW AI CONTROL</button>
+                <button id="aiExecuteBtn" class="primary-btn danger" type="button"><span class="material-symbols-outlined">precision_manufacturing</span> EXECUTE AI MASTER</button>
+              </div>
+              <div class="analysis-note" id="aiMasterRationale">Waiting for AI master-control decision.</div>
+              <div id="aiMasterActions" class="ai-master-action-list"></div>
             </section>
           </div>
           <aside class="ai-right-stack">
             <section class="voice-panel">
               <div class="label" style="color:#ffb4ab">PIPELINE</div>
               <div class="waveform" aria-label="voice waveform"><span style="height:34%"></span><span style="height:62%;animation-delay:.1s"></span><span style="height:48%;animation-delay:.2s"></span><span style="height:82%;animation-delay:.3s"></span><span style="height:100%;animation-delay:.4s"></span><span style="height:76%;animation-delay:.5s"></span><span style="height:42%;animation-delay:.6s"></span><span style="height:68%;animation-delay:.7s"></span></div>
-              <div class="muted mono" id="voicePipelineText" style="text-align:center">等待后端事件...</div>
+              <div class="muted mono" id="voicePipelineText" style="text-align:center">Waiting for backend events...</div>
             </section>
-            <section class="ai-log-panel"><h2 class="section-title">操作日志</h2><div id="aiLogList" class="log-list"></div></section>
+            <section class="ai-log-panel"><h2 class="section-title">Operation Log</h2><div id="aiLogList" class="log-list"></div></section>
           </aside>
           <div class="ai-stack" hidden>
             <section><div id="aiOverview"></div></section>
@@ -1701,17 +1833,17 @@
 
       <section id="view-alarms" class="view">
         <div class="alarm-center-head">
-          <div><h1 class="view-title" style="margin:0;border:0">报警中心</h1><div class="muted">需要操作员立即干预的活动故障。</div></div>
+          <div><h1 class="view-title" style="margin:0;border:0">Alarm Center</h1><div class="muted">Active faults requiring operator intervention.</div></div>
           <div id="alarmStats"></div>
         </div>
         <div class="alarm-center-grid">
           <section class="alarm-list-panel">
-            <div class="filters"><input class="field-line" placeholder="通过节点 ID 或错误代码过滤..."><button class="text-btn" type="button">过滤</button></div>
+            <div class="filters"><input class="field-line" placeholder="Filter by node ID or error code..."><button class="text-btn" type="button">Filter</button></div>
             <div id="activeAlarmRowsFull" class="alarm-table"></div>
           </section>
           <section class="alarm-detail-panel">
             <div id="alarmDetail"></div>
-            <div style="margin-top:22px"><label class="label">操作日志条目</label><div class="voice-command" style="grid-template-columns:minmax(0,1fr) 96px;padding:0;border-left-width:2px"><input class="field-line" placeholder="输入解决注释或采取的操作..."><button class="primary-btn" type="button">记录</button></div></div>
+            <div style="margin-top:22px"><label class="label">Operator Log Entry</label><div class="voice-command" style="grid-template-columns:minmax(0,1fr) 96px;padding:0;border-left-width:2px"><input class="field-line" placeholder="Enter resolution note or action taken..."><button class="primary-btn" type="button">Record</button></div></div>
           </section>
         </div>
         <section style="margin-top:24px" hidden><div id="alarmHistoryRows" class="alarm-table history-scroll"></div></section>
@@ -1719,34 +1851,38 @@
 
       <section id="view-settings" class="view">
         <div class="alarm-center-head">
-          <div><h1 class="view-title" style="margin:0;border:0">设置</h1><div class="muted">系统连接、数据端口与安全控制状态。</div></div>
+          <div><h1 class="view-title" style="margin:0;border:0">Settings</h1><div class="muted">System connection, data endpoints, and safety control state.</div></div>
           <div id="settingsStatus"></div>
         </div>
         <div class="settings-grid">
           <div class="settings-stack">
             <section class="settings-panel">
-              <div class="panel-head"><div class="panel-title">系统状态</div><span class="status-pill" id="settingsHealthPill">ONLINE</span></div>
+              <div class="panel-head"><div class="panel-title">System State</div><span class="status-pill" id="settingsHealthPill">ONLINE</span></div>
               <div class="settings-panel-body">
                 <div class="settings-card-grid" id="settingsCards"></div>
               </div>
             </section>
             <section class="settings-panel">
-              <div class="panel-head"><div class="panel-title">后端数据端口</div><span class="mono muted">READ ONLY</span></div>
+              <div class="panel-head"><div class="panel-title">Backend Data Endpoints</div><span class="mono muted">READ ONLY</span></div>
               <div class="settings-panel-body" id="settingsEndpoints"></div>
             </section>
           </div>
           <div class="settings-stack">
             <section class="settings-panel">
-              <div class="panel-head"><div class="panel-title">控制权限</div><span class="mono muted">SAFETY GATE</span></div>
+              <div class="panel-head"><div class="panel-title">Control Permissions</div><span class="mono muted">SAFETY GATE</span></div>
               <div class="settings-panel-body">
-                <div class="settings-row"><span class="material-symbols-outlined">admin_panel_settings</span><div><div class="label">手动覆盖</div><div class="muted">允许操作员在安全限幅内调整温度、转速与保持时间。</div></div><span class="setting-switch"></span></div>
-                <div class="settings-row"><span class="material-symbols-outlined">psychology</span><div><div class="label">AI 建议应用</div><div class="muted">AI 参数必须通过人工确认后写入控制队列。</div></div><span class="setting-switch"></span></div>
-                <div class="settings-row"><span class="material-symbols-outlined">emergency_home</span><div><div class="label">急停互锁</div><div class="muted">急停和报警确认受硬件互锁保护。</div></div><span class="setting-switch warn"></span></div>
+                <div class="settings-row"><span class="material-symbols-outlined">admin_panel_settings</span><div><div class="label">Manual Override</div><div class="muted">Allow operators to adjust temperature, speed, and hold time inside safety bounds.</div></div><span class="setting-switch"></span></div>
+                <div class="settings-row"><span class="material-symbols-outlined">psychology</span><div><div class="label">AI Recommendation Apply</div><div class="muted">AI parameters require operator confirmation before entering the control queue.</div></div><span class="setting-switch"></span></div>
+                <div class="settings-row"><span class="material-symbols-outlined">emergency_home</span><div><div class="label">Emergency Interlock</div><div class="muted">E-stop and alarm acknowledgement remain protected by hardware interlocks.</div></div><span class="setting-switch warn"></span></div>
               </div>
             </section>
             <section class="settings-panel">
-              <div class="panel-head"><div class="panel-title">设备通道</div><span class="mono muted" id="settingsDeviceRatio">0/0</span></div>
+              <div class="panel-head"><div class="panel-title">Device Channel</div><span class="mono muted" id="settingsDeviceRatio">0/0</span></div>
               <div class="settings-panel-body" id="settingsDevices"></div>
+            </section>
+            <section class="settings-panel">
+              <div class="panel-head"><div class="panel-title">Component Control</div><span class="mono muted">DEVICE COMPONENTS</span></div>
+              <div class="settings-panel-body" id="settingsComponents"></div>
             </section>
           </div>
         </div>
@@ -1768,6 +1904,14 @@
     const pad2 = (value) => String(value).padStart(2, "0");
     const nowTime = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
     const API_DEVICE_ID = "reactor_001";
+    const LIVE_SAMPLE_LIMIT = 60;
+    const MAX_HISTORY_POINTS = 60;
+    const POLL_BACKEND_MS = 2500;
+    const DEVICE_META_POLL_MS = 15000;
+    const DEMO_CONTEXT_POLL_MS = 30000;
+    const LIVE_QUERY = `sample_limit=${LIVE_SAMPLE_LIMIT}&include_processes=true&include_batches=true&include_events=false`;
+    let drawQueued = false;
+    let themeCache = null;
 
     const state = {
       activeTab: "monitor",
@@ -1778,6 +1922,9 @@
       dataReady: false,
       backendError: null,
       deviceStatus: null,
+      deviceCapabilities: null,
+      lastDeviceMetaPollMs: 0,
+      lastDemoContextPollMs: 0,
       running: false,
       elapsedSeconds: 0,
       programElapsed: 0,
@@ -1787,8 +1934,8 @@
       batchStart: "--:--:--",
       lastAlarmAt: {},
       sensors: [
-        { key: "temperature", label: "TEMP", name: "Temperature", value: null, target: null, ai: null, unit: "°C", min: 0, max: 300, normal: [50, 240], decimals: 2 },
-        { key: "pressure", label: "PRESSURE", name: "Pressure", value: null, target: null, ai: null, unit: "MPa", min: 0, max: 1, normal: [0.05, 0.5], decimals: 2 },
+        { key: "temperature", label: "TEMP", name: "Temperature", value: null, target: null, ai: null, unit: "degC", min: 0, max: 300, normal: [50, 240], decimals: 2 },
+        { key: "pressure", label: "PRESS", name: "Pressure", value: null, target: null, ai: null, unit: "MPa", min: 0, max: 1.2, normal: [0.05, 0.9], decimals: 2 },
         { key: "rpm", label: "RPM", name: "Stirrer RPM", value: null, target: null, ai: null, unit: "RPM", min: 0, max: 1200, normal: [100, 900], decimals: 2 },
         { key: "shake", label: "SHAKE", name: "Shake Vessel Speed", value: null, target: null, ai: null, unit: "CPM", min: 0, max: 60, normal: [0, 50], decimals: 2 },
         { key: "tilt", label: "TILT", name: "Tilt Angle", value: null, target: null, ai: null, unit: "deg", min: -45, max: 45, normal: [-30, 30], decimals: 2 },
@@ -1800,9 +1947,9 @@
       targetHistories: { temperature: [], pressure: [], rpm: [], shake: [], tilt: [], flow: [], concentration: [], ph: [] },
       aiHistories: { temperature: [], pressure: [], rpm: [], shake: [], tilt: [], flow: [], concentration: [], ph: [] },
       stages: [
-        { name: "Heat-up", temp: 120, rate: 8, duration: 5, rpm: 300, shake: 30, cooling: "自然" },
-        { name: "Hold", temp: 120, rate: 0, duration: 10, rpm: 300, shake: 30, cooling: "自然" },
-        { name: "Cool-down", temp: 60, rate: 0, duration: 3, rpm: 160, shake: 12, cooling: "风冷" }
+        { name: "Heat-up", temp: 120, rate: 8, duration: 5, rpm: 300, shake: 30, cooling: "Natural" },
+        { name: "Hold", temp: 120, rate: 0, duration: 10, rpm: 300, shake: 30, cooling: "Natural" },
+        { name: "Cool-down", temp: 60, rate: 0, duration: 3, rpm: 160, shake: 12, cooling: "Air" }
       ],
       recipes: [],
       ingredients: [],
@@ -1826,6 +1973,9 @@
       aiProvider: null,
       aiMemory: null,
       aiRecommendation: null,
+      recommendationRefreshing: false,
+      recommendationRefreshAttempted: false,
+      aiMasterDecision: null,
       recentEvents: [],
       aiSensitivityParam: null,
       sensitivityHitboxes: []
@@ -1848,6 +1998,9 @@
       state.historyLoaded = false;
       state.alarms = [];
       state.aiLogs = [];
+      state.recommendationRefreshing = false;
+      state.recommendationRefreshAttempted = false;
+      state.aiMasterDecision = null;
       state.coefficients = [];
       state.ingredients = [];
       state.recentEvents = [];
@@ -1864,7 +2017,7 @@
       const activeButton = $(`.tab-btn[data-tab="${state.activeTab}"], .nav-settings[data-tab="${state.activeTab}"]`);
       const title = activeButton?.querySelector("span:last-child")?.textContent || activeButton?.textContent || "ReactorOS";
       if ($("#pageTitle")) $("#pageTitle").textContent = title.trim();
-      requestAnimationFrame(drawAll);
+      scheduleDraw();
     }
 
     function switchTab(tab) {
@@ -1896,13 +2049,29 @@
       return payload;
     }
 
+    async function refreshDeviceMeta(force = false) {
+      const now = Date.now();
+      if (!force && now - state.lastDeviceMetaPollMs < DEVICE_META_POLL_MS) return;
+      state.lastDeviceMetaPollMs = now;
+      try {
+        const devices = await apiJson("/api/devices/status");
+        state.deviceStatus = devices?.data || null;
+      } catch (_) {
+        state.deviceStatus = null;
+      }
+      try {
+        const capabilities = await apiJson("/api/devices/capabilities");
+        state.deviceCapabilities = capabilities?.data || null;
+      } catch (_) {
+        state.deviceCapabilities = null;
+      }
+    }
+
     async function pollBackend() {
       try {
-        const live = await apiJson("/api/live");
+        const live = await apiJson(`/api/live?${LIVE_QUERY}`);
         if (!live.runtime?.latest_sample) throw Object.assign(new Error("sensor data unavailable"), { code: 503 });
-        let devices = null;
-        try { devices = await apiJson("/api/devices/status"); } catch (_) { devices = null; }
-        state.deviceStatus = devices?.data || null;
+        await refreshDeviceMeta(false);
         applyBackendLive(live);
         state.backendOnline = true;
         state.dataReady = true;
@@ -1911,16 +2080,71 @@
         state.backendOnline = false;
         state.dataReady = false;
         state.backendError = { code: err.code || 500, message: err.message || "backend unavailable" };
-        try {
-          const devices = await apiJson("/api/devices/status");
-          state.deviceStatus = devices?.data || null;
-        } catch (_) {
-          state.deviceStatus = null;
-        }
+        await refreshDeviceMeta(false);
         applyPipelineError();
+        await loadDemoContext();
       }
       renderPassive({ preserveActiveView: true });
       window.__reactorState = state;
+    }
+
+    async function loadDemoContext() {
+      const now = Date.now();
+      if (now - state.lastDemoContextPollMs < DEMO_CONTEXT_POLL_MS) return;
+      state.lastDemoContextPollMs = now;
+      try {
+        const context = unwrapData(await apiJson("/api/demo/context"));
+        applyDemoContext(context);
+      } catch (_) {
+        // Demo context is optional; production sensor errors must still be visible.
+      }
+    }
+
+    function applyDemoContext(context) {
+      if (!context?.demo) return;
+      state.aiProvider = context.ai_provider || state.aiProvider;
+      state.aiMemory = context.ai_memory || state.aiMemory;
+      state.recentEvents = Array.isArray(context.recent_events) ? context.recent_events : state.recentEvents;
+      if (Array.isArray(context.processes)) {
+        mergeProcessSummaries(context.processes);
+        state.processesLoaded = true;
+        state.processError = null;
+      }
+      mergeBatches(
+        Array.isArray(context.recent_batches) ? context.recent_batches : [],
+        Array.isArray(context.recent_outcomes) ? context.recent_outcomes : [],
+        []
+      );
+      state.historyLoaded = true;
+      state.historyError = null;
+      mapRecommendation(context.latest_recommendation);
+      const demoAlarms = Array.isArray(context.demo_alarms) ? context.demo_alarms.map((alarm) => ({
+        id: `demo-${alarm.id}`,
+        type: alarm.alarm_type,
+        sensor: alarm.sensor,
+        level: alarm.level,
+        message: alarm.message,
+        current_value: alarm.current_value,
+        limit_value: alarm.limit_value,
+        suggestion: alarm.suggestion,
+        created_at: alarm.created_at
+      })) : [];
+      const pipelineAlarm = state.alarms.find((alarm) => alarm.id === "pipeline-error");
+      mapAlarms([...(pipelineAlarm ? [{
+        id: pipelineAlarm.id,
+        sensor: pipelineAlarm.sensor,
+        level: "high",
+        message: pipelineAlarm.description,
+        current_value: pipelineAlarm.value,
+        created_at: new Date().toISOString()
+      }] : []), ...demoAlarms]);
+      mapAi({
+        latest_recommendation: context.latest_recommendation,
+        recent_events: context.recent_events || [],
+      });
+      if (state.aiLogs.length) {
+        state.aiLogs.unshift("DEMO: process, batch history, and AI context loaded; live sensors still require the real pipeline.");
+      }
     }
 
     function applyBackendLive(live) {
@@ -1965,8 +2189,44 @@
       mapRecentSamples(live.recent_samples || [sample]);
       mapBatches(live.recent_batches || [], live.recent_outcomes || [], live.recent_samples || []);
       mapRecommendation(live.latest_recommendation);
+      maybeRefreshStepFunRecommendation(live.latest_recommendation);
       mapAlarms(live.alarms || []);
       mapAi(live);
+    }
+
+    function isStepFunFallbackRecommendation(rec) {
+      const rationale = String(rec?.rationale || "");
+      return rationale.includes("StepFun request failed") || rationale.includes("local fallback");
+    }
+
+    function shouldRefreshStepFunRecommendation(rec) {
+      const providerMode = String(state.aiProvider?.mode || "");
+      const modelName = String(state.aiProvider?.model || "");
+      if (!modelName.includes("step") && !providerMode.includes("stepfun")) return false;
+      return !rec || isStepFunFallbackRecommendation(rec);
+    }
+
+    async function maybeRefreshStepFunRecommendation(rec) {
+      if (!shouldRefreshStepFunRecommendation(rec)) {
+        state.recommendationRefreshAttempted = false;
+        return;
+      }
+      if (state.recommendationRefreshAttempted || state.recommendationRefreshing) return;
+      state.recommendationRefreshAttempted = true;
+      state.recommendationRefreshing = true;
+      try {
+        const payload = await apiJson("/api/recommendations/latest");
+        const envelope = payload?.provider ? payload : null;
+        const next = envelope ? payload : payload?.recommendation || payload;
+        if (envelope?.provider) state.aiProvider = envelope.provider;
+        mapRecommendation(next);
+        mapAi({ latest_recommendation: next, recent_events: state.recentEvents });
+      } catch (err) {
+        state.aiLogs.unshift(`AI refresh failed code=${err.code || 500}: ${err.message || "request failed"}`);
+      } finally {
+        state.recommendationRefreshing = false;
+        renderPassive({ preserveActiveView: true });
+      }
     }
 
     function setSensor(key, value, target, ai) {
@@ -2010,7 +2270,7 @@
         const values = samples.map((sample) => toNumber(sample[keys[key]])).filter((value) => value !== null);
         const current = sensor(key);
         if (current && toNumber(current.value) !== null && !values.length) values.push(toNumber(current.value));
-        state.histories[key] = values.slice(-120);
+        state.histories[key] = values.slice(-MAX_HISTORY_POINTS);
         state.targetHistories[key] = Array(state.histories[key].length).fill(toNumber(current?.target)).map((value) => value ?? null);
         state.aiHistories[key] = Array(state.histories[key].length).fill(toNumber(current?.ai)).map((value) => value ?? null);
       });
@@ -2071,6 +2331,7 @@
     }
 
     function applyPipelineError() {
+      const masterDecision = state.aiMasterDecision;
       state.sensors.forEach((item) => { item.value = null; item.target = null; item.ai = null; });
       Object.keys(state.histories).forEach((key) => {
         state.histories[key] = [];
@@ -2079,16 +2340,11 @@
       });
       state.recipes = [];
       state.ingredients = [];
-      state.coefficients = [];
-      state.aiLogs = [];
-      state.aiProvider = null;
-      state.aiMemory = null;
-      state.aiRecommendation = null;
-      state.recentEvents = [];
       state.activeBatchId = null;
       state.running = false;
       state.batchNo = null;
       state.batchStart = "--:--:--";
+      state.aiMasterDecision = masterDecision;
       const id = "pipeline-error";
       state.alarms = [{
         id,
@@ -2114,14 +2370,18 @@
     function renderPassive(options = {}) {
       const preserveActiveView = options.preserveActiveView === true;
       renderSidebar();
-      renderMonitor();
-      if (!preserveActiveView || state.activeTab !== "program") renderProgram();
-      if (!preserveActiveView || state.activeTab !== "recipes") renderRecipes();
-      if (!preserveActiveView || state.activeTab !== "materials") renderMaterials();
-      if (!preserveActiveView || state.activeTab !== "ai") renderAI();
-      if (!preserveActiveView || state.activeTab !== "alarms") renderAlarms();
-      if (!preserveActiveView || state.activeTab !== "settings") renderSettings();
-      drawAll();
+      if (!preserveActiveView) {
+        renderActiveView();
+      } else if (state.activeTab === "monitor") {
+        renderMonitor();
+      } else if (state.activeTab === "ai") {
+        renderAiMasterControl();
+      } else if (state.activeTab === "alarms") {
+        renderAlarms();
+      } else if (state.activeTab === "settings") {
+        renderSettings();
+      }
+      scheduleDraw();
     }
 
     function timeLabel(iso) {
@@ -2147,7 +2407,7 @@
     async function latestFinishedBatchId() {
       const current = latestKnownBatchId();
       try {
-        const live = await apiJson("/api/live");
+        const live = await apiJson("/api/live?sample_limit=1&include_processes=false&include_batches=true&include_events=false");
         const batches = Array.isArray(live.recent_batches) ? live.recent_batches : [];
         const finished = batches.filter((batch) => batch.finished_at).sort((a, b) => a.id - b.id).at(-1);
         if (finished?.id) {
@@ -2163,18 +2423,33 @@
     function renderSidebar() {
       const grid = $("#sideSensors");
       if (grid) {
-        grid.innerHTML = state.sensors.map((item) => {
+        if (grid.children.length !== state.sensors.length) {
+          grid.innerHTML = state.sensors.map((item) => `
+            <div class="side-sensor" data-sensor="${item.key}">
+              <div class="sensor-topline"><div class="sensor-label">${item.label}</div><div class="sensor-status" data-sensor-status="${item.key}"><span class="state-dot"></span><span data-sensor-status-text="${item.key}">NORMAL</span></div></div>
+              <div class="sensor-number" data-sensor-value="${item.key}"></div>
+              <div class="sensor-meta" data-sensor-meta="${item.key}"></div>
+              <canvas class="mini-trend" data-mini="${item.key}" height="42"></canvas>
+            </div>`).join("");
+        }
+        state.sensors.forEach((item) => {
           const out = isSensorOut(item);
           const target = toNumber(item.target);
           const meta = target === null ? `Range ${fmtValue(item.normal[0], item.decimals)}-${fmtValue(item.normal[1], item.decimals)} ${item.unit}` : `Target ${fmtValue(target, item.decimals)} ${item.unit}`;
-          return `
-            <div class="side-sensor" data-sensor="${item.key}">
-              <div class="sensor-topline"><div class="sensor-label">${item.label}</div><div class="sensor-status ${out ? "danger" : ""}"><span class="state-dot ${out ? "danger" : ""}"></span>${out ? "LIMIT" : "NORMAL"}</div></div>
-              <div class="sensor-number ${out ? "danger" : ""}">${fmtValue(item.value, item.decimals)} ${item.unit}</div>
-              <div class="sensor-meta">${meta}</div>
-              <canvas class="mini-trend" data-mini="${item.key}" height="42"></canvas>
-            </div>`;
-        }).join("");
+          const status = $(`[data-sensor-status="${item.key}"]`);
+          const dot = status?.querySelector(".state-dot");
+          status?.classList.toggle("danger", out);
+          dot?.classList.toggle("danger", out);
+          const statusText = $(`[data-sensor-status-text="${item.key}"]`);
+          if (statusText) statusText.textContent = out ? "LIMIT" : "NORMAL";
+          const value = $(`[data-sensor-value="${item.key}"]`);
+          if (value) {
+            value.classList.toggle("danger", out);
+            value.textContent = `${fmtValue(item.value, item.decimals)} ${item.unit}`;
+          }
+          const metaNode = $(`[data-sensor-meta="${item.key}"]`);
+          if (metaNode) metaNode.textContent = meta;
+        });
       }
       const active = activeAlarms().length;
       if ($("#alarmSummary")) $("#alarmSummary").textContent = active + " active alarms";
@@ -2201,15 +2476,15 @@
       const keys = ["temperature", "pressure", "rpm"];
       const icons = { temperature: "thermostat", pressure: "compress", rpm: "cyclone" };
       const heroDecimals = { temperature: 1, pressure: 2, rpm: 0 };
-      const labels = { temperature: "温度", pressure: "压力", rpm: "搅拌器" };
+      const labels = { temperature: "Temperature", pressure: "Pressure", rpm: "Stirrer" };
       target.innerHTML = keys.map((key) => {
         const item = sensor(key);
         const decimals = heroDecimals[key] ?? item.decimals;
         const out = isSensorOut(item);
         const meta = key === "temperature"
-          ? (state.dataReady ? "来自数据管线" : pipelineErrorText())
+          ? (state.dataReady ? "From data pipeline" : pipelineErrorText())
           : key === "pressure"
-            ? (state.dataReady ? (out ? "压力接近上限" : "管线在线") : pipelineErrorText())
+            ? (state.dataReady ? (out ? "Pressure near limit" : "Pipeline online") : pipelineErrorText())
             : `<div class="hero-progress"><span style="width:${clamp(((toNumber(item.value) ?? 0) / Math.max(1, item.max)) * 100, 0, 100)}%"></span></div>`;
         return `<div class="hero-readout ${out ? "limit" : ""} ${!state.dataReady ? "danger" : ""}" data-hero="${item.key}"><span class="material-symbols-outlined hero-icon">${icons[key] || "sensors"}</span><div class="hero-label">${labels[key]}</div><div class="hero-value">${fmtValue(item.value, decimals)}<span class="unit">${item.unit}</span></div><div class="hero-meta">${key === "temperature" ? '<span class="material-symbols-outlined">arrow_upward</span>' : key === "pressure" ? '<span class="material-symbols-outlined">horizontal_rule</span>' : ""}<span>${meta}</span></div></div>`;
       }).join("");
@@ -2230,16 +2505,16 @@
       const rpm = sensor("rpm");
       const targetTemp = rec?.temp ?? sensor("temperature").target;
       const targetRpm = rec?.rpm ?? sensor("rpm").target;
-      if ($("#monitorModelBadge")) $("#monitorModelBadge").textContent = "模型: " + (state.aiProvider?.model || "--");
-      if ($("#monitorAiAdvice")) $("#monitorAiAdvice").textContent = rec?.rationale ? `"${rec.rationale}"` : (state.backendError ? pipelineErrorText() : "等待后端 AI 推荐。");
-      if ($("#monitorTargetTemp")) $("#monitorTargetTemp").textContent = fmtValue(targetTemp, 0) + "°C";
+      if ($("#monitorModelBadge")) $("#monitorModelBadge").textContent = "Model: " + (state.aiProvider?.model || "--");
+      if ($("#monitorAiAdvice")) $("#monitorAiAdvice").textContent = rec?.rationale ? `"${rec.rationale}"` : (state.backendError ? pipelineErrorText() : "Waiting for backend AI recommendation.");
+      if ($("#monitorTargetTemp")) $("#monitorTargetTemp").textContent = fmtValue(targetTemp, 0) + " degC";
       if ($("#monitorTargetRpm")) $("#monitorTargetRpm").textContent = fmtValue(targetRpm, 0);
       if ($("#batchSummary")) {
         $("#batchSummary").innerHTML = rows([
-          ["阶段", stage.name.toLowerCase().includes("heat") ? "放热反应" : stage.name],
-          ["已用时间", formatDuration(state.programElapsed)],
-          ["预计完成时间", formatDuration(Math.max(0, stage.duration * 60 - state.programElapsed))],
-          ["数据来源", state.dataReady ? "后端数据管线" : pipelineErrorText()]
+          ["Stage", stage.name.toLowerCase().includes("heat") ? "Heating reaction" : stage.name],
+          ["Elapsed", formatDuration(state.programElapsed)],
+          ["Remaining", formatDuration(Math.max(0, stage.duration * 60 - state.programElapsed))],
+          ["Source", state.dataReady ? "Backend data pipeline" : pipelineErrorText()]
         ]);
       }
       if ($("#feedSummary")) $("#feedSummary").innerHTML = rows(feedRows());
@@ -2247,21 +2522,24 @@
       if ($("#stageProgressPercent")) $("#stageProgressPercent").textContent = fmtValue(progress, 2) + "%";
       if ($("#stageProgressTime")) $("#stageProgressTime").textContent = "Elapsed " + formatDuration(state.programElapsed) + " / Plan " + formatDuration(stage.duration * 60);
       if ($("#stageProgressFill")) $("#stageProgressFill").style.width = progress + "%";
-      if ($("#setTemp")) $("#setTemp").textContent = fmtValue(targetTemp, 2) + " °C";
+      if ($("#setTemp")) $("#setTemp").textContent = fmtValue(targetTemp, 2) + " degC";
       if ($("#setRpm")) $("#setRpm").textContent = fmtValue(targetRpm, 2) + " RPM";
       if ($("#setShake")) $("#setShake").textContent = fmtValue(sensor("shake").target, 2) + " CPM";
       if ($("#setHold")) $("#setHold").textContent = fmtValue(rec?.hold, 2) + " min";
       if ($("#setBatch")) $("#setBatch").textContent = state.activeBatchId ? String(state.activeBatchId).padStart(3, "0") : "---";
       if ($("#controlStatus")) $("#controlStatus").textContent = state.dataReady ? "Safety limited writes" : "Pipeline unavailable code=" + (state.backendError?.code || 503);
+      if ($("#hmiStartBtn")) $("#hmiStartBtn").textContent = state.running ? "PROCESS RUNNING" : "START PROCESS";
+      if ($("#hmiStartBtn")) $("#hmiStartBtn").disabled = state.running;
+      if ($("#hmiStopBtn")) $("#hmiStopBtn").disabled = !state.running;
       const active = activeAlarms().length;
       if ($("#systemHealthBlock")) $("#systemHealthBlock").className = "status-block " + (!state.dataReady || active ? "danger" : "");
-      if ($("#systemHealthText")) $("#systemHealthText").textContent = state.backendError ? `系统健康: 错误 ${state.backendError.code}` : active ? `系统健康: ${active} 报警` : "系统健康: 正常";
+      if ($("#systemHealthText")) $("#systemHealthText").textContent = state.backendError ? `System health: error ${state.backendError.code}` : active ? `System health: ${active} alarms` : "System health: normal";
       if ($("#esp32HealthBlock")) $("#esp32HealthBlock").className = "status-block " + (state.dataReady ? "" : "warning");
       const onlineCount = state.deviceStatus?.online_count ?? 0;
       const totalCount = state.deviceStatus?.total_count ?? 1;
-      if ($("#esp32HealthText")) $("#esp32HealthText").textContent = state.dataReady ? `ESP32 连接: 活跃 ${onlineCount}/${totalCount}` : `ESP32 连接: ${onlineCount}/${totalCount}`;
+      if ($("#esp32HealthText")) $("#esp32HealthText").textContent = state.dataReady ? `ESP32 link: active ${onlineCount}/${totalCount}` : `ESP32 link: ${onlineCount}/${totalCount}`;
       if ($("#autoHealthBlock")) $("#autoHealthBlock").className = "status-block auto " + (state.running ? "" : "warning");
-      if ($("#autoHealthText")) $("#autoHealthText").textContent = state.running ? "自动控制: 已启用" : "自动控制: 待机";
+      if ($("#autoHealthText")) $("#autoHealthText").textContent = state.running ? "Auto control: enabled" : "Auto control: standby";
       renderManualControls();
     }
 
@@ -2303,8 +2581,8 @@
       if ($("#manualRpmRange")) $("#manualRpmRange").value = String(toNumber(rpm.target ?? rpm.value) ?? 0);
       if ($("#manualTempFill")) $("#manualTempFill").style.width = temp.value === null ? "0%" : clamp((temp.value / Math.max(1, temp.max)) * 100, 0, 100) + "%";
       if ($("#manualPressureFill")) $("#manualPressureFill").style.width = pressure.value === null ? "0%" : clamp((pressure.value / Math.max(1, pressure.max)) * 100, 0, 100) + "%";
-      if ($("#manualTempMeta")) $("#manualTempMeta").textContent = state.dataReady ? `当前 ${fmtValue(temp.value, 1)} / 目标 ${fmtValue(temp.target, 1)}` : pipelineErrorText();
-      if ($("#manualPressureMeta")) $("#manualPressureMeta").textContent = state.dataReady ? `当前 ${fmtValue(pressure.value, 2)} / 目标 ${fmtValue(pressure.target, 2)}` : pipelineErrorText();
+      if ($("#manualTempMeta")) $("#manualTempMeta").textContent = state.dataReady ? `Current ${fmtValue(temp.value, 1)} / Target ${fmtValue(temp.target, 1)}` : pipelineErrorText();
+      if ($("#manualPressureMeta")) $("#manualPressureMeta").textContent = state.dataReady ? `Current ${fmtValue(pressure.value, 2)} / Target ${fmtValue(pressure.target, 2)}` : pipelineErrorText();
     }
 
     function feedRows() {
@@ -2407,9 +2685,9 @@
     function renderProcessList(root) {
       if (!state.processesLoaded && !state.processLoading) void refreshProcesses({ silent: true });
       const processNotice = state.processError
-        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>工艺数据错误</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
+        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>Process data error</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
         : state.backendError
-          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>实时管线状态</strong><br>${escapeHtml(pipelineErrorText())}<br>工艺定义仍可通过 /api/processes 添加和配置。</div>`
+          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>Realtime pipeline status</strong><br>${escapeHtml(pipelineErrorText())}<br>Process definitions can still be added and configured through /api/processes.</div>`
           : "";
       const processRows = state.processes.length
         ? state.processes.map((process) => `
@@ -2417,29 +2695,29 @@
             <span class="process-row-main">
               <span class="process-row-title">${escapeHtml(process.name)}</span>
               <span class="process-row-meta">
-                <span>版本 V${process.version}</span>
-                <span>${process.step_count || 0} 个步骤</span>
-                <span>状态 ${process.status === "applied" ? "已应用" : process.status === "archived" ? "已归档" : "草稿"}</span>
-                <span>更新 ${shortDateTime(process.updated_at) || "--"}</span>
+                <span>Version V${process.version}</span>
+                <span>${process.step_count || 0} steps</span>
+                <span>Status ${process.status === "applied" ? "Applied" : process.status === "archived" ? "Archived" : "Draft"}</span>
+                <span>Updated ${shortDateTime(process.updated_at) || "--"}</span>
               </span>
             </span>
-            <span class="process-row-action"><span class="material-symbols-outlined">arrow_forward</span> 配置</span>
+            <span class="process-row-action"><span class="material-symbols-outlined">arrow_forward</span> Configure</span>
           </button>`).join("")
-        : `<div class="empty-state">${state.processLoading ? "正在从 /api/processes 读取工艺列表..." : state.processError ? scopedErrorText("PROCESS", state.processError) : "后端暂无工艺定义。点击新增工艺后会写入数据管线。"}</div>`;
+        : `<div class="empty-state">${state.processLoading ? "Loading /api/processes..." : state.processError ? scopedErrorText("PROCESS", state.processError) : "No process definitions from backend yet. Create one to write through the data pipeline."}</div>`;
       root.innerHTML = `
         <div class="process-list-head">
           <div>
-            <h1 class="view-title" style="margin:0;border:0">工艺控制面板</h1>
-            <div class="muted" style="margin-top:10px">先选择或新增一个工艺，再进入步骤配置与优化参数应用。</div>
+            <h1 class="view-title" style="margin:0;border:0">Process Control Panel</h1>
+            <div class="muted" style="margin-top:10px">Select or create a process, then configure steps and optimization parameters.</div>
           </div>
-          <button id="createProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">add</span> 新增工艺</button>
+          <button id="createProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">add</span> New Process</button>
         </div>
         ${processNotice}
         <div class="program-status-bar">
-          <div class="status-block"><span class="state-dot ${state.processError ? "danger" : state.backendError ? "warning" : ""}"></span><span>工艺接口: <span id="programProcessStatusText">${state.processError ? "错误 " + state.processError.code : state.processLoading ? "读取中" : "在线"}</span></span></div>
-          <div class="status-block"><span class="state-dot ${state.backendError ? "warning" : ""}"></span><span>实时管线: <span id="programStatusText">${state.backendError ? "错误 " + state.backendError.code : state.running ? "运行中" : "待机"}</span></span></div>
-          <div class="status-block"><span class="material-symbols-outlined">schema</span><span>工艺: ${state.processes.length}</span></div>
-          <div class="status-block"><span class="material-symbols-outlined">science</span><span>活动批次: <span id="programBatchText">${state.activeBatchId || "---"}</span></span></div>
+          <div class="status-block"><span class="state-dot ${state.processError ? "danger" : state.backendError ? "warning" : ""}"></span><span>Process API: <span id="programProcessStatusText">${state.processError ? "Error " + state.processError.code : state.processLoading ? "Loading" : "Online"}</span></span></div>
+          <div class="status-block"><span class="state-dot ${state.backendError ? "warning" : ""}"></span><span>Realtime pipeline: <span id="programStatusText">${state.backendError ? "Error " + state.backendError.code : state.running ? "Running" : "Standby"}</span></span></div>
+          <div class="status-block"><span class="material-symbols-outlined">schema</span><span>Processes: ${state.processes.length}</span></div>
+          <div class="status-block"><span class="material-symbols-outlined">science</span><span>Active batch: <span id="programBatchText">${state.activeBatchId || "---"}</span></span></div>
         </div>
         <div class="process-list">${processRows}</div>`;
       bindProcessListActions();
@@ -2458,41 +2736,41 @@
       const activeStep = steps.find((step) => step.id === state.selectedProcessStepId) || steps.at(-1) || null;
       const rec = activeRecommendation();
       const processNotice = state.processError
-        ? `<div class="analysis-note warn"><strong>工艺数据错误</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
+        ? `<div class="analysis-note warn"><strong>Process data error</strong><br>${escapeHtml(scopedErrorText("PROCESS", state.processError))}</div>`
         : "";
       const aiNote = rec?.rationale
-        || (state.backendError ? "实时管线暂不可用，工艺定义可以继续编辑；应用参数时后端会返回明确错误码。" : "等待后端推荐。");
+        || (state.backendError ? "Realtime pipeline is unavailable; process definitions can still be edited, but applying parameters will return backend error codes." : "Waiting for backend recommendation.");
       root.innerHTML = `
         <div class="process-detail-head">
           <div>
-            <button id="backToProcessListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> 返回列表</button>
-            <h1 class="process-detail-title">${escapeHtml(process.name)}</h1>
-            <div class="muted" style="margin-top:10px">版本 V${process.version} | 最后修改 ${shortDateTime(process.updated_at) || "--"} | 状态 ${process.status === "applied" ? "已应用" : "草稿"}</div>
+            <button id="backToProcessListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> Back to list</button>
+            <button id="backToProcessListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> Back to list</button>
+            <div class="muted" style="margin-top:10px">Version V${process.version} | Updated ${shortDateTime(process.updated_at) || "--"} | Status ${process.status === "applied" ? "Applied" : "Draft"}</div>
             <div class="process-meta-fields">
-              <div class="field"><label class="label" for="processNameInput">工艺名称</label><input id="processNameInput" class="field-line" value="${escapeHtml(process.name)}"></div>
-              <div class="field"><label class="label" for="processDescriptionInput">工艺说明</label><input id="processDescriptionInput" class="field-line" value="${escapeHtml(process.description || "")}" placeholder="例如 RX-78 高分子聚合"></div>
-              <button id="saveProcessMetaBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">edit</span> 保存定义</button>
-            </div>
+              <div class="field"><label class="label" for="processNameInput">宸ヨ壓鍚嶇О</label><input id="processNameInput" class="field-line" value="${escapeHtml(process.name)}"></div>
+              <div class="field"><label class="label" for="processNameInput">Process Name</label><input id="processNameInput" class="field-line" value="${escapeHtml(process.name)}"></div>
+              <div class="field"><label class="label" for="processDescriptionInput">Process Description</label><input id="processDescriptionInput" class="field-line" value="${escapeHtml(process.description || "")}" placeholder="Example: RX-78 polymer synthesis"></div>
+              <button id="saveProcessMetaBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">edit</span> Save Definition</button>
           </div>
           <div class="process-detail-actions">
-            <button id="addProcessStepBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">add</span> 添加下一步</button>
-            <button id="applyProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">play_arrow</span> 应用此工艺</button>
-          </div>
+
+            <button id="addProcessStepBtn" class="secondary-btn" type="button"><span class="material-symbols-outlined">add</span> Add Step</button>
+            <button id="applyProcessBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">play_arrow</span> Start Process</button>
         </div>
         ${processNotice}
         <div class="process-detail-grid">
           <section class="process-stage-list">
-            ${steps.length ? steps.map((step) => processStepMarkup(step, activeStep?.id === step.id)).join("") : `<div class="empty-state">此工艺还没有步骤。点击“添加下一步”后配置第一步。</div>`}
+            ${steps.length ? steps.map((step) => processStepMarkup(step, activeStep?.id === step.id)).join("") : `<div class="empty-state">This process has no steps yet. Add a step, then configure its parameters.</div>`}
           </section>
           <aside style="display:grid;gap:24px">
             ${processStepEditorMarkup(activeStep)}
             <section class="process-ai-notes">
-              <div class="panel-title" id="programAiTitle">AI 优化建议 & 历史表现</div>
-              <div class="analysis-note"><strong style="color:var(--green)">建议</strong><br><span id="programAiReason">${escapeHtml(aiNote)}</span></div>
-              <div class="overview-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))">
-                <div><div class="label">历史成功率</div><div class="metric">${fmtValue(successRateForProcess(process.id), 1)}%</div><div class="muted">来自关联批次结果</div></div>
-                <div><div class="label">学习样本</div><div class="metric">${state.batches.filter((batch) => batch.process_id === process.id).length}</div><div class="muted">真实后端批次</div></div>
-              </div>
+
+              <div class="panel-title" id="programAiTitle">AI Optimization Advice & History</div>
+              <div class="analysis-note"><strong style="color:var(--green)">Advice</strong><br><span id="programAiReason">${escapeHtml(aiNote)}</span></div>
+
+                <div><div class="label">Historical Success</div><div class="metric">${fmtValue(successRateForProcess(process.id), 1)}%</div><div class="muted">From linked batch outcomes</div></div>
+                <div><div class="label">Learning Samples</div><div class="metric">${state.batches.filter((batch) => batch.process_id === process.id).length}</div><div class="muted">Real backend batches</div></div>
             </section>
           </aside>
         </div>`;
@@ -2500,20 +2778,20 @@
     }
 
     function processStepMarkup(step, active) {
-      const icon = step.step_index === 1 ? "local_fire_department" : step.name.includes("冷") ? "ac_unit" : "hourglass_empty";
+      const icon = step.step_index === 1 ? "local_fire_department" : step.name.toLowerCase().includes("cool") ? "ac_unit" : "hourglass_empty";
       const valueClass = step.step_index === 1 ? "accent" : step.step_index === 2 ? "success" : "";
       return `<button class="process-step-card ${active ? "active" : ""}" type="button" data-step-open="${step.id}">
         <span class="step-icon"><span class="material-symbols-outlined">${icon}</span></span>
         <span>
           <span class="recipe-title-line" style="margin:0">
-            <span class="step-title">阶段 ${step.step_index}: ${escapeHtml(step.name)}</span>
-            <span class="step-duration-pill">持续时间: ${fmtValue(step.duration_minutes, 0)} 分钟</span>
+            <span class="step-title">Stage ${step.step_index}: ${escapeHtml(step.name)}</span>
+            <span class="step-duration-pill">Duration: ${fmtValue(step.duration_minutes, 0)} min</span>
           </span>
           <span class="step-metrics">
-            <span><span class="label">目标温度</span><span class="step-metric-value ${valueClass}">${fmtValue(step.target_temperature_c, 1)}</span><span class="muted">°C</span></span>
-            <span><span class="label">升温速率</span><span class="step-metric-value">${fmtValue(step.ramp_rate_c_min, 1)}</span><span class="muted">°C/min</span></span>
-            <span><span class="label">搅拌转速</span><span class="step-metric-value">${fmtValue(step.target_stirrer_rpm, 0)}</span><span class="muted">RPM</span></span>
-            <span><span class="label">压力控制</span><span class="step-metric-value">${fmtValue(step.target_pressure_mpa, 1)}</span><span class="muted">MPa</span></span>
+            <span><span class="label">Target Temp</span><span class="step-metric-value ${valueClass}">${fmtValue(step.target_temperature_c, 1)}</span><span class="muted">degC</span></span>
+            <span><span class="label">Ramp Rate</span><span class="step-metric-value">${fmtValue(step.ramp_rate_c_min, 1)}</span><span class="muted">degC/min</span></span>
+            <span><span class="label">Stirrer RPM</span><span class="step-metric-value">${fmtValue(step.target_stirrer_rpm, 0)}</span><span class="muted">RPM</span></span>
+            <span><span class="label">Pressure</span><span class="step-metric-value">${fmtValue(step.target_pressure_mpa, 1)}</span><span class="muted">MPa</span></span>
           </span>
         </span>
       </button>`;
@@ -2521,21 +2799,21 @@
 
     function processStepEditorMarkup(step) {
       if (!step) {
-        return `<section class="step-editor-panel"><h2 class="section-title">步骤配置</h2><div class="empty-state">添加第一步后在这里配置参数。</div></section>`;
+        return `<section class="step-editor-panel"><h2 class="section-title">Step Parameters</h2><div class="empty-state">Add the first step to configure parameters here.</div></section>`;
       }
       return `<section class="step-editor-panel">
-        <h2 class="section-title">步骤 ${step.step_index} 参数</h2>
+        <h2 class="section-title">Step ${step.step_index} Parameters</h2>
         <div class="step-editor-fields">
-          <div class="field"><label class="label" for="processStepName">阶段名称</label><input id="processStepName" class="field-line" value="${escapeHtml(step.name)}"></div>
-          <div class="field"><label class="label" for="processStepDuration">持续时间 min</label><input id="processStepDuration" class="field-line" type="number" min="1" max="240" step="1" value="${fmtValue(step.duration_minutes, 0)}"></div>
-          <div class="field"><label class="label" for="processStepTemp">目标温度 °C</label><input id="processStepTemp" class="field-line" type="number" min="0" max="500" step="0.1" value="${fmtValue(step.target_temperature_c, 1)}"></div>
-          <div class="field"><label class="label" for="processStepRamp">升温/降温速率</label><input id="processStepRamp" class="field-line" type="number" min="-20" max="20" step="0.1" value="${fmtValue(step.ramp_rate_c_min, 1)}"></div>
-          <div class="field"><label class="label" for="processStepRpm">搅拌转速 RPM</label><input id="processStepRpm" class="field-line" type="number" min="0" max="2000" step="1" value="${fmtValue(step.target_stirrer_rpm, 0)}"></div>
+          <div class="field"><label class="label" for="processStepName">Stage Name</label><input id="processStepName" class="field-line" value="${escapeHtml(step.name)}"></div>
+          <div class="field"><label class="label" for="processStepDuration">Duration min</label><input id="processStepDuration" class="field-line" type="number" min="1" max="240" step="1" value="${fmtValue(step.duration_minutes, 0)}"></div>
+          <div class="field"><label class="label" for="processStepTemp">Target Temp degC</label><input id="processStepTemp" class="field-line" type="number" min="0" max="500" step="0.1" value="${fmtValue(step.target_temperature_c, 1)}"></div>
+          <div class="field"><label class="label" for="processStepRamp">Ramp Rate</label><input id="processStepRamp" class="field-line" type="number" min="-20" max="20" step="0.1" value="${fmtValue(step.ramp_rate_c_min, 1)}"></div>
+          <div class="field"><label class="label" for="processStepRpm">Stirrer RPM</label><input id="processStepRpm" class="field-line" type="number" min="0" max="2000" step="1" value="${fmtValue(step.target_stirrer_rpm, 0)}"></div>
           <div class="field"><label class="label" for="processStepShake">Shake CPM</label><input id="processStepShake" class="field-line" type="number" min="0" max="60" step="1" value="${fmtValue(step.target_shake_speed_cpm, 0)}"></div>
-          <div class="field"><label class="label" for="processStepPressure">压力 MPa</label><input id="processStepPressure" class="field-line" type="number" min="0" max="10" step="0.1" value="${fmtValue(step.target_pressure_mpa, 1)}"></div>
-          <div class="field"><label class="label" for="processStepCooling">冷却方式</label><select id="processStepCooling" class="select-line"><option ${step.cooling_mode === "自然" ? "selected" : ""}>自然</option><option ${step.cooling_mode === "风冷" ? "selected" : ""}>风冷</option><option ${step.cooling_mode === "水冷" ? "selected" : ""}>水冷</option></select></div>
+          <div class="field"><label class="label" for="processStepPressure">Pressure MPa</label><input id="processStepPressure" class="field-line" type="number" min="0" max="10" step="0.1" value="${fmtValue(step.target_pressure_mpa, 1)}"></div>
+          <div class="field"><label class="label" for="processStepCooling">Cooling Mode</label><select id="processStepCooling" class="select-line"><option ${step.cooling_mode === "natural" ? "selected" : ""}>natural</option><option ${step.cooling_mode === "air" ? "selected" : ""}>air</option><option ${step.cooling_mode === "water" ? "selected" : ""}>water</option></select></div>
         </div>
-        <button id="saveProcessStepBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">save</span> 保存此步骤</button>
+        <button id="saveProcessStepBtn" class="primary-btn" type="button"><span class="material-symbols-outlined">save</span> Save Step</button>
       </section>`;
     }
 
@@ -2547,25 +2825,25 @@
 
     function renderProgramCompare() {
       const rec = activeRecommendation();
-      if ($("#programAiTitle")) $("#programAiTitle").textContent = rec ? "AI 优化器运行中" : "AI 优化器";
-      if ($("#programAiSubtitle")) $("#programAiSubtitle").textContent = rec ? `模型 ${state.aiProvider?.model || "--"} / 后端推荐` : (state.backendError ? "实时管线暂不可用" : "等待后端推荐。");
-      if ($("#programAiReason")) $("#programAiReason").textContent = rec?.rationale || (state.backendError ? "实时管线暂不可用，工艺配置仍可编辑。" : "--");
+      if ($("#programAiTitle")) $("#programAiTitle").textContent = rec ? "AI optimizer running" : "AI optimizer";
+      if ($("#programAiSubtitle")) $("#programAiSubtitle").textContent = rec ? `Model ${state.aiProvider?.model || "--"} / backend recommendation` : (state.backendError ? "Realtime pipeline unavailable" : "Waiting for backend recommendation.");
+      if ($("#programAiReason")) $("#programAiReason").textContent = rec?.rationale || (state.backendError ? "Realtime pipeline is unavailable; process configuration remains editable." : "--");
       const current = rows([
-        ["Temp", fmtValue(sensor("temperature").value, 2) + " °C"],
+        ["Temp", fmtValue(sensor("temperature").value, 2) + " degC"],
         ["Pressure", fmtValue(sensor("pressure").value, 2) + " MPa"],
         ["Stirrer", fmtValue(sensor("rpm").value, 2) + " RPM"],
         ["Shake", fmtValue(sensor("shake").value, 2) + " CPM"]
       ]);
       const suggested = rec ? rows([
-        ["Temp", fmtValue(rec.temp, 2) + " °C"],
+        ["Temp", fmtValue(rec.temp, 2) + " degC"],
         ["Hold", fmtValue(rec.hold, 2) + " min"],
         ["Stirrer", fmtValue(rec.rpm, 2) + " RPM"],
         ["Score", fmtValue(rec.lift, 2)]
-      ]) : rows([["状态", state.backendError ? pipelineErrorText() : "等待后端推荐"]]);
+      ]) : rows([["Status", state.backendError ? pipelineErrorText() : "Waiting for backend recommendation"]]);
       if ($("#programCurrentCompare")) $("#programCurrentCompare").innerHTML = current;
       if ($("#programSuggestedCompare")) $("#programSuggestedCompare").innerHTML = suggested;
-      if ($("#programProcessStatusText")) $("#programProcessStatusText").textContent = state.processError ? "错误 " + state.processError.code : state.processLoading ? "读取中" : "在线";
-      if ($("#programStatusText")) $("#programStatusText").textContent = state.backendError ? "错误 " + state.backendError.code : state.running ? "正常运行" : "待机";
+      if ($("#programProcessStatusText")) $("#programProcessStatusText").textContent = state.processError ? "Error " + state.processError.code : state.processLoading ? "Loading" : "Online";
+      if ($("#programStatusText")) $("#programStatusText").textContent = state.backendError ? "Error " + state.backendError.code : state.running ? "Running" : "Standby";
       if ($("#programBatchText")) $("#programBatchText").textContent = state.activeBatchId ? String(state.activeBatchId) : "---";
     }
 
@@ -2573,12 +2851,12 @@
       const stage = currentStage();
       if (!$("#stageFields")) return;
       $("#stageFields").innerHTML = `
-        <div class="field"><label class="label" for="stageName">阶段名称</label><input id="stageName" class="field-line" value="${stage.name}"></div>
-        <div class="field"><label class="label" for="stageTemp">目标温度</label><input id="stageTemp" class="field-line" type="number" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"><input id="stageTempRange" class="range-thin" type="range" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"></div>
-        ${stage.name.toLowerCase().includes("heat") ? `<div class="field"><label class="label" for="stageRate">升温速率</label><input id="stageRate" class="field-line" type="number" min="1" max="20" step="0.01" value="${fmtValue(stage.rate, 2)}"><input id="stageRateRange" class="range-thin" type="range" min="1" max="20" step="0.01" value="${fmtValue(stage.rate, 2)}"></div>` : ""}
-        <div class="field"><label class="label" for="stageDuration">保持时长</label><input id="stageDuration" class="field-line" type="number" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"><input id="stageDurationRange" class="range-thin" type="range" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"></div>
-        <div class="field"><label class="label" for="stageRpm">搅拌转速</label><input id="stageRpm" class="field-line" type="number" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"><input id="stageRpmRange" class="range-thin" type="range" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"></div>
-        <div class="field"><label class="label" for="stageCooling">冷却方式</label><select id="stageCooling" class="select-line"><option ${stage.cooling === "自然" ? "selected" : ""}>自然</option><option ${stage.cooling === "风冷" ? "selected" : ""}>风冷</option><option ${stage.cooling === "水冷" ? "selected" : ""}>水冷</option></select></div>
+        <div class="field"><label class="label" for="stageName">Stage Name</label><input id="stageName" class="field-line" value="${stage.name}"></div>
+
+        <div class="field"><label class="label" for="stageTemp">Target Temp</label><input id="stageTemp" class="field-line" type="number" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"><input id="stageTempRange" class="range-thin" type="range" min="50" max="280" step="0.01" value="${fmtValue(stage.temp, 2)}"></div>
+        <div class="field"><label class="label" for="stageDuration">Hold Duration</label><input id="stageDuration" class="field-line" type="number" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"><input id="stageDurationRange" class="range-thin" type="range" min="5" max="240" step="0.01" value="${fmtValue(stage.duration, 2)}"></div>
+        <div class="field"><label class="label" for="stageRpm">Stirrer RPM</label><input id="stageRpm" class="field-line" type="number" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"><input id="stageRpmRange" class="range-thin" type="range" min="100" max="1000" step="0.01" value="${fmtValue(stage.rpm, 2)}"></div>
+        <div class="field"><label class="label" for="stageCooling">Cooling Mode</label><select id="stageCooling" class="select-line"><option ${stage.cooling === "Natural" ? "selected" : ""}>Natural</option><option ${stage.cooling === "Air" ? "selected" : ""}>Air</option><option ${stage.cooling === "Water" ? "selected" : ""}>Water</option></select></div>
         <div class="field"><label class="label" for="stageShake">Shake Vessel CPM</label><input id="stageShake" class="field-line" type="number" min="0" max="60" step="0.01" value="${fmtValue(stage.shake, 2)}"><input id="stageShakeRange" class="range-thin" type="range" min="0" max="60" step="0.01" value="${fmtValue(stage.shake, 2)}"></div>`;
       bindStageFields();
     }
@@ -2621,14 +2899,14 @@
       const detail = selectedProcessDetail();
       const draft = detail?.steps?.find((step) => step.id === state.selectedProcessStepId) || {};
       return {
-        name: $("#processStepName")?.value || draft.name || "新步骤",
+        name: $("#processStepName")?.value || draft.name || "New Step",
         target_temperature_c: toNumber($("#processStepTemp")?.value) ?? toNumber(draft.target_temperature_c) ?? 120,
         ramp_rate_c_min: toNumber($("#processStepRamp")?.value) ?? toNumber(draft.ramp_rate_c_min) ?? 0,
         duration_minutes: toNumber($("#processStepDuration")?.value) ?? toNumber(draft.duration_minutes) ?? 30,
         target_stirrer_rpm: toNumber($("#processStepRpm")?.value) ?? toNumber(draft.target_stirrer_rpm) ?? 300,
         target_shake_speed_cpm: toNumber($("#processStepShake")?.value) ?? toNumber(draft.target_shake_speed_cpm) ?? 30,
         target_pressure_mpa: toNumber($("#processStepPressure")?.value) ?? toNumber(draft.target_pressure_mpa) ?? 0.5,
-        cooling_mode: $("#processStepCooling")?.value || draft.cooling_mode || "自然"
+        cooling_mode: $("#processStepCooling")?.value || draft.cooling_mode || "natural"
       };
     }
 
@@ -2665,8 +2943,8 @@
         state.processesLoaded = true;
         state.processError = null;
       } catch (err) {
-        state.processError = { code: err.code || 500, message: err.message || "读取工艺列表失败" };
-      } finally {
+        state.processError = { code: err.code || 500, message: err.message || "璇诲彇宸ヨ壓鍒楄〃澶辫触" };
+        state.processError = { code: err.code || 500, message: err.message || "load process list failed" };
         state.processLoading = false;
         if (state.activeTab === "program") renderProgram();
       }
@@ -2686,8 +2964,8 @@
         state.historyLoaded = true;
         state.historyError = null;
       } catch (err) {
-        state.historyError = { code: err.code || 500, message: err.message || "读取历史批次失败" };
-      } finally {
+
+        state.historyError = { code: err.code || 500, message: err.message || "load batch history failed" };
         state.historyLoading = false;
         if (state.activeTab === "materials") renderHistoryAnalysis();
       }
@@ -2703,7 +2981,7 @@
           state.processError = null;
           state.processLoading = true;
           renderProgram();
-          const process = unwrapData(await apiJson("/api/processes", { method: "POST", json: { name: `新工艺 ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`, description: "由控制面板创建" } }));
+          const process = unwrapData(await apiJson("/api/processes", { method: "POST", json: { name: `New Process ${new Date().toLocaleTimeString("zh-CN", { hour12: false })}`, description: "Created from control panel" } }));
           mergeProcessSummaries([process]);
           state.selectedProcessId = process.id;
           await loadProcessDetail(process.id);
@@ -2713,7 +2991,7 @@
           renderProgram();
         } catch (err) {
           state.processLoading = false;
-          setProcessError(err, "新增工艺失败");
+          setProcessError(err, "create process failed");
           renderProgram();
         }
       });
@@ -2722,7 +3000,7 @@
         state.selectedProcessId = processId;
         state.processError = null;
         try { await loadProcessDetail(processId); }
-        catch (err) { setProcessError(err, "读取工艺失败"); }
+        catch (err) { setProcessError(err, "load process failed"); }
         renderProgram();
       }));
     }
@@ -2748,7 +3026,7 @@
           const process = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}`, {
             method: "PUT",
             json: {
-              name: $("#processNameInput")?.value || selectedProcess()?.name || "未命名工艺",
+              name: $("#processNameInput")?.value || selectedProcess()?.name || "Unnamed Process",
               description: $("#processDescriptionInput")?.value || "",
               status: selectedProcess()?.status || "draft"
             }
@@ -2757,7 +3035,7 @@
           await loadProcessDetail(process.id);
           renderProgram();
         } catch (err) {
-          setProcessError(err, "保存工艺定义失败");
+          setProcessError(err, "save process failed");
           renderProgram();
         }
       });
@@ -2767,14 +3045,14 @@
         const last = detail?.steps?.at(-1);
         const index = (last?.step_index || 0) + 1;
         const defaults = {
-          name: index === 1 ? "加热" : index === 2 ? "保温" : index === 3 ? "冷却" : `步骤 ${index}`,
+          name: index === 1 ? "Heat" : index === 2 ? "Hold" : index === 3 ? "Cool" : `Step ${index}`,
           target_temperature_c: toNumber(last?.target_temperature_c) ?? 120,
           ramp_rate_c_min: index === 3 ? -1.5 : index === 1 ? 2.5 : 0,
           duration_minutes: index === 1 ? 45 : index === 2 ? 120 : 60,
           target_stirrer_rpm: index === 3 ? 100 : index === 1 ? 150 : 300,
           target_shake_speed_cpm: toNumber(last?.target_shake_speed_cpm) ?? 30,
           target_pressure_mpa: toNumber(last?.target_pressure_mpa) ?? 0.5,
-          cooling_mode: index === 3 ? "水冷" : "自然"
+          cooling_mode: index === 3 ? "water" : "natural"
         };
         try {
           const step = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/steps`, { method: "POST", json: defaults }));
@@ -2782,7 +3060,7 @@
           state.selectedProcessStepId = step.id;
           renderProgram();
         } catch (err) {
-          setProcessError(err, "添加步骤失败");
+          setProcessError(err, "add step failed");
           renderProgram();
         }
       });
@@ -2794,14 +3072,14 @@
           renderProgram();
           await pollBackend();
         } catch (err) {
-          setProcessError(err, "保存步骤失败");
+          setProcessError(err, "save step failed");
           renderProgram();
         }
       });
       $("#applyProcessBtn")?.addEventListener("click", async () => {
         if (!state.selectedProcessId) return;
         try {
-          const result = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/apply`, { method: "POST" }));
+          const result = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/start`, { method: "POST" }));
           state.activeBatchId = result.batch?.id || state.activeBatchId;
           state.completedBatchId = state.activeBatchId;
           state.selectedProcessId = null;
@@ -2809,8 +3087,8 @@
           await pollBackend();
           switchTab("program");
         } catch (err) {
-          setProcessError(err, "应用工艺失败");
-          renderProgram();
+          setProcessError(err, "鍚姩宸ヨ壓澶辫触");
+          setProcessError(err, "start process failed");
         }
       });
     }
@@ -2820,28 +3098,28 @@
       if (!table) return;
       const rowsData = displayBatches();
       if (!rowsData.length) {
-        table.innerHTML = `<div class="batch-row" style="grid-template-columns:1fr;min-height:82px;color:var(--muted)">${state.backendError ? pipelineErrorText() : "等待后端批次数据"}</div>`;
+        table.innerHTML = `<div class="batch-row" style="grid-template-columns:1fr;min-height:82px;color:var(--muted)">${state.backendError ? pipelineErrorText() : "Waiting for backend batch data"}</div>`;
         return;
       }
       table.innerHTML = `
         <div class="batch-row head">
-          <div>批次编号 (ID)</div><div>开始时间</div><div>结束时间</div><div>平均温度</div><div>最高压力</div><div>AI 评分</div><div>状态</div>
+          <div>Batch ID</div><div>Start</div><div>End</div><div>Avg Temp</div><div>Peak Pressure</div><div>AI Score</div><div>Status</div>
         </div>
         ${rowsData.map((batch) => {
-          const warn = batch.status !== "已完成";
+          const warn = batch.status !== "Finished";
           const score = clamp(toNumber(batch.score) ?? 0, 0, 100);
           return `<div class="batch-row ${warn ? "warn" : ""}">
             <div>${batch.code}</div>
             <div>${batch.start}</div>
             <div>${batch.end}</div>
-            <div style="color:${warn ? "#ffb4ab" : "var(--green)"}">${fmtValue(batch.temp, 1)} °C</div>
+            <div style="color:${warn ? "#ffb4ab" : "var(--green)"}">${fmtValue(batch.temp, 1)} degC</div>
             <div>${fmtValue(batch.pressure, 1)} MPa</div>
             <div><div class="score-bar"><span style="width:${score}%;background:${warn ? "#ffb4ab" : "var(--green)"}"></span></div><span>${fmtValue(score, 0)}%</span></div>
-            <div><span class="status-pill ${warn ? "warn" : ""}">${warn ? "△" : "●"} ${batch.status}</span></div>
+            <div><span class="status-pill ${warn ? "warn" : ""}">${warn ? "WARN" : "OK"} ${batch.status}</span></div>
           </div>`;
         }).join("")}
         <div class="batch-row" style="grid-template-columns:1fr auto;min-height:64px;color:var(--muted)">
-          <div>来自后端数据管线，共 ${rowsData.length} 条记录</div>
+          <div>From backend data pipeline, ${rowsData.length} records</div>
           <div class="mono">LIVE</div>
         </div>`;
     }
@@ -2850,11 +3128,11 @@
       return state.batches.slice(-25).reverse().map((batch) => ({
         code: batch.name || `ID ${batch.id}`,
         start: shortDateTime(batch.started_at),
-        end: shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "运行中" : "--"),
+        end: shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "Running" : "--"),
         temp: toNumber(batch.temp),
         pressure: toNumber(batch.pressure),
         score: toNumber(batch.yield),
-        status: batch.finished_at || !state.running ? "已完成" : "运行中"
+        status: batch.finished_at || !state.running ? "Finished" : "Running"
       }));
     }
 
@@ -2877,7 +3155,7 @@
           <td><input class="table-input" data-field="lot" value="${item.lot}"></td>
           <td><input class="table-input" data-field="amount" type="number" step="0.01" value="${fmtValue(item.amount, 2)}"></td>
           <td><input class="table-input" data-field="purity" type="number" step="0.01" value="${fmtValue(item.purity, 2)}"></td>
-          <td><button class="text-btn" type="button" data-remove-material="${index}">×</button></td>
+          <td><button class="text-btn" type="button" data-remove-material="${index}">脳</button></td>
         </tr>`).join("");
       $$("#materialRows tr").forEach((row) => {
         const index = Number(row.dataset.material);
@@ -2915,7 +3193,7 @@
         const batchId = Number(button.dataset.historyOpen);
         state.selectedHistoryBatchId = batchId;
         try { await loadBatchDetail(batchId); }
-        catch (err) { setHistoryError(err, "读取实验历史失败"); }
+        catch (err) { setHistoryError(err, "load history failed"); }
         renderHistoryAnalysis();
         requestAnimationFrame(drawHistoryTrend);
       }));
@@ -2930,9 +3208,9 @@
 
     function renderHistoryList(root) {
       const historyNotice = state.historyError
-        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>历史数据错误</strong><br>${escapeHtml(scopedErrorText("HISTORY", state.historyError))}</div>`
+        ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>History data error</strong><br>${escapeHtml(scopedErrorText("HISTORY", state.historyError))}</div>`
         : state.backendError
-          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>实时管线状态</strong><br>${escapeHtml(pipelineErrorText())}<br>历史实验列表仍通过 /api/batches 读取。</div>`
+          ? `<div class="analysis-note warn" style="margin:18px 0 0"><strong>Realtime pipeline status</strong><br>${escapeHtml(pipelineErrorText())}<br>Historical experiments are still read through /api/batches.</div>`
           : "";
       const rowsData = state.batches.slice().reverse();
       const list = rowsData.length
@@ -2941,25 +3219,25 @@
           const score = toNumber(batch.yield);
           return `<button class="experiment-row" type="button" data-history-open="${batch.id}">
             <span class="experiment-row-main">
-              <span class="experiment-row-title">${escapeHtml(process?.name || batch.name || "实验批次 " + batch.id)}</span>
+              <span class="experiment-row-title">${escapeHtml(process?.name || batch.name || "Experiment batch " + batch.id)}</span>
               <span class="experiment-row-meta">
-                <span>批次 ID ${batch.id}</span>
-                <span>${batch.finished_at ? "已完成" : state.activeBatchId === batch.id ? "运行中" : "待记录结果"}</span>
-                <span>开始 ${shortDateTime(batch.started_at) || "--"}</span>
-                <span>产率 ${score === null ? "--" : fmtValue(score, 1) + "%"}</span>
+                <span>Batch ID ${batch.id}</span>
+                <span>${batch.finished_at ? "Finished" : state.activeBatchId === batch.id ? "Running" : "Waiting for result"}</span>
+                <span>Started ${shortDateTime(batch.started_at) || "--"}</span>
+                <span>Yield ${score === null ? "--" : fmtValue(score, 1) + "%"}</span>
               </span>
             </span>
-            <span class="experiment-row-action"><span class="material-symbols-outlined">monitoring</span> 查看学习曲线</span>
+            <span class="experiment-row-action"><span class="material-symbols-outlined">monitoring</span> View trend</span>
           </button>`;
         }).join("")
-        : `<div class="empty-state">${state.historyLoading ? "正在从 /api/batches 读取历史实验..." : state.historyError ? scopedErrorText("HISTORY", state.historyError) : "后端暂无实验批次。应用工艺后会在这里形成历史数据大类。"}</div>`;
+        : `<div class="empty-state">${state.historyLoading ? "Loading /api/batches history..." : state.historyError ? scopedErrorText("HISTORY", state.historyError) : "No experiment batches from backend yet. History appears after running a process."}</div>`;
       root.innerHTML = `
         <div class="history-list-head">
           <div>
-            <h1 class="view-title" style="margin:0;border:0">历史数据</h1>
-            <div class="muted" style="margin-top:10px">按真实实验/批次归档。进入单个实验后查看拟合曲线和动态学习记录。</div>
+            <h1 class="view-title" style="margin:0;border:0">History Data</h1>
+            <div class="muted" style="margin-top:10px">Archived by real experiment batch. Open a batch to inspect fitted curves and learning records.</div>
           </div>
-          <button id="historyExportBtnLocal" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> 导出综合报告</button>
+          <button id="historyExportBtnLocal" class="primary-btn" type="button"><span class="material-symbols-outlined">download</span> Export Report</button>
         </div>
         ${historyNotice}
         <section class="history-list-panel">${list}</section>`;
@@ -2981,52 +3259,53 @@
       root.innerHTML = `
         <div class="history-detail-head">
           <div>
-            <button id="backToHistoryListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> 返回历史</button>
-            <h1 class="history-detail-title">${escapeHtml(process?.name || batch.name || "实验批次 " + batch.id)}</h1>
-            <div class="muted" style="margin-top:10px">批次 ${batch.id} | ${shortDateTime(batch.started_at) || "--"} -> ${shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "运行中" : "--")}</div>
+            <button id="backToHistoryListBtn" class="text-btn small-link" type="button"><span class="material-symbols-outlined">arrow_back</span> Back to history</button>
+            <h1 class="history-detail-title">${escapeHtml(process?.name || batch.name || "Experiment batch " + batch.id)}</h1>
+            <div class="muted" style="margin-top:10px">Batch ${batch.id} | ${shortDateTime(batch.started_at) || "--"} -> ${shortDateTime(batch.finished_at) || (state.activeBatchId === batch.id ? "Running" : "--")}</div>
           </div>
-          <div class="history-detail-actions"><span class="status-pill">${samples.length} 采样点</span><span class="status-pill ${outcome ? "" : "warn"}">${outcome ? "已记录结果" : "等待产物结果"}</span></div>
+          <div class="history-detail-actions"><span class="status-pill">${samples.length} samples</span><span class="status-pill ${outcome ? "" : "warn"}">${outcome ? "Result recorded" : "Waiting for product result"}</span></div>
         </div>
         <div class="history-detail-grid">
           <section class="history-chart-panel">
             <div class="history-title-row">
-              <div><h2 class="section-title">实验拟合曲线</h2><div class="muted">温度、压力与产物浓度来自该批次数据管线</div></div>
-              <div class="history-metric-tabs" aria-label="历史参数切换"><button type="button">温度</button><button class="active" type="button">压力</button><button type="button">浓度</button></div>
+              <div><h2 class="section-title">Experiment Fitted Curves</h2><div class="muted">Temperature, pressure, and product concentration are from this batch data pipeline.</div></div>
+              <div class="history-metric-tabs" aria-label="History metric selector"><button type="button">Temp</button><button class="active" type="button">Pressure</button><button type="button">Conc</button></div>
             </div>
             <canvas id="historyTrendChart" class="history-chart" height="320"></canvas>
           </section>
           <aside class="history-report">
-            <div class="recipe-title-line"><h2 class="section-title">动态学习记录</h2><span class="status-pill" id="historyConfidence">--</span></div>
+            <div class="recipe-title-line"><h2 class="section-title">Learning Record</h2><span class="status-pill" id="historyConfidence">--</span></div>
             <div id="historyClusterReport"></div>
           </aside>
           <section class="training-panel">
-            <div class="recipe-title-line"><h2 class="section-title">实验统计</h2><span class="status-pill">PIPELINE</span></div>
-            <div class="overview-grid" id="historyTrainingStats"></div>
+            <div class="recipe-title-line"><h2 class="section-title">Experiment Statistics</h2><span class="status-pill">PIPELINE</span></div>
+            <div id="historyTrainingStats" class="overview-grid" style="grid-template-columns:repeat(2,minmax(0,1fr))"></div>
           </section>
           <section class="process-recs">
-            <h2 class="section-title">发生了什么</h2>
+            <h2 class="section-title">What Happened</h2>
             <div id="historyRecommendations" class="log-list"></div>
           </section>
         </div>`;
-      if ($("#historyConfidence")) $("#historyConfidence").textContent = outcome ? `${fmtValue(clamp((outcome.yield_percent || 0), 0, 99), 1)}% 结果` : "--";
+      if ($("#historyConfidence")) $("#historyConfidence").textContent = outcome ? `${fmtValue(clamp((outcome.yield_percent || 0), 0, 99), 1)}% result` : "--";
       if ($("#historyClusterReport")) {
         $("#historyClusterReport").innerHTML = outcome
-          ? `<div class="analysis-note"><strong>产物结果</strong><br>本次实验产率 ${fmtValue(outcome.yield_percent, 1)}%，产物比例 ${fmtValue(outcome.product_ratio, 2)}。曲线和学习记录均来自后端批次 ${batch.id}。</div>`
-          : `<div class="analysis-note warn"><strong>等待结果</strong><br>${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "该实验还没有产物结果，曲线先展示已采集过程数据。"}</div>`;
+          ? `<div class="analysis-note"><strong>Product Result</strong><br>This experiment yield is ${fmtValue(outcome.yield_percent, 1)}%, product ratio ${fmtValue(outcome.product_ratio, 2)}. Curves and learning records come from backend batch ${batch.id}.</div>`
+          : `<div class="analysis-note warn"><strong>Waiting for result</strong><br>${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "This experiment has no product result yet; the chart shows collected process data."}</div>`;
       }
       if ($("#historyTrainingStats")) {
         $("#historyTrainingStats").innerHTML = [
-          ["采样点", String(samples.length)],
-          ["批次温度", fmtValue(batch.temp, 1) + " °C"],
-          ["参考记忆", String(state.aiMemory?.reference_batch_count ?? 0)],
-          ["状态", state.historyError ? `错误 ${state.historyError.code}` : (batch.finished_at ? "已完成" : "运行中")]
+          ["Samples", String(samples.length)],
+          ["Batch Temp", fmtValue(batch.temp, 1) + " degC"],
+          ["Reference Memory", String(state.aiMemory?.reference_batch_count ?? 0)],
+          ["Status", state.historyError ? `Error ${state.historyError.code}` : (batch.finished_at ? "Finished" : "Running")]
         ].map(([label, value]) => `<div><div class="label">${label}</div><div class="metric">${value}</div></div>`).join("");
       }
       if ($("#historyRecommendations")) {
         const lines = [];
-        if (state.aiRecommendation?.rationale) lines.push("AI 建议: " + state.aiRecommendation.rationale);
+        if (state.aiRecommendation?.rationale) lines.push("AI recommendation: " + state.aiRecommendation.rationale);
         events.slice(0, 6).forEach((event) => lines.push(`${timeLabel(event.created_at)} ${event.event_type}: ${event.reason}`));
-        $("#historyRecommendations").innerHTML = lines.length ? lines.map((item) => `<div class="log-line">${escapeHtml(item)}</div>`).join("") : `<div class="log-line">${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "等待该实验的后端事件"}</div>`;
+
+        $("#historyRecommendations").innerHTML = lines.length ? lines.map((item) => `<div class="log-line">${escapeHtml(item)}</div>`).join("") : `<div class="log-line">${state.historyError ? scopedErrorText("HISTORY", state.historyError) : "Waiting for backend events for this experiment"}</div>`;
       }
       bindHistoryDetailActions();
     }
@@ -3035,7 +3314,7 @@
       const amounts = state.ingredients.map((item) => toNumber(item.amount) ?? 0);
       if ($("#ratioRaw")) $("#ratioRaw").textContent = amounts.map((value) => fmtValue(value, 2)).join(" : ");
       const min = Math.max(0.0001, Math.min(...amounts.filter((value) => value > 0), 1));
-      if ($("#ratioNormalized")) $("#ratioNormalized").textContent = "= " + amounts.map((value) => fmtValue(value / min, 2)).join(" : ") + "（归一化）";
+      if ($("#ratioNormalized")) $("#ratioNormalized").textContent = "= " + amounts.map((value) => fmtValue(value / min, 2)).join(" : ") + " (normalized)";
     }
 
     function renderAI() {
@@ -3044,16 +3323,16 @@
       const confidence = clamp(((toNumber(learned) ?? 0) / 50) * 100, 0, 99);
       const latestLog = state.aiLogs[0] || "Waiting for batch outcomes";
       const rec = activeRecommendation();
-      if ($("#aiProviderStatus")) $("#aiProviderStatus").textContent = state.backendError ? `模型状态: ERROR ${state.backendError.code}` : `模型状态: ${modelName}`;
+      if ($("#aiProviderStatus")) $("#aiProviderStatus").textContent = state.backendError ? `Model status ERROR ${state.backendError.code}` : `Model status ${modelName}`;
       if ($("#aiConfidencePill")) $("#aiConfidencePill").textContent = rec ? `CONFIDENCE: ${fmtValue(confidence, 1)}%` : "--";
-      if ($("#aiIntentQuote")) $("#aiIntentQuote").textContent = rec?.rationale || (state.backendError ? pipelineErrorText() : "等待后端推荐。");
+      if ($("#aiIntentQuote")) $("#aiIntentQuote").textContent = rec?.rationale || (state.backendError ? pipelineErrorText() : "Waiting for backend recommendation.");
       if ($("#aiIntentMap")) {
         $("#aiIntentMap").innerHTML = rec ? [
-          ["TARGET_TEMP", fmtValue(rec.temp, 2) + " °C"],
+          ["TARGET_TEMP", fmtValue(rec.temp, 2) + " degC"],
           ["TARGET_RPM", fmtValue(rec.rpm, 2) + " RPM"]
-        ].map(([label, value]) => `<div class="intent-token"><div class="label">${label}</div><div class="kv-row"><span class="k">后端推荐</span><span class="v">${value}</span></div></div>`).join("") : `<div class="intent-token"><div class="label">${state.backendError ? pipelineErrorText() : "无后端推荐"}</div></div>`;
+        ].map(([label, value]) => `<div class="intent-token"><div class="label">${label}</div><div class="kv-row"><span class="k">Backend recommendation</span><span class="v">${value}</span></div></div>`).join("") : `<div class="intent-token"><div class="label">${state.backendError ? pipelineErrorText() : "No backend recommendation"}</div></div>`;
       }
-      if ($("#voicePipelineText")) $("#voicePipelineText").textContent = state.recentEvents[0] ? `${timeLabel(state.recentEvents[0].created_at)} ${state.recentEvents[0].event_type}` : (state.backendError ? pipelineErrorText() : "等待后端事件...");
+      if ($("#voicePipelineText")) $("#voicePipelineText").textContent = state.recentEvents[0] ? `${timeLabel(state.recentEvents[0].created_at)} ${state.recentEvents[0].event_type}` : (state.backendError ? pipelineErrorText() : "Waiting for backend events...");
       const aiSubtitle = document.querySelector("#view-ai .dim");
       if (aiSubtitle) aiSubtitle.textContent = "Based on " + fmtValue(learned, 2) + " backend batches";
       if ($("#aiLearnedCount")) $("#aiLearnedCount").textContent = fmtValue(learned, 0);
@@ -3078,14 +3357,14 @@
       const tempDeltaText = tempDelta === null ? "--" : (tempDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(tempDelta), 2);
       const rpmDeltaText = rpmDelta === null ? "--" : (rpmDelta >= 0 ? "+" : "-") + fmtValue(Math.abs(rpmDelta), 2);
       const compactRecRows = rows([
-        ["Target Temp", fmtValue(rec?.temp, 2) + " °C"],
+        ["Target Temp", fmtValue(rec?.temp, 2) + " degC"],
         ["Hold Time", fmtValue(rec?.hold, 2) + " min"],
         ["Stirrer RPM", fmtValue(rec?.rpm, 2) + " RPM"],
         ["A : B Ratio", fmtValue(rec?.ratio || currentRatio, 2) + " : 1"],
         ["Expected Score", fmtValue(rec?.lift, 2)]
       ]);
       const fullRecRows = rows([
-        ["Target Temp", fmtValue(rec?.temp, 2) + " °C (now " + fmtValue(sensor("temperature").value, 2) + " °C, " + tempDeltaText + ")"],
+        ["Target Temp", fmtValue(rec?.temp, 2) + " degC (now " + fmtValue(sensor("temperature").value, 2) + " degC, " + tempDeltaText + ")"],
         ["Hold Time", fmtValue(rec?.hold, 2) + " min (current " + fmtValue(currentStage().duration, 2) + " min)"],
         ["Stirrer RPM", fmtValue(rec?.rpm, 2) + " RPM (now " + fmtValue(sensor("rpm").value, 2) + " RPM, " + rpmDeltaText + ")"],
         ["A : B Ratio", fmtValue(rec?.ratio || currentRatio, 2) + " : 1 (current " + fmtValue(currentRatio, 2) + " : 1)"],
@@ -3094,13 +3373,43 @@
       if ($("#aiRecommendation")) $("#aiRecommendation").innerHTML = compactRecRows;
       if ($("#aiRecommendationFull")) $("#aiRecommendationFull").innerHTML = fullRecRows;
       if ($("#aiCurrentCompare")) $("#aiCurrentCompare").innerHTML = rows([
-        ["主反应釜温度", `${fmtValue(sensor("temperature").value, 1)} °C`],
-        ["搅拌器转速", `${fmtValue(sensor("rpm").value, 0)} RPM`]
+        ["Reactor Temp", `${fmtValue(sensor("temperature").value, 1)} degC`],
+        ["Stirrer RPM", `${fmtValue(sensor("rpm").value, 0)} RPM`]
       ]);
       if ($("#aiSuggestedCompare")) $("#aiSuggestedCompare").innerHTML = rec ? rows([
-        ["主反应釜温度", `${fmtValue(rec.temp, 1)} °C`],
-        ["搅拌器转速", `${fmtValue(rec.rpm, 0)} RPM`]
-      ]) : rows([["状态", state.backendError ? pipelineErrorText() : "等待后端推荐"]]);
+        ["Reactor Temp", `${fmtValue(rec.temp, 1)} degC`],
+        ["Stirrer RPM", `${fmtValue(rec.rpm, 0)} RPM`]
+      ]) : rows([["Status", state.backendError ? pipelineErrorText() : "Waiting for backend recommendation"]]);
+      renderAiMasterControl();
+    }
+
+    function renderAiMasterControl() {
+      const decision = state.aiMasterDecision;
+      const safety = decision?.safety || {};
+      if ($("#aiMasterMode")) {
+        $("#aiMasterMode").textContent = decision ? (decision.dry_run ? "PREVIEW" : "EXECUTED") : "SUPERVISED";
+        $("#aiMasterMode").className = "status-pill" + (state.backendError ? " warn" : "");
+      }
+      if ($("#aiMasterSafety")) {
+        const items = [
+          ["PIPELINE", state.dataReady ? "READY" : `ERR ${state.backendError?.code || 503}`],
+          ["DEVICE", decision ? (safety.device_online ? "ONLINE" : "OFFLINE") : (state.deviceStatus?.online_count ? "ONLINE" : "WAITING")],
+          ["INTERLOCK", decision ? (safety.emergency_stop ? "E-STOP" : safety.manual_lock ? "LOCKED" : "CLEAR") : "WAITING"],
+          ["ACTIVE BATCH", decision ? (safety.active_batch_id ?? "--") : (state.activeBatchId ?? "--")]
+        ];
+        $("#aiMasterSafety").innerHTML = items.map(([label, value]) => `<div class="ai-master-cell"><div class="label">${label}</div><div class="metric">${escapeHtml(String(value))}</div></div>`).join("");
+      }
+      if ($("#aiMasterRationale")) {
+        $("#aiMasterRationale").textContent = decision?.rationale || (state.backendError ? pipelineErrorText() : "Waiting for AI master-control decision.");
+        $("#aiMasterRationale").className = "analysis-note" + (state.backendError ? " warn" : "");
+      }
+      if ($("#aiMasterActions")) {
+        const actions = Array.isArray(decision?.actions) ? decision.actions : [];
+        $("#aiMasterActions").innerHTML = actions.length ? actions.map((action) => {
+          const status = String(action.status || "unknown");
+          return `<div class="ai-master-action-item ${escapeHtml(status)}"><div class="label">${escapeHtml(action.action_type || "action")}</div><div class="ai-master-status">${escapeHtml(status)}</div><div class="muted">${escapeHtml(action.message || action.target || "")}</div></div>`;
+        }).join("") : `<div class="ai-master-action-item skipped"><div class="label">NO PLAN</div><div class="ai-master-status">WAITING</div><div class="muted">${state.backendError ? pipelineErrorText() : "Click preview to let AI evaluate the current process state."}</div></div>`;
+      }
     }
 
     function renderAlarms() {
@@ -3108,14 +3417,14 @@
       const displayAlarms = active;
       const unack = state.alarms.filter((alarm) => !alarm.acknowledged).length;
       const critical = active.filter((alarm) => alarm.level === "high" || alarm.value === "ERR").length;
-      if ($("#alarmStats")) $("#alarmStats").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill warn">${critical} 严重</span><span class="status-pill">${Math.max(0, active.length - critical)} 警告</span><span class="status-pill">${unack} 未读</span></div><canvas id="alarmDistribution" class="alarm-distribution" height="86" style="display:none"></canvas>`;
-      const emptyAlarm = `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">${state.backendError ? pipelineErrorText() : "无活动报警"}</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
+      if ($("#alarmStats")) $("#alarmStats").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill warn">${critical} critical</span><span class="status-pill">${Math.max(0, active.length - critical)} warnings</span><span class="status-pill">${unack} unread</span></div><canvas id="alarmDistribution" class="alarm-distribution" height="86" style="display:none"></canvas>`;
+      const emptyAlarm = `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">System</div><div class="alarm-cell">${state.backendError ? pipelineErrorText() : "No active alarms"}</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
       const monitorMarkup = active.map((alarm) => alarmRow(alarm).replaceAll("ack-btn", "monitor-ack")).join("") || emptyAlarm;
       if ($("#activeAlarmRows")) $("#activeAlarmRows").innerHTML = monitorMarkup;
       if ($("#activeAlarmRowsFull")) $("#activeAlarmRowsFull").innerHTML = displayAlarms.length ? displayAlarms.map(alarmCenterItem).join("") : emptyAlarm;
       if ($("#alarmHistoryRows")) $("#alarmHistoryRows").innerHTML = state.alarms.length ? state.alarms.slice(0, 50).map((alarm) => alarmRow(alarm, true)).join("") : emptyAlarm;
       const detailAlarm = displayAlarms[0] || null;
-      if ($("#alarmDetail")) $("#alarmDetail").innerHTML = detailAlarm ? alarmDetailMarkup(detailAlarm) : `<div class="analysis-note">${state.backendError ? pipelineErrorText() : "无活动报警"}</div>`;
+      if ($("#alarmDetail")) $("#alarmDetail").innerHTML = detailAlarm ? alarmDetailMarkup(detailAlarm) : `<div class="analysis-note">${state.backendError ? pipelineErrorText() : "No active alarms"}</div>`;
       $$(".ack-btn").forEach((button) => button.addEventListener("click", () => {
         const alarm = state.alarms.find((item) => item.id === button.dataset.ack);
         if (!alarm) return;
@@ -3137,38 +3446,131 @@
         $("#settingsHealthPill").className = "status-pill" + (state.backendError || active ? " warn" : "");
       }
       if ($("#settingsCards")) {
+        const aiMode = state.aiProvider?.mode || "unknown";
+        const aiWarn = aiMode === "fallback_local_optimizer" || state.aiProvider?.fallback_reason;
         $("#settingsCards").innerHTML = [
-          ["后端服务", state.backendError ? "异常" : "在线", state.backendError ? state.backendError.message : "API 心跳正常"],
-          ["ESP32 连接", `${onlineCount}/${totalCount}`, state.dataReady ? "传感器数据接收中" : "等待数据管线"],
-          ["AI 模型", state.aiProvider?.model || "--", "建议仅在确认后应用"],
-          ["当前批次", state.activeBatchId ? String(state.activeBatchId) : "---", state.running ? "运行中" : "待机"]
+          ["Backend Service", state.backendError ? "Error" : "Online", state.backendError ? state.backendError.message : "API heartbeat normal"],
+          ["Connected Devices", `${onlineCount}/${totalCount}`, state.dataReady ? "Receiving sensor data" : "Waiting for data pipeline"],
+          ["AI Model", state.aiProvider?.model || "--", aiWarn ? `Unavailable ${state.aiProvider?.fallback_reason || aiMode}` : `Mode: ${aiMode}`],
+          ["Current Batch", state.activeBatchId ? String(state.activeBatchId) : "---", state.running ? "Running" : "Standby"]
         ].map(([label, value, note]) => `<div class="settings-card"><div class="label">${label}</div><div class="settings-value">${value}</div><div class="muted">${note}</div></div>`).join("");
       }
       if ($("#settingsEndpoints")) {
         $("#settingsEndpoints").innerHTML = [
-          ["monitoring", "GET", "/api/live", "运行看板、报警和实时采样"],
-          ["schema", "GET/POST", "/api/processes", "工艺列表与新增工艺定义"],
-          ["playlist_add", "POST/PUT", "/api/processes/:id/steps", "逐步配置工艺步骤并持久化"],
-          ["play_arrow", "POST", "/api/processes/:id/apply", "应用工艺并写入批次与控制目标"],
-          ["list_alt", "GET", "/api/batches", "实验历史列表与批次归档"],
-          ["monitoring", "GET", "/api/batches/:id", "单次实验历史曲线详情"],
-          ["sensors", "GET", "/api/devices/status", "ESP32 / Pi 通道健康"],
-          ["input", "POST", `/api/v1/reactor/${API_DEVICE_ID}/samples`, "外部数据管线上行样本写入"],
-          ["settings_input_component", "POST", `/api/v1/reactor/${API_DEVICE_ID}/control`, "控制目标写入，受安全限幅保护"],
-          ["psychology", "GET", "/api/recommendations/latest", "真实批次结果生成 AI 参数建议"]
+          ["monitoring", "GET", "/api/live", "Runtime dashboard, alarms, and live samples"],
+          ["schema", "GET/POST", "/api/processes", "Process list and creation"],
+          ["playlist_add", "POST/PUT", "/api/processes/:id/steps", "Persist process step configuration"],
+          ["play_arrow", "POST", "/api/processes/:id/start", "Start process, create batch, and write control targets"],
+          ["stop_circle", "POST", "/api/processes/current/stop", "Stop current process, finish batch, and disable auto control"],
+          ["list_alt", "GET", "/api/batches", "Experiment history and batch archive"],
+          ["monitoring", "GET", "/api/batches/:id", "Single batch curve detail"],
+          ["sensors", "GET", "/api/devices/status", "ESP32 / Pi channel health"],
+          ["input", "POST", `/api/v1/reactor/${API_DEVICE_ID}/samples`, "External data pipeline sample ingest"],
+          ["settings_input_component", "POST", `/api/v1/reactor/${API_DEVICE_ID}/control`, "Write safety-limited control targets"],
+          ["psychology", "GET", "/api/recommendations/latest", "Generate AI parameter recommendation from real batch results"]
         ].map(([icon, method, path, note]) => `<div class="endpoint-row"><span class="material-symbols-outlined">${icon}</span><div><div class="label">${path}</div><div class="muted">${note}</div></div><span class="mono muted">${method}</span></div>`).join("");
       }
       if ($("#settingsDeviceRatio")) $("#settingsDeviceRatio").textContent = `${onlineCount}/${totalCount}`;
       if ($("#settingsDevices")) {
         const devices = Array.isArray(state.deviceStatus?.devices) ? state.deviceStatus.devices : [];
         if (!devices.length) {
-          $("#settingsDevices").innerHTML = `<div class="settings-row"><span class="material-symbols-outlined">sync_problem</span><div><div class="label">无设备数据</div><div class="muted">${state.backendError ? pipelineErrorText() : "等待 /api/devices/status"}</div></div><span class="status-pill warn">waiting</span></div>`;
+          $("#settingsDevices").innerHTML = `<div class="settings-row"><span class="material-symbols-outlined">sync_problem</span><div><div class="label">No device data</div><div class="muted">${state.backendError ? pipelineErrorText() : "Waiting for /api/devices/status"}</div></div><span class="status-pill warn">waiting</span></div>`;
+          renderDeviceComponents();
           return;
         }
-        $("#settingsDevices").innerHTML = devices.map((device) => {
+        $("#settingsDevices").innerHTML = `<div class="device-tree">${devices.map((device) => {
           const status = device.status || (state.dataReady ? "online" : "waiting");
-          return `<div class="settings-row"><span class="material-symbols-outlined">${device.online ? "sensors" : "sync_problem"}</span><div><div class="label">${device.device_id || device.id || "--"}</div><div class="muted">${device.last_seen_at ? "最后通信 " + timeLabel(device.last_seen_at) : "等待采样"}</div></div><span class="status-pill ${device.online ? "" : "warn"}">${status}</span></div>`;
+          const sensors = Array.isArray(device.sensors) ? device.sensors : [];
+          const sensorMarkup = sensors.length ? `<div class="sensor-grid">${sensors.map(sensorMarkupForDevice).join("")}</div>` : `<div class="muted">No sensor inventory returned by device status API.</div>`;
+          return `<div class="device-node">
+            <div class="device-node-head"><span class="material-symbols-outlined">${device.online ? "sensors" : "sync_problem"}</span><div><div class="label">${escapeHtml(device.device_id || device.id || "--")}</div><div class="muted">${escapeHtml(device.device_role || "reactor_bridge")} | ${device.last_seen_at ? "Last seen " + timeLabel(device.last_seen_at) : "Waiting for sample"}${device.port ? " | " + escapeHtml(device.port) : ""}${device.baudrate ? " | " + escapeHtml(String(device.baudrate)) + "bps" : ""}</div></div><span class="status-pill ${device.online ? "" : "warn"}">${escapeHtml(status)}</span></div>
+            <div class="device-node-body"><div class="device-subtitle">Sensors under this device</div>${sensorMarkup}</div>
+          </div>`;
+        }).join("")}</div>`;
+      }
+      renderDeviceComponents();
+    }
+
+    function sensorMarkupForDevice(item) {
+      const value = toNumber(item.value);
+      const target = toNumber(item.target);
+      const unit = item.unit ? ` ${escapeHtml(item.unit)}` : "";
+      const status = item.status || "unknown";
+      const warn = ["error", "stale", "unavailable", "blocked"].includes(status);
+      const targetText = target === null ? "target --" : `target ${fmtValue(target, 2)}${unit}`;
+      return `<div class="sensor-chip"><div><div class="label">${escapeHtml(item.label || item.sensor_id || "sensor")}</div><div class="sensor-value">${value === null ? "--" : fmtValue(value, 2)}${unit}</div><div class="muted">${escapeHtml(item.sensor_id || "")} | ${escapeHtml(item.source || "pipeline")} | ${escapeHtml(targetText)}</div></div><span class="status-pill ${warn ? "warn" : ""}">${escapeHtml(status)}</span></div>`;
+    }
+
+    function renderDeviceComponents() {
+      const target = $("#settingsComponents");
+      if (!target) return;
+      const devices = Array.isArray(state.deviceCapabilities?.devices)
+        ? state.deviceCapabilities.devices
+        : (Array.isArray(state.deviceStatus?.devices) ? state.deviceStatus.devices : []);
+      const device = devices[0] || {};
+      const components = Array.isArray(device.components)
+        ? device.components
+        : (Array.isArray(state.deviceStatus?.components) ? state.deviceStatus.components : []);
+      if (!components.length) {
+        target.innerHTML = `<div class="settings-row"><span class="material-symbols-outlined">settings_input_component</span><div><div class="label">No controllable components</div><div class="muted">${state.backendError ? pipelineErrorText() : "Waiting for device capability discovery"}</div></div><span class="status-pill warn">none</span></div>`;
+        return;
+      }
+      target.innerHTML = components.map((component) => {
+        const actions = Array.isArray(component.actions) ? component.actions : [];
+        const actionButtons = actions.map((action) => {
+          const needsValue = action.value_type === "number";
+          const value = needsValue
+            ? (component.component_id === "shake_stepper"
+                ? (sensor("shake").target ?? 30)
+                : component.component_id === "stirrer_motor"
+                  ? (sensor("rpm").target ?? 300)
+                : component.component_id === "temperature_controller" || component.component_id === "heater_relay"
+                  ? (sensor("temperature").target ?? 60)
+                  : "")
+            : "";
+          return `<button class="text-btn component-action" type="button" data-component-id="${escapeHtml(component.component_id)}" data-action="${escapeHtml(action.action)}" data-value-type="${escapeHtml(action.value_type || "none")}" data-default-value="${escapeHtml(value)}">${escapeHtml(action.label || action.action)}</button>`;
         }).join("");
+        const stateText = component.state ? Object.entries(component.state).filter(([, value]) => value !== null && value !== undefined).slice(0, 5).map(([key, value]) => `${key}=${fmtStateValue(value)}`).join(" | ") : "";
+        return `<div class="settings-row component-row"><span class="material-symbols-outlined">${componentIcon(component.component_type)}</span><div><div class="label">${escapeHtml(component.label || component.component_id)}</div><div class="muted">${escapeHtml(component.component_type || "component")} | ${escapeHtml(stateText || "no state yet")}</div><div class="action-row" style="border:0;padding:10px 0 0">${actionButtons}</div></div><span class="status-pill ${component.status === "error" || component.status === "blocked" ? "warn" : ""}">${escapeHtml(component.status || "unknown")}</span></div>`;
+      }).join("");
+      $$(".component-action").forEach((button) => button.addEventListener("click", () => controlDeviceComponent(button)));
+    }
+
+    function fmtStateValue(value) {
+      const number = toNumber(value);
+      return number === null ? String(value) : fmtValue(number, 2);
+    }
+
+    function componentIcon(type) {
+      if (type === "stepper_motor" || type === "motor") return "precision_manufacturing";
+      if (type === "relay" || type === "temperature_controller") return "thermostat";
+      return "settings_input_component";
+    }
+
+    async function controlDeviceComponent(button) {
+      const componentId = button.dataset.componentId;
+      const action = button.dataset.action;
+      const valueType = button.dataset.valueType;
+      let value = undefined;
+      if (valueType === "number") {
+        const raw = window.prompt("Set value", button.dataset.defaultValue || "");
+        if (raw === null) return;
+        value = toNumber(raw);
+        if (value === null) {
+          state.backendError = { code: 400, message: "component value must be a number" };
+          renderPassive();
+          return;
+        }
+      }
+      try {
+        await apiJson(`/api/devices/${API_DEVICE_ID}/components/${componentId}/control`, {
+          method: "POST",
+          json: { action, value, reason: `operator component control ${componentId}:${action}` }
+        });
+        await pollBackend();
+      } catch (err) {
+        state.backendError = { code: err.code || 500, message: err.message || "component control failed" };
+        renderPassive();
       }
     }
 
@@ -3203,7 +3605,77 @@
         await pollBackend();
         switchTab("program");
       } catch (err) {
-        state.backendError = { code: err.code || 500, message: err.message || "应用 AI 推荐失败" };
+        state.backendError = { code: err.code || 500, message: err.message || "apply AI recommendation failed" };
+        applyPipelineError();
+        renderPassive();
+      }
+    }
+
+    async function runAiMasterControl(dryRun) {
+      try {
+        const payload = unwrapData(await apiJson("/api/ai/control", {
+          method: "POST",
+          json: {
+            intent: "optimize_process_and_control_components",
+            dry_run: dryRun,
+            allow_process_start: true,
+            allow_process_stop: true,
+            allow_component_control: true,
+            allow_target_adjustment: true,
+            preferred_process_id: state.selectedProcessId || undefined
+          }
+        }));
+        state.aiMasterDecision = payload;
+        state.backendError = null;
+        if (!dryRun) await pollBackend();
+        else renderPassive({ preserveActiveView: state.activeTab === "ai" });
+      } catch (err) {
+        state.aiMasterDecision = {
+          dry_run: dryRun,
+          rationale: `AI master control failed code=${err.code || 500}: ${err.message || "request failed"}`,
+          safety: {},
+          actions: [{ action_type: "blocked", status: "blocked", message: err.message || "AI master control failed" }]
+        };
+        state.backendError = { code: err.code || 500, message: err.message || "AI master control failed" };
+        applyPipelineError();
+        renderPassive({ preserveActiveView: state.activeTab === "ai" });
+      }
+    }
+
+    async function startSelectedProcessFromHmi() {
+      if (state.running) return;
+      if (!state.selectedProcessId) {
+        if (!state.processesLoaded && !state.processLoading) await refreshProcesses({ silent: true });
+        const runnable = state.processes.find((process) => (process.step_count || 0) > 0) || state.processes[0];
+        if (!runnable) {
+          switchTab("program");
+          return;
+        }
+        state.selectedProcessId = runnable.id;
+      }
+      try {
+        const result = unwrapData(await apiJson(`/api/processes/${state.selectedProcessId}/start`, { method: "POST" }));
+        state.activeBatchId = result.batch?.id || state.activeBatchId;
+        state.completedBatchId = state.activeBatchId;
+        state.running = true;
+        state.backendError = null;
+        await pollBackend();
+      } catch (err) {
+        state.backendError = { code: err.code || 500, message: err.message || "process start failed" };
+        applyPipelineError();
+        renderPassive();
+      }
+    }
+
+    async function stopCurrentProcessFromHmi() {
+      try {
+        const result = unwrapData(await apiJson("/api/processes/current/stop", { method: "POST" }));
+        if (result?.stopped_batch_id) state.completedBatchId = result.stopped_batch_id;
+        state.activeBatchId = null;
+        state.running = false;
+        await pollBackend();
+      } catch (err) {
+        state.backendError = { code: err.code || 500, message: err.message || "process stop failed" };
         applyPipelineError();
         renderPassive();
       }
@@ -3219,21 +3691,21 @@
       const icon = String(alarm.id).includes("temperature") ? "thermostat" : String(alarm.id).includes("flow") ? "speed" : critical ? "electric_bolt" : "memory";
       return `<div class="alarm-item ${critical ? "critical" : ""}">
         <div class="recipe-title-line" style="margin:0"><div class="alarm-item-title"><span class="material-symbols-outlined alarm-icon">${icon}</span><div><div class="label" style="color:${critical ? "#ffb4ab" : "var(--amber)"}">${alarm.id}</div><div style="font-size:24px;font-weight:700;margin-top:8px">${alarm.description}</div></div></div><span class="mono muted">${alarm.time}</span></div>
-        <p class="muted">${alarm.sensor} / 当前值 ${alarm.value}</p>
-        <div><span class="alarm-tag">级别: ${alarm.level || (critical ? "high" : "medium")}</span>${alarm.suggestion ? `<span class="alarm-tag" style="margin-left:8px">后端建议</span>` : ""}</div>
+        <p class="muted">${alarm.sensor} / Current ${alarm.value}</p>
+        <div><span class="alarm-tag">Level: ${alarm.level || (critical ? "high" : "medium")}</span>${alarm.suggestion ? `<span class="alarm-tag" style="margin-left:8px">Backend suggestion</span>` : ""}</div>
       </div>`;
     }
 
     function alarmDetailMarkup(alarm) {
       const critical = alarm.level === "high" || String(alarm.value).includes("ERR");
-      return `<div class="recipe-title-line" style="margin:0"><span class="status-pill ${critical ? "warn" : ""}">后端报警</span><button class="text-btn small-link" type="button" aria-label="more"><span class="material-symbols-outlined">more_vert</span></button></div>
+      return `<div class="recipe-title-line" style="margin:0"><span class="status-pill ${critical ? "warn" : ""}">Backend alarm</span><button class="text-btn small-link" type="button" aria-label="more"><span class="material-symbols-outlined">more_vert</span></button></div>
         <h2 style="font-size:38px;margin:16px 0 6px">${alarm.id}</h2>
         <p class="muted" style="font-size:18px">${alarm.description}</p>
         <div class="overview-grid" style="margin-top:22px;grid-template-columns:repeat(2,minmax(0,1fr))">
-          <div><div class="label">当前值</div><div class="metric" style="color:${critical ? "#ffb4ab" : "var(--amber)"}">${alarm.value}</div><div class="muted">${alarm.sensor}</div></div>
-          <div><div class="label">报警级别</div><div class="metric" style="color:var(--amber)">${alarm.level || "--"}</div><div class="muted">来自后端数据管线</div></div>
+          <div><div class="label">Current Value</div><div class="metric" style="color:${critical ? "#ffb4ab" : "var(--amber)"}">${alarm.value}</div><div class="muted">${alarm.sensor}</div></div>
+          <div><div class="label">Alarm Level</div><div class="metric" style="color:var(--amber)">${alarm.level || "--"}</div><div class="muted">From backend data pipeline</div></div>
         </div>
-        <div class="analysis-note" style="margin-top:22px"><strong style="color:var(--green)">后端建议</strong><br>${alarm.suggestion || "暂无建议。"}</div>`;
+        <div class="analysis-note" style="margin-top:22px"><strong style="color:var(--green)">Backend suggestion</strong><br>${alarm.suggestion || "No suggestion"}</div>`;
     }
 
     function tick() {
@@ -3243,21 +3715,37 @@
       }
       $("#runClock").textContent = [Math.floor(state.elapsedSeconds / 3600), Math.floor((state.elapsedSeconds % 3600) / 60), state.elapsedSeconds % 60].map(pad2).join(":");
       $("#wallClock").textContent = nowTime();
-      renderMonitor();
-      requestAnimationFrame(drawAll);
+      scheduleDraw();
+    }
+
+    function scheduleDraw() {
+      if (drawQueued || document.hidden) return;
+      drawQueued = true;
+      requestAnimationFrame(() => {
+        drawQueued = false;
+        drawAll();
+      });
     }
 
     function drawAll() {
+      if (document.hidden) return;
       drawMiniTrends();
-      drawProcess();
-      drawMainChart();
-      drawStageGantt();
-      drawRecipeTrend();
-      drawRecipeScatter();
-      drawSensitivity();
-      drawLearning();
-      drawHistoryTrend();
-      drawAlarmDistribution();
+      if (state.activeTab === "monitor") {
+        drawProcess();
+        drawMainChart();
+        drawStageGantt();
+        drawAlarmDistribution();
+      } else if (state.activeTab === "recipes") {
+        drawRecipeTrend();
+        drawRecipeScatter();
+      } else if (state.activeTab === "materials") {
+        drawHistoryTrend();
+      } else if (state.activeTab === "ai") {
+        drawSensitivity();
+        drawLearning();
+      } else if (state.activeTab === "alarms") {
+        drawAlarmDistribution();
+      }
     }
 
     function fitCanvas(canvas) {
@@ -3275,9 +3763,10 @@
     }
 
     function themeColors() {
+      if (themeCache) return themeCache;
       const root = getComputedStyle(document.documentElement);
       const value = (name, fallback) => root.getPropertyValue(name).trim() || fallback;
-      return {
+      themeCache = {
         bg: value("--bg", "#0A0C14"),
         surface: value("--surface", "#131313"),
         surface0: value("--surface", "#131313"),
@@ -3292,6 +3781,7 @@
         danger: value("--red", "#E84118"),
         warning: value("--amber", "#f4bf2a")
       };
+      return themeCache;
     }
 
     function drawProcess() {
@@ -3323,8 +3813,8 @@
       ctx.fillText("REACTOR V-01", w * 0.5 - 49, y + 92);
       ctx.fillStyle = c.muted;
       ctx.font = "500 11px JetBrains Mono, monospace";
-      ctx.fillText(`T ${fmtValue(sensor("temperature").value, 2)} °C`, w * 0.5 - 47, y - 18);
-      ctx.fillText(`P ${fmtValue(sensor("pressure").value, 2)} MPa`, w * 0.5 - 47, y + 2);
+
+      ctx.fillText(`T ${fmtValue(sensor("temperature").value, 2)} degC`, w * 0.5 - 47, y - 18);
       ctx.fillText(`RPM ${fmtValue(sensor("rpm").value, 2)}`, w * 0.5 - 47, y + 22);
     }
 
@@ -3560,13 +4050,13 @@
       const detail = state.selectedHistoryBatchId ? state.batchDetails[state.selectedHistoryBatchId] : null;
       const detailSamples = Array.isArray(detail?.samples) ? detail.samples : [];
       const tempValues = detailSamples.length
-        ? detailSamples.map((sample) => toNumber(sample.temperature_c)).filter((value) => value !== null).slice(-120)
+        ? detailSamples.map((sample) => toNumber(sample.temperature_c)).filter((value) => value !== null).slice(-MAX_HISTORY_POINTS)
         : state.histories.temperature.slice(-24);
       const pressureValues = detailSamples.length
-        ? detailSamples.map((sample) => toNumber(sample.pressure_mpa)).filter((value) => value !== null).slice(-120)
+        ? detailSamples.map((sample) => toNumber(sample.pressure_mpa)).filter((value) => value !== null).slice(-MAX_HISTORY_POINTS)
         : state.histories.pressure.slice(-24);
       const concentrationValues = detailSamples.length
-        ? detailSamples.map((sample) => toNumber(sample.product_concentration_percent)).filter((value) => value !== null).slice(-120)
+        ? detailSamples.map((sample) => toNumber(sample.product_concentration_percent)).filter((value) => value !== null).slice(-MAX_HISTORY_POINTS)
         : [];
       const all = tempValues.concat(pressureValues, concentrationValues).filter(Number.isFinite);
       if (!all.length) {
@@ -3580,12 +4070,12 @@
       if (concentrationValues.length) drawLine(ctx, concentrationValues, "#9bd1ff", [3, 7], 2, min, max, { l: 44, r: 20, t: 24, b: 30 }, w, h);
       ctx.fillStyle = c.text;
       ctx.font = "700 13px JetBrains Mono, monospace";
-      ctx.fillText("温度", w - 110, 34);
+      ctx.fillText("Temperature", w - 110, 34);
       ctx.fillStyle = c.warning;
-      ctx.fillText("压力", w - 110, 56);
+      ctx.fillText("Pressure", w - 110, 56);
       if (concentrationValues.length) {
         ctx.fillStyle = "#9bd1ff";
-        ctx.fillText("浓度", w - 110, 78);
+        ctx.fillText("Concentration", w - 110, 78);
       }
     }
 
@@ -3735,20 +4225,21 @@
       $$(".chart-tab").forEach((button) => button.addEventListener("click", () => {
         state.chartMode = button.dataset.chart;
         $$(".chart-tab").forEach((item) => item.classList.toggle("active", item === button));
-        drawMainChart();
+        scheduleDraw();
       }));
       $$("#monitorCharts .chart-card").forEach((card) => card.addEventListener("click", () => {
         state.chartMode = card.dataset.chartCard;
         $$(".chart-tab").forEach((item) => item.classList.toggle("active", item.dataset.chart === state.chartMode));
-        drawMainChart();
+        scheduleDraw();
       }));
       $$("[data-tab-jump]").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tabJump)));
-      $("#hmiStartBtn")?.addEventListener("click", () => switchTab("program"));
+      $("#hmiStartBtn")?.addEventListener("click", startSelectedProcessFromHmi);
+      $("#hmiStopBtn")?.addEventListener("click", () => confirmDanger($("#hmiStopBtn"), "CONFIRM STOP", stopCurrentProcessFromHmi));
       $("#hmiPauseBtn")?.addEventListener("click", async () => {
         try { await apiJson("/api/control/auto", { method: "POST", json: { enabled: false } }); await pollBackend(); }
         catch (err) { state.backendError = { code: err.code || 500, message: err.message || "pause auto failed" }; applyPipelineError(); renderPassive(); }
       });
-      $("#hmiApplyAiBtn")?.addEventListener("click", () => $("#applyAiBtn")?.click());
+      $("#hmiApplyAiBtn")?.addEventListener("click", () => confirmDanger($("#hmiApplyAiBtn"), "CONFIRM AI", () => runAiMasterControl(false)));
       $("#hmiEstopBtn")?.addEventListener("click", () => confirmDanger($("#hmiEstopBtn"), "CONFIRM STOP", async () => {
         try { await apiJson("/api/control/emergency-stop", { method: "POST" }); await pollBackend(); }
         catch (err) { state.backendError = { code: err.code || 500, message: err.message || "emergency stop failed" }; applyPipelineError(); renderPassive(); }
@@ -3765,11 +4256,11 @@
       }));
       $("#addStageBtn")?.addEventListener("click", () => {
         if (state.stages.length >= 8) return;
-        state.stages.push({ name: "Hold", temp: 180, rate: 0, duration: 30, rpm: 450, shake: 30, cooling: "自然" });
+        state.stages.push({ name: "Hold", temp: 180, rate: 0, duration: 30, rpm: 450, shake: 30, cooling: "Natural" });
         state.selectedStage = state.stages.length - 1;
         renderProgram();
       });
-      $("#deleteStageBtn")?.addEventListener("click", () => confirmDanger($("#deleteStageBtn"), "确认删除", () => {
+      $("#deleteStageBtn")?.addEventListener("click", () => confirmDanger($("#deleteStageBtn"), "CONFIRM DELETE", () => {
         if (state.stages.length <= 1) return;
         state.stages.splice(state.selectedStage, 1);
         state.selectedStage = Math.max(0, state.selectedStage - 1);
@@ -3777,12 +4268,23 @@
       }));
       $("#loadRecipeBtn")?.addEventListener("click", () => switchTab("recipes"));
       $("#applyAiBtn")?.addEventListener("click", applyAiRecommendation);
+      $("#aiDryRunBtn")?.addEventListener("click", () => runAiMasterControl(true));
+      $("#aiExecuteBtn")?.addEventListener("click", () => confirmDanger($("#aiExecuteBtn"), "CONFIRM AI", () => runAiMasterControl(false)));
       $("#historyExportBtn")?.addEventListener("click", () => {
         const rowsCsv = ["id,start,end,temp,pressure,score,status"].concat(displayBatches().map((batch) => `${batch.code},${batch.start},${batch.end},${batch.temp},${batch.pressure},${batch.score},${batch.status}`));
         downloadText("reactor-batches.csv", rowsCsv.join("\n"), "text/csv");
       });
       $("#sensitivityChart")?.addEventListener("click", () => {});
-      window.addEventListener("resize", () => requestAnimationFrame(drawAll));
+      window.addEventListener("resize", () => {
+        themeCache = null;
+        scheduleDraw();
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          void pollBackend();
+          scheduleDraw();
+        }
+      });
     }
 
     function renderAll() {
@@ -3795,7 +4297,7 @@
     renderAll();
     pollBackend();
     setInterval(tick, 1000);
-    setInterval(pollBackend, 2000);
+    setInterval(pollBackend, POLL_BACKEND_MS);
     window.__reactorState = state;
   </script>
 </body>
