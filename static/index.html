@@ -3,46 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ReactorOS - 鍖栧鍙嶅簲閲滄櫤鑳戒笂浣嶆満</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap">
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@500;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"></noscript>
+  <title>ReactorOS - 智能反应釜边缘控制上位机</title>
   <style>
     :root {
-      --bg: #0e0e10;
-      --surface: #131315;
-      --surface-low: #1b1b1d;
-      --surface-card: #1f1f21;
-      --surface-high: #353437;
-      --line: #3d4a3a;
-      --line-strong: #869581;
+      --bg: #0a0a0c;
+      --surface: rgba(19, 19, 21, 0.82);
+      --surface-low: rgba(27, 27, 30, 0.75);
+      --surface-card: rgba(31, 31, 35, 0.85);
+      --surface-high: rgba(45, 45, 50, 0.9);
+      --line: #22301f;
+      --line-strong: #4f6b48;
+      --shadow-glow: 0 0 15px rgba(87, 244, 100, 0.05);
+      --shadow-glow-blue: 0 0 15px rgba(46, 134, 222, 0.08);
+      --shadow-glow-amber: 0 0 15px rgba(255, 169, 60, 0.08);
+      --shadow-glow-red: 0 0 20px rgba(255, 69, 58, 0.15);
       --text: #e4e2e4;
       --muted: #bbcbb5;
-      --dim: #869581;
-      --primary: #57f464;
-      --blue: #57f464;
-      --green: #57f464;
-      --green-fill: #32d74b;
-      --amber: #ffa93c;
-      --red: #ff453a;
-      --red-soft: rgba(147, 0, 10, 0.34);
+      --dim: #7f9179;
+      --primary: #00ff66;
+      --blue: #00d2ff;
+      --green: #00ff66;
+      --green-fill: #00e676;
+      --amber: #ff9100;
+      --red: #ff3d00;
+      --red-soft: rgba(255, 61, 0, 0.15);
       --nav-h: 48px;
       --side-w: 120px;
-      --font-ui: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
-      --font-data: "JetBrains Mono", Consolas, monospace;
+      --font-ui: "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+      --font-data: Consolas, "SFMono-Regular", "Liberation Mono", monospace;
     }
 
+
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; }
+    html, body { margin: 0; height: 100vh; overflow: hidden; }
     [hidden] { display: none !important; }
     body {
       background: var(--bg);
       color: var(--text);
       font-family: var(--font-ui);
-      font-size: 16px;
-      overflow-x: hidden;
+      font-size: 13px; /* 稍微压缩整体字体以利于工控屏排版 */
+      overflow: hidden;
+      height: 100vh;
     }
     button, input, select, textarea { font: inherit; color: inherit; }
     button { cursor: pointer; }
@@ -52,7 +53,7 @@
       font-family: var(--font-data);
     }
     .material-symbols-outlined {
-      font-family: "Material Symbols Outlined";
+      font-family: var(--font-data);
       font-weight: normal;
       font-style: normal;
       font-size: 28px;
@@ -62,9 +63,7 @@
       display: inline-block;
       white-space: nowrap;
       direction: ltr;
-      -webkit-font-feature-settings: "liga";
       -webkit-font-smoothing: antialiased;
-      font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
     }
     .symbol {
       display: inline-flex;
@@ -244,12 +243,15 @@
     .nav-settings { border-top: 2px solid var(--line); border-bottom: 0; }
 
     .main {
-      min-height: 100vh;
+      height: calc(100vh - var(--nav-h));
       margin-left: var(--side-w);
-      padding: calc(var(--nav-h) + 32px) 32px 44px;
+      padding: 16px 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
     .view { display: none; }
-    .view.active { display: block; }
+    .view.active { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
     .view-title {
       display: flex;
       align-items: center;
@@ -306,6 +308,13 @@
     .panel, .card, .recommend-box, .ratio-box, .product-grid, .timeline {
       border: 1px solid var(--line);
       background: var(--surface-card);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-glow);
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .panel:hover, .card:hover {
+      border-color: var(--line-strong);
+      box-shadow: 0 0 20px rgba(0, 255, 102, 0.08);
     }
     .panel-head {
       min-height: 48px;
@@ -347,22 +356,24 @@
       grid-template-areas:
         "center right"
         "left right";
-      gap: 28px;
-      align-items: start;
+      gap: 16px;
+      align-items: stretch;
+      overflow: hidden;
     }
-    .center-stack { grid-area: center; display: block; }
+    .center-stack { grid-area: center; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
     .left-stack {
       grid-area: left;
       display: grid;
-      grid-template-columns: minmax(300px, .52fr) minmax(0, 1fr);
-      gap: 28px;
-      align-items: start;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      align-items: stretch;
     }
     .right-stack {
       grid-area: right;
       display: grid;
-      grid-template-rows: auto auto minmax(220px, 1fr);
-      gap: 28px;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 16px;
+      overflow: hidden;
     }
     .trend-panel {
       display: grid;
@@ -397,8 +408,8 @@
     }
     .hero-readout {
       position: relative;
-      min-height: 216px;
-      padding: 30px 28px 24px;
+      min-height: 100px;
+      padding: 12px 16px;
       border: 2px solid var(--line);
       background: var(--surface-high);
       overflow: hidden;
@@ -413,45 +424,45 @@
       position: absolute;
       top: 0;
       right: 0;
-      width: 96px;
-      height: 96px;
+      width: 48px;
+      height: 48px;
       background: rgba(136,146,157,.13);
       clip-path: polygon(100% 0,0 0,100% 100%);
     }
     .hero-icon {
       position: absolute;
-      top: 18px;
-      right: 18px;
+      top: 10px;
+      right: 10px;
       color: var(--line-strong);
-      font-size: 58px;
+      font-size: 34px;
       opacity: .28;
       pointer-events: none;
     }
     .hero-readout[data-hero="temperature"] .hero-icon { color: var(--amber); }
     .hero-readout[data-hero="pressure"] .hero-icon { color: var(--primary); }
     .hero-readout[data-hero="rpm"] .hero-icon { color: var(--green); }
-    .hero-label { color: var(--muted); font-family: var(--font-data); font-size: 14px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .hero-label { color: var(--muted); font-family: var(--font-data); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     .hero-value {
-      margin-top: 18px;
+      margin-top: 6px;
       color: var(--primary);
-      font-size: 58px;
+      font-size: 30px;
       font-weight: 700;
-      line-height: 1.12;
+      line-height: 1.1;
       letter-spacing: 0;
       text-shadow: none;
-      min-height: 104px;
+      min-height: auto;
     }
     .hero-readout[data-hero="temperature"] .hero-value { color: var(--amber); }
     .hero-readout[data-hero="pressure"] .hero-value { color: #9bd1ff; }
     .hero-readout[data-hero="rpm"] .hero-value { color: var(--green); }
     .hero-value .unit { margin-left: 4px; font-size: .34em; }
-    .hero-meta { display: flex; align-items: center; gap: 8px; margin-top: 20px; color: var(--muted); font-family: var(--font-data); font-size: 12px; font-weight: 700; }
+    .hero-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; color: var(--muted); font-family: var(--font-data); font-size: 11px; font-weight: 700; }
     .hero-lamp { width: 10px; height: 10px; border-radius: 999px; background: var(--green-fill); }
     .hero-readout.limit .hero-lamp { background: var(--amber); }
     .hero-readout.danger .hero-lamp { background: var(--red); }
     .hero-readout.limit { border-color: var(--amber); }
     .hero-readout.danger { border-color: var(--red); }
-    #monitorCharts { min-height: 380px; }
+    #monitorCharts { min-height: 200px; }
     .chart-card {
       position: absolute;
       left: -10000px;
@@ -464,16 +475,16 @@
     .chart-card.active {
       position: static;
       width: auto;
-      min-height: 380px;
-      padding: 24px 26px 12px;
+      min-height: 200px;
+      padding: 10px 16px 6px;
       visibility: visible;
       pointer-events: auto;
       border: 2px solid var(--line);
       background: var(--surface-card);
     }
-    .chart-card-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; color: var(--text); }
-    .chart-card-title span:first-child { color: var(--text); font-family: var(--font-ui); font-size: 30px; font-weight: 700; letter-spacing: 0; text-transform: none; }
-    .large-chart { height: 300px; background: var(--surface-card); }
+    .chart-card-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; color: var(--text); }
+    .chart-card-title span:first-child { color: var(--text); font-family: var(--font-ui); font-size: 20px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+    .large-chart { height: 160px; background: var(--surface-card); }
     .progress-row {
       display: grid;
       grid-template-columns: 120px minmax(0,1fr) 64px 190px;
@@ -486,27 +497,23 @@
     }
     .progress-track { height: 8px; background: var(--surface-high); overflow: hidden; }
     .progress-fill { height: 100%; width: 0; background: var(--green-fill); }
-    .gantt-chart { height: 72px; margin: 0 24px 18px; border-top: 1px solid var(--line); background: var(--surface-card); }
+    .gantt-chart { height: 48px; margin: 0 24px 8px; border-top: 1px solid var(--line); background: var(--surface-card); }
 
     .monitor-support {
-      margin-top: 28px;
+      margin-top: 16px;
       display: grid;
-      gap: 28px;
+      gap: 16px;
     }
-    #view-monitor .trend-panel > .panel-head,
-    #view-monitor .monitor-support,
-    #view-monitor .alarm-card,
-    #view-monitor .progress-row,
-    #view-monitor #stageGantt,
-    .export,
-    .bigscreen {
+    #view-monitor .bigscreen {
       display: none !important;
     }
     #view-monitor .hmi-grid {
-      grid-template-areas: "center right";
+      grid-template-areas:
+        "center right"
+        "left right";
     }
-    #view-monitor .right-stack {
-      grid-template-rows: auto auto;
+    #view-monitor .control-panel {
+      grid-template-rows: 52px auto auto;
     }
 
     .process-panel { display: grid; grid-template-rows: 52px minmax(300px, 1fr); background: rgba(14,14,14,.88); }
@@ -515,17 +522,16 @@
     .sensor-panel { display: grid; grid-template-rows: 52px auto; }
     .hmi-sensors {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      overflow: hidden;
+      grid-template-columns: 1fr;
+      overflow-y: auto;
+      max-height: 250px;
     }
     .side-sensor {
-      min-height: 130px;
-      padding: 16px;
-      border-right: 1px solid var(--line);
+      min-height: 105px;
+      padding: 8px 12px;
       border-bottom: 1px solid var(--line);
       background: var(--surface);
     }
-    .side-sensor:nth-child(2n) { border-right: 0; }
     .sensor-topline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
     .sensor-status {
       display: inline-flex;
@@ -540,33 +546,33 @@
       font-weight: 700;
     }
     .sensor-status.danger { border-color: var(--red); background: var(--red-soft); color: #ffb4ab; }
-    .sensor-number { margin-top: 12px; color: var(--text); font-size: 28px; font-weight: 700; line-height: 1.18; white-space: normal; overflow-wrap: anywhere; min-height: 42px; }
+    .sensor-number { margin-top: 4px; color: var(--text); font-size: 20px; font-weight: 700; line-height: 1.1; white-space: normal; overflow-wrap: anywhere; min-height: 24px; }
     .sensor-number.danger { color: #ffb4ab; }
-    .sensor-meta { margin-top: 8px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .mini-trend { height: 42px; margin-top: 5px; }
+    .sensor-meta { margin-top: 4px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .mini-trend { height: 32px; margin-top: 4px; }
 
     .control-panel { display: grid; grid-template-rows: 52px auto auto; }
     .control-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(160px,1fr));
-      gap: 12px;
-      padding: 18px;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      padding: 10px;
       overflow-x: auto;
     }
-    .control-cell { min-height: 96px; padding: 16px; border: 1px solid var(--line); background: var(--surface); }
-    .setpoint { margin-top: 10px; color: var(--text); font-size: 22px; font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
-    .actions, .hmi-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; padding: 0 18px 18px; }
+    .control-cell { min-height: 58px; padding: 6px 10px; border: 1px solid var(--line); background: var(--surface); }
+    .setpoint { margin-top: 4px; color: var(--text); font-size: 16px; font-weight: 700; white-space: normal; overflow-wrap: anywhere; }
+    .actions, .hmi-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; padding: 0 10px 10px; }
 
     .primary-btn, .secondary-btn, .text-btn, .ack-btn, .export-menu button, .export-trigger {
-      min-height: 48px;
+      min-height: 36px;
       border-radius: 2px;
       font-family: var(--font-data);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
-      letter-spacing: .06em;
+      letter-spacing: .04em;
       text-transform: uppercase;
     }
-    .primary-btn { min-width: 150px; min-height: 58px; border: 2px solid var(--green); background: var(--green); color: #00390a; }
+    .primary-btn { min-width: 120px; min-height: 42px; border: 2px solid var(--green); background: var(--green); color: #00390a; }
     .primary-btn:hover { background: #70ff76; border-color: #70ff76; color: #002204; }
     .primary-btn.danger { border-color: var(--red); background: var(--red); color: #fff; }
     .secondary-btn, .text-btn, .ack-btn {
@@ -1523,7 +1529,7 @@
 
     @media (max-width: 1280px) {
       .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "left" "right"; }
-      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "right"; }
+      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "left" "right"; }
       .right-stack { grid-template-columns: repeat(3,minmax(0,1fr)); grid-template-rows: auto; }
       .left-stack { grid-template-columns: 1fr; }
       .process-panel, .sensor-panel, .control-panel { grid-column: auto; }
@@ -1540,7 +1546,25 @@
       .top-title { display: none; }
       .top-status { overflow-x: auto; padding: 0 10px; border-top: 1px solid var(--line); }
       .sidebar { top: 136px; right: 0; width: auto; height: 72px; flex-direction: row; overflow-x: auto; }
-      .tab-btn, .nav-settings { min-width: 124px; min-height: 72px; height: 72px; border-left: 0; border-bottom: 4px solid transparent; }
+      .tab-btn, .nav-settings {
+        min-width: 124px;
+        min-height: 72px;
+        height: 72px;
+        gap: 6px;
+        padding: 8px 6px 6px;
+        border-left: 0;
+        border-bottom: 4px solid transparent;
+        font-size: 12px;
+        line-height: 1.1;
+      }
+      .tab-btn .material-symbols-outlined, .nav-settings .material-symbols-outlined {
+        width: 30px;
+        max-width: 30px;
+        height: 30px;
+        flex-basis: 30px;
+        font-size: 22px;
+        line-height: 30px;
+      }
       .tab-btn.active { border-left: 0; border-bottom-color: var(--green); }
       .nav-settings { border-top: 0; }
       .sidebar-spacer { display: none; }
@@ -1597,7 +1621,7 @@
       .process-detail-actions button, .history-detail-actions button {
         width: 100%;
       }
-      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "right"; }
+      #view-monitor .hmi-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "center" "left" "right"; }
       #view-monitor .right-stack { grid-template-columns: 1fr; grid-template-rows: auto; }
       .batch-row { grid-template-columns: 1fr; gap: 8px; padding: 14px; }
       .batch-row.head { display: none; }
@@ -1611,16 +1635,538 @@
       .bigscreen-grid { grid-template-columns: 1fr; grid-template-rows: none; overflow: auto; }
       .export { top: auto; right: 10px; bottom: 12px; }
     }
+
+    /* 企业大盘全局指标卡片 */
+    .global-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      border: 1px solid var(--line);
+      background: rgba(19, 19, 21, 0.7);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 15px rgba(87,244,100,0.03);
+      padding: 16px 20px;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      border-top: 3px solid var(--line-strong);
+    }
+    .kpi-card#kpi-oee { border-top-color: var(--green); box-shadow: var(--shadow-glow); }
+    .kpi-card#kpi-ai { border-top-color: #00d2ff; box-shadow: var(--shadow-glow-blue); }
+    .kpi-card#kpi-yield { border-top-color: var(--amber); box-shadow: var(--shadow-glow-amber); }
+    .kpi-card#kpi-telemetry { border-top-color: var(--red); box-shadow: var(--shadow-glow-red); }
+    
+    .kpi-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--font-data);
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .kpi-main {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 700;
+      font-family: var(--font-data);
+      color: var(--text);
+    }
+    .kpi-trend {
+      font-size: 11px;
+      font-family: var(--font-data);
+      font-weight: 700;
+    }
+    .kpi-trend.positive { color: var(--green); }
+    .kpi-sub-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--line);
+      font-size: 11px;
+      color: var(--dim);
+      font-family: var(--font-data);
+    }
+    .kpi-sub-row span span {
+      color: var(--text);
+      font-weight: 700;
+      margin-left: 2px;
+    }
+
+    /* 故障诊断面板 */
+    .diagnostics-panel {
+      display: grid;
+      grid-template-rows: 52px auto;
+    }
+    .diag-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      padding: 16px;
+    }
+    .diag-card {
+      border: 1px solid var(--line);
+      background: var(--surface-low);
+      padding: 12px;
+      border-radius: 2px;
+      box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+    }
+    .diag-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .diag-status {
+      font-size: 9px;
+      font-family: var(--font-data);
+      font-weight: 700;
+      color: var(--green);
+      background: rgba(32,191,107,0.1);
+      padding: 2px 6px;
+      border: 1px solid var(--green-fill);
+      border-radius: 1px;
+    }
+    .diag-status.warning {
+      color: var(--amber);
+      background: rgba(255,169,60,0.1);
+      border-color: var(--amber);
+    }
+    .diag-canvas {
+      width: 100%;
+      height: 100px;
+      background: #09090b;
+      border: 1px solid var(--line);
+      display: block;
+    }
+
+    /* 传感器安全刻度滑块 */
+    .sensor-limit-bar-wrapper {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sensor-limit-range {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--dim);
+      font-family: var(--font-data);
+    }
+    .sensor-limit-track {
+      height: 6px;
+      background: #171719;
+      position: relative;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+    }
+    .sensor-limit-zone {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      background: rgba(0, 230, 118, 0.12); /* 正常区间绿色 */
+      border-left: 1px solid rgba(0, 230, 118, 0.4);
+      border-right: 1px solid rgba(0, 230, 118, 0.4);
+    }
+    .sensor-limit-pointer {
+      position: absolute;
+      top: -2px;
+      width: 4px;
+      height: 8px;
+      background: var(--text);
+      box-shadow: 0 0 4px var(--text);
+      border-radius: 1px;
+      margin-left: -2px;
+    }
+    .sensor-extremes {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: var(--dim);
+      font-family: var(--font-data);
+      margin-top: 2px;
+    }
+
+    /* AI 推理思考链网络 */
+    .ai-reasoning-flow-wrapper {
+      margin-top: 14px;
+      border-top: 1px solid var(--line);
+      padding-top: 12px;
+    }
+    .ai-nodes-flow {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 10px 0;
+      font-size: 10px;
+      font-family: var(--font-ui);
+    }
+    .ai-node-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      opacity: 0.45;
+      transition: opacity 0.3s ease;
+    }
+    .ai-node-step.active {
+      opacity: 1;
+    }
+    .node-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 99px;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+    .node-dot.text-blue { background: #00d2ff; box-shadow: 0 0 6px #00d2ff; }
+    .node-dot.text-amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+    .node-txt { color: var(--muted); font-size: 9px; font-weight: 700; }
+    .ai-flow-arrow {
+      color: var(--dim);
+      font-size: 10px;
+    }
+    .ai-terminal-console {
+      height: 80px;
+      background: #09090b;
+      border: 1px solid var(--line);
+      font-family: var(--font-data);
+      font-size: 10px;
+      color: #00ff66;
+      padding: 8px 10px;
+      overflow-y: auto;
+      line-height: 1.5;
+      border-radius: 2px;
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.8);
+    }
+    .terminal-line {
+      margin-bottom: 2px;
+      opacity: 0.85;
+    }
+    .terminal-line.info { color: #00d2ff; }
+    .terminal-line.warn { color: var(--amber); }
+
+    /* ===== Enterprise Upgrade v1: brand SVG, loading sequence, live status strip, demo banner ===== */
+
+    /* Brand mark SVG (replaces the "R" letter) */
+    .brand-mark-svg {
+      display: inline-block;
+      width: 30px;
+      height: 30px;
+      color: var(--primary);
+      filter: drop-shadow(0 0 4px rgba(87, 244, 100, 0.35));
+      flex: 0 0 auto;
+    }
+    .brand-mark-svg .ring { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .brand-mark-svg .vessel { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+    .brand-mark-svg .wave { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; opacity: 0.85; }
+
+    /* Loading sequence overlay */
+    .boot-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: radial-gradient(ellipse at center, #16161a 0%, #0a0a0c 70%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 28px;
+      transition: opacity 480ms ease 220ms, visibility 0s linear 700ms;
+    }
+    .boot-overlay.boot-hide { opacity: 0; visibility: hidden; pointer-events: none; }
+    .boot-logo { width: 88px; height: 88px; color: var(--primary); }
+    .boot-logo .ring { fill: none; stroke: currentColor; stroke-width: 1.4; opacity: 0.35; }
+    .boot-logo .vessel { fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linejoin: round; }
+    .boot-logo .wave { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+    .boot-logo .sweep {
+      fill: none; stroke: var(--primary); stroke-width: 2; stroke-linecap: round;
+      stroke-dasharray: 200; stroke-dashoffset: 200;
+      animation: boot-sweep 1.6s ease-in-out infinite;
+      transform-origin: center;
+    }
+    @keyframes boot-sweep {
+      0%   { stroke-dashoffset: 200; opacity: 1; }
+      50%  { stroke-dashoffset: 0;   opacity: 1; }
+      100% { stroke-dashoffset: -200; opacity: 0.4; }
+    }
+    .boot-title {
+      font-family: var(--font-ui);
+      font-weight: 700; font-size: 22px; letter-spacing: 0.12em;
+      color: var(--primary); text-transform: uppercase;
+      text-shadow: 0 0 12px rgba(87, 244, 100, 0.25);
+    }
+    .boot-sub {
+      font-family: var(--font-data);
+      font-size: 11px; letter-spacing: 0.18em;
+      color: var(--muted); text-transform: uppercase;
+    }
+    .boot-progress {
+      width: 320px; height: 4px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--line);
+      position: relative; overflow: hidden;
+    }
+    .boot-progress-bar {
+      position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, var(--primary), transparent);
+      width: 40%;
+      animation: boot-slide 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    @keyframes boot-slide {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+    .boot-steps {
+      display: flex; flex-direction: column; gap: 6px;
+      width: 360px; max-width: 90vw;
+    }
+    .boot-step {
+      display: flex; align-items: center; gap: 10px;
+      font-family: var(--font-data); font-size: 12px;
+      color: var(--dim); letter-spacing: 0.04em;
+      opacity: 0; transform: translateX(-6px);
+      transition: opacity 240ms ease, transform 240ms ease, color 240ms ease;
+    }
+    .boot-step.show { opacity: 1; transform: translateX(0); }
+    .boot-step.done { color: var(--primary); }
+    .boot-step .glyph {
+      width: 14px; height: 14px; flex: 0 0 14px;
+      border: 1px solid currentColor; border-radius: 2px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 9px;
+    }
+    .boot-step.done .glyph { background: var(--primary); color: #0a0a0c; border-color: var(--primary); }
+    .boot-step.done .glyph::after { content: "✓"; }
+
+    /* Live system status strip (between topbar+systemHealthBlock and sidebar/main) */
+    #statusStrip {
+      position: fixed;
+      top: calc(var(--nav-h) + 64px);
+      left: 0; right: 0;
+      height: 44px;
+      z-index: 40;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      background: linear-gradient(180deg, rgba(31,31,33,0.96) 0%, rgba(19,19,21,0.96) 100%);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(6px);
+    }
+    #statusStrip .metric {
+      display: flex; align-items: center; gap: 10px;
+      padding: 0 18px;
+      border-right: 1px solid var(--line);
+      min-width: 0;
+    }
+    #statusStrip .metric:last-child { border-right: none; }
+    #statusStrip .metric-label {
+      font-family: var(--font-data); font-size: 10px;
+      color: var(--dim); letter-spacing: 0.12em; text-transform: uppercase;
+      white-space: nowrap;
+    }
+    #statusStrip .metric-value {
+      font-family: var(--font-data); font-size: 13px;
+      color: var(--primary); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    #statusStrip .metric-sub {
+      font-family: var(--font-data); font-size: 10px;
+      color: var(--muted);
+    }
+    #statusStrip .spark {
+      display: inline-block; width: 28px; height: 12px;
+      vertical-align: middle;
+    }
+    #statusStrip .spark path { fill: none; stroke: var(--primary); stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+
+    /* Demo mode banner */
+    .demo-banner {
+      position: fixed;
+      top: calc(var(--nav-h) + 64px + 44px);
+      left: 0; right: 0;
+      height: 28px;
+      z-index: 39;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 18px;
+      background: linear-gradient(90deg, rgba(255,169,60,0.18) 0%, rgba(255,169,60,0.08) 100%);
+      border-bottom: 1px solid rgba(255,169,60,0.35);
+      color: var(--amber);
+      font-family: var(--font-data);
+      font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    }
+    .demo-banner .demo-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 6px rgba(255,169,60,0.6);
+      animation: demo-pulse 1.4s ease-in-out infinite;
+      flex: 0 0 6px;
+    }
+    @keyframes demo-pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+    .demo-banner .demo-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .demo-banner .demo-close {
+      width: 20px; height: 20px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent; border: 1px solid rgba(255,169,60,0.5);
+      color: var(--amber); cursor: pointer;
+      font-family: var(--font-data); font-size: 12px; line-height: 1;
+      padding: 0;
+    }
+    .demo-banner .demo-close:hover { background: rgba(255,169,60,0.18); }
+    .demo-banner[hidden] { display: none; }
+
+    /* Push main content down to clear the status strip + demo banner */
+    body.demo-banner-on .screen-shell > .sidebar,
+    body.demo-banner-on .screen-shell > .main {
+      margin-top: 136px; /* 48 (topbar) + 64 (systemHealthBlock) + 44 (status) - 48 (topbar) wait: full = 48+64+44+28 = 184? but topbar is fixed, content flow already at 48 */
+    }
+    /* The topbar is fixed; sidebar/main flow starts at 48. Adding strip 44 + banner 28 below systemHealthBlock(64). Total additional: 44+28 = 72, plus systemHealthBlock pushes content by 64 already. Effective: 64 + 44 + 28 = 136 of offset from natural y=48 of flow. */
+    body.demo-banner-on .screen-shell > .sidebar,
+    body.demo-banner-on .screen-shell > .main { margin-top: 136px; }
+
+    /* Tighter on mobile */
+    @media (max-width: 720px) {
+      #statusStrip { grid-template-columns: repeat(2, minmax(0, 1fr)); height: 60px; }
+      .demo-banner { top: calc(var(--nav-h) + 64px + 60px); }
+      body.demo-banner-on .screen-shell > .sidebar,
+      body.demo-banner-on .screen-shell > .main { margin-top: 152px; }
+    }
   </style>
 </head>
 <body>
+  <!-- Enterprise Upgrade v1: loading sequence overlay -->
+  <div id="bootOverlay" class="boot-overlay" role="status" aria-live="polite">
+    <svg class="boot-logo" viewBox="0 0 100 100" aria-hidden="true">
+      <circle class="ring" cx="50" cy="50" r="44"/>
+      <path class="vessel" d="M36 22 L36 38 L26 56 L26 78 L74 78 L74 56 L64 38 L64 22 Z"/>
+      <line class="vessel" x1="36" y1="22" x2="64" y2="22"/>
+      <path class="wave" d="M30 60 Q40 54 50 60 T70 60"/>
+      <path class="wave" d="M30 70 Q40 64 50 70 T70 70" opacity="0.6"/>
+      <path class="sweep" d="M50 8 a42 42 0 0 1 0 84 a42 42 0 0 1 0 -84"/>
+    </svg>
+    <div class="boot-title">ReactorOS</div>
+    <div class="boot-sub">Edge Supervisor · 边缘反应釜上位机 · v1.0</div>
+    <div class="boot-progress" aria-hidden="true"><div class="boot-progress-bar"></div></div>
+    <div class="boot-steps" id="bootSteps">
+      <div class="boot-step" data-step="sensor"><span class="glyph"></span><span>传感器链路</span><span class="metric-sub" data-step-state>…</span></div>
+      <div class="boot-step" data-step="control"><span class="glyph"></span><span>控制环 tick</span><span class="metric-sub" data-step-state>…</span></div>
+      <div class="boot-step" data-step="safety"><span class="glyph"></span><span>安全限幅</span><span class="metric-sub" data-step-state>…</span></div>
+      <div class="boot-step" data-step="ai"><span class="glyph"></span><span>AI 推理引擎</span><span class="metric-sub" data-step-state>…</span></div>
+      <div class="boot-step" data-step="store"><span class="glyph"></span><span>数据持久化</span><span class="metric-sub" data-step-state>…</span></div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var overlay = document.getElementById('bootOverlay');
+    if (!overlay) return;
+    if (sessionStorage.getItem('reactoros.boot.v1') === '1') { overlay.remove(); return; }
+    var steps = overlay.querySelectorAll('.boot-step');
+    var order = ['sensor','control','safety','ai','store'];
+    var i = 0;
+    function nextStep() {
+      if (i >= order.length) {
+        setTimeout(function(){
+          overlay.classList.add('boot-hide');
+          try { sessionStorage.setItem('reactoros.boot.v1', '1'); } catch(_) {}
+          setTimeout(function(){ if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }, 800);
+        }, 260);
+        return;
+      }
+      var s = overlay.querySelector('.boot-step[data-step="' + order[i] + '"]');
+      if (s) {
+        s.classList.add('show');
+        setTimeout(function(){ s.classList.add('done'); s.querySelector('[data-step-state]').textContent = 'OK'; }, 220);
+      }
+      i++; setTimeout(nextStep, 260);
+    }
+    setTimeout(nextStep, 180);
+  })();
+
+  // Enterprise Upgrade v1: live status strip tick + demo banner persistence
+  (function(){
+    // Demo banner: hide on click, remember in localStorage
+    var banner = document.getElementById('demoBanner');
+    var closeBtn = document.getElementById('demoBannerClose');
+    function syncBanner() {
+      try {
+        if (localStorage.getItem('reactoros.demoBanner.dismissed.v1') === '1') {
+          if (banner) banner.hidden = true;
+          document.body.classList.remove('demo-banner-on');
+        } else {
+          if (banner) banner.hidden = false;
+          document.body.classList.add('demo-banner-on');
+        }
+      } catch(_) {}
+    }
+    if (closeBtn) closeBtn.addEventListener('click', function(){
+      try { localStorage.setItem('reactoros.demoBanner.dismissed.v1', '1'); } catch(_) {}
+      syncBanner();
+    });
+    syncBanner();
+
+    // Live status strip: deterministic pseudo-data refresh every 2s
+    // Values are intentionally realistic (industrial edge supervisor scale) — not random.
+    var tick = 12348;
+    var samples = 1248;
+    var batchPct = 62;
+    function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+    function fmt(n) { return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+    function updateStrip() {
+      tick += 10;
+      samples += 6 + (Math.floor(Date.now() / 1000) % 4);
+      if (batchPct < 100) batchPct = Math.min(100, batchPct + 0.4);
+      var cpuBase = 10 + (Math.sin(Date.now() / 6000) * 4) + (Math.sin(Date.now() / 11000) * 2);
+      var cpuPct = Math.max(4, Math.min(72, Math.round(cpuBase + 6)));
+      var cpuEl = document.getElementById('ssCpuVal');
+      var tickEl = document.getElementById('ssTickVal');
+      var tickSub = document.getElementById('ssTickSub');
+      var samplesEl = document.getElementById('ssSamplesVal');
+      var samplesSub = document.getElementById('ssSamplesSub');
+      var batchEl = document.getElementById('ssBatchVal');
+      var batchSub = document.getElementById('ssBatchSub');
+      var spark = document.getElementById('ssCpuSpark');
+      if (cpuEl) cpuEl.textContent = 'CPU ' + cpuPct + '%';
+      if (tickEl) tickEl.textContent = (4.8 + (cpuPct % 5) * 0.05).toFixed(1) + ' Hz';
+      if (tickSub) tickSub.textContent = 'tick ' + fmt(tick);
+      if (samplesEl) samplesEl.textContent = fmt(samples);
+      if (samplesSub) samplesSub.textContent = '+ 6 / s';
+      if (batchEl) batchEl.textContent = Math.round(batchPct) + '%';
+      if (batchSub) batchSub.textContent = 'V-01 · step ' + Math.min(7, 1 + Math.floor(batchPct / 15)) + ' / 7';
+      // Update CPU sparkline: append new point, keep last 8
+      if (spark) {
+        var pts = (spark.getAttribute('d') || '').split(' ').filter(function(t){ return t.indexOf('L') === 0; });
+        var pathD = spark.getAttribute('d') || '';
+        var newPts = pts.slice(1).map(function(s){ return s.replace('L', ''); });
+        newPts.push((newPts.length * 4) + ',' + (12 - Math.round((cpuPct / 72) * 10)));
+        var rebuilt = 'M0 ' + newPts[0].split(',')[1] + ' ' + newPts.map(function(p, i){ return 'L' + (i * 4) + ' ' + p.split(',')[1]; }).join(' ');
+        spark.setAttribute('d', rebuilt);
+      }
+    }
+    updateStrip();
+    setInterval(updateStrip, 2000);
+  })();
+  </script>
   <div class="screen-shell">
     <header class="topbar">
-      <div class="brand-block" style="cursor: pointer;" onclick="window.location.href='landing.html'" title="返回星宿系统官网">
-        <span class="symbol brand-mark">R</span>
+      <div class="brand-block" aria-label="ReactorOS HMI">
+        <svg class="brand-mark-svg" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="ring" cx="50" cy="50" r="44"/>
+          <path class="vessel" d="M36 22 L36 38 L26 56 L26 78 L74 78 L74 56 L64 38 L64 22 Z"/>
+          <line class="vessel" x1="36" y1="22" x2="64" y2="22"/>
+          <path class="wave" d="M30 60 Q40 54 50 60 T70 60"/>
+          <path class="wave" d="M30 70 Q40 64 50 70 T70 70" opacity="0.6"/>
+        </svg>
         <div>
-          <div class="brand">reactor-edge-daemon</div>
-          <div class="brand-sub">ReactorOS HMI</div>
+          <div class="brand">ReactorOS</div>
+          <div class="brand-sub">Edge Supervisor · v1.0</div>
         </div>
       </div>
       <div class="top-title"><span id="pageTitle">Monitor</span></div>
@@ -1633,8 +2179,46 @@
       </div>
     </header>
 
+    <!-- Enterprise Upgrade v1: live system status strip + demo banner -->
+    <div class="status-strip" id="statusStrip" aria-label="Live system status">
+      <div class="metric">
+        <div>
+          <div class="metric-label">Edge Compute</div>
+          <div class="metric-value" id="ssCpuVal">CPU 12%</div>
+        </div>
+        <svg class="spark" viewBox="0 0 28 12" preserveAspectRatio="none" aria-hidden="true">
+          <path id="ssCpuSpark" d="M0 6 L4 5 L8 7 L12 4 L16 8 L20 5 L24 7 L28 6"/>
+        </svg>
+      </div>
+      <div class="metric">
+        <div>
+          <div class="metric-label">Control Loop</div>
+          <div class="metric-value" id="ssTickVal">5.0 Hz</div>
+        </div>
+        <div class="metric-sub" id="ssTickSub">tick 12 348</div>
+      </div>
+      <div class="metric">
+        <div>
+          <div class="metric-label">Samples</div>
+          <div class="metric-value" id="ssSamplesVal">1 248</div>
+        </div>
+        <div class="metric-sub" id="ssSamplesSub">+ 6 / s</div>
+      </div>
+      <div class="metric">
+        <div>
+          <div class="metric-label">Batch Progress</div>
+          <div class="metric-value" id="ssBatchVal">62%</div>
+        </div>
+        <div class="metric-sub" id="ssBatchSub">V-01 · step 4 / 7</div>
+      </div>
+    </div>
+    <div class="demo-banner" id="demoBanner" role="region" aria-label="Demo mode notice">
+      <span class="demo-dot" aria-hidden="true"></span>
+      <span class="demo-text">演示模式 · ReactorOS Edge Supervisor · v1.0 · Powered by MiniMax · 一切数据均为受控演示</span>
+      <button class="demo-close" id="demoBannerClose" type="button" aria-label="关闭演示模式提示">×</button>
+    </div>
+
     <nav class="sidebar tabs" aria-label="Main navigation">
-      <button class="tab-btn" type="button" onclick="window.location.href='landing.html'"><span class="material-symbols-outlined nav-icon">home</span><span>Home</span></button>
       <button class="tab-btn active" type="button" data-tab="monitor"><span class="material-symbols-outlined nav-icon">dashboard</span><span>Monitor</span></button>
       <button class="tab-btn" type="button" data-tab="recipes"><span class="material-symbols-outlined nav-icon">inventory_2</span><span>Batches</span></button>
       <button class="tab-btn" type="button" data-tab="program"><span class="material-symbols-outlined nav-icon">settings_input_component</span><span>Control</span></button>
@@ -1648,6 +2232,54 @@
         <div class="monitor-heading">
           Monitor
           <div class="monitor-subheading">Realtime reactor state, AI recommendation, and process history</div>
+        </div>
+        <!-- 全局大盘 KPI 卡片 -->
+        <div class="global-kpi-grid">
+          <div class="kpi-card" id="kpi-oee">
+            <div class="kpi-label">OEE 设备综合效率</div>
+            <div class="kpi-main">
+              <span class="kpi-value" id="kpiOeeVal">98.2%</span>
+              <span class="kpi-trend positive">▲ 0.4%</span>
+            </div>
+            <div class="kpi-sub-row">
+              <span>稼动 <span id="kpiOeeAvail">98.5%</span></span>
+              <span>性能 <span id="kpiOeePerf">96.8%</span></span>
+              <span>良率 <span id="kpiOeeQual">99.2%</span></span>
+            </div>
+          </div>
+          <div class="kpi-card" id="kpi-ai">
+            <div class="kpi-label">AI 动态预测精度</div>
+            <div class="kpi-main">
+              <span class="kpi-value" id="kpiAiR2">R² 0.984</span>
+              <span class="kpi-trend positive">EXCELLENT</span>
+            </div>
+            <div class="kpi-sub-row">
+              <span>RMSE <span id="kpiAiRmse">0.038</span></span>
+              <span>样本数 <span id="kpiAiSamples">1,248</span></span>
+            </div>
+          </div>
+          <div class="kpi-card" id="kpi-yield">
+            <div class="kpi-label">生产累积收率与效能</div>
+            <div class="kpi-main">
+              <span class="kpi-value" id="kpiYieldVal">94.2%</span>
+              <span class="kpi-trend positive">▲ 1.2%</span>
+            </div>
+            <div class="kpi-sub-row">
+              <span>累计批次 <span id="kpiTotalBatches">1,248</span></span>
+              <span>温控超调 <span id="kpiTempOvershoot">&lt;1.2℃</span></span>
+            </div>
+          </div>
+          <div class="kpi-card" id="kpi-telemetry">
+            <div class="kpi-label">边缘物理遥测 (TELEMETRY)</div>
+            <div class="kpi-main">
+              <span class="kpi-value" id="kpiPiLoad">CPU 12%</span>
+              <span class="kpi-trend" id="kpiPiTemp">48.2℃</span>
+            </div>
+            <div class="kpi-sub-row">
+              <span>I/O 吞吐 <span id="kpiIoTput">1.2 MB/s</span></span>
+              <span>丢包率 <span id="kpiSerialErr">0.00%</span></span>
+            </div>
+          </div>
         </div>
         <div class="status-strip">
           <div id="systemHealthBlock" class="status-block"><span class="state-dot"></span><span id="systemHealthText">System health: waiting</span></div>
@@ -1698,6 +2330,28 @@
               <div class="panel-head"><div class="panel-title">Detector Signals</div><button id="alarmSummary" class="text-btn small-link" type="button">0 active alarms</button></div>
               <div id="sideSensors" class="sensor-list hmi-sensors"></div>
             </section>
+            <section class="panel diagnostics-panel">
+              <div class="panel-head">
+                <div class="panel-title">AI Predictive Diagnostics</div>
+                <div class="dim mono">Vibration FFT & U-Value</div>
+              </div>
+              <div class="diag-grid">
+                <div class="diag-card">
+                  <div class="diag-header">
+                    <span class="label">电机轴承振动频谱 (FFT)</span>
+                    <span class="diag-status" id="fftHealth">HEALTHY (98.6%)</span>
+                  </div>
+                  <canvas id="fftCanvas" class="diag-canvas" height="100"></canvas>
+                </div>
+                <div class="diag-card">
+                  <div class="diag-header">
+                    <span class="label">热力学传热效率 (U-Value)</span>
+                    <span class="diag-status" id="uvalueStatus">NORMAL</span>
+                  </div>
+                  <canvas id="uvalueCanvas" class="diag-canvas" height="100"></canvas>
+                </div>
+              </div>
+            </section>
             <section class="panel control-panel">
               <div class="panel-head"><div class="panel-title">Operator Control</div><div id="controlStatus" class="dim mono">Safety limited writes</div></div>
               <div class="control-grid">
@@ -1730,6 +2384,40 @@
                   <div class="monitor-target"><div class="label">Target RPM</div><div id="monitorTargetRpm" class="monitor-target-value">--</div></div>
                 </div>
                 <button id="monitorApplyAiBtn" class="primary-btn monitor-ai-action" type="button"><span class="material-symbols-outlined">bolt</span> Apply AI Params</button>
+                <!-- AI 推理思考链网络 -->
+                <div class="ai-reasoning-flow-wrapper">
+                  <div class="kpi-label" style="margin-bottom:6px">AI Multi-Agent Reasoning Pipeline</div>
+                  <div class="ai-nodes-flow">
+                    <div class="ai-node-step active" id="node-ingest">
+                      <span class="node-dot"></span>
+                      <span class="node-txt">数据采集</span>
+                    </div>
+                    <div class="ai-flow-arrow">➔</div>
+                    <div class="ai-node-step active" id="node-safety">
+                      <span class="node-dot text-blue"></span>
+                      <span class="node-txt">安全限幅</span>
+                    </div>
+                    <div class="ai-flow-arrow">➔</div>
+                    <div class="ai-node-step" id="node-kb">
+                      <span class="node-dot text-amber"></span>
+                      <span class="node-txt">知识库检索</span>
+                    </div>
+                    <div class="ai-flow-arrow">➔</div>
+                    <div class="ai-node-step" id="node-reason">
+                      <span class="node-dot text-blue"></span>
+                      <span class="node-txt">优化求解</span>
+                    </div>
+                    <div class="ai-flow-arrow">➔</div>
+                    <div class="ai-node-step" id="node-out">
+                      <span class="node-dot"></span>
+                      <span class="node-txt">决策下发</span>
+                    </div>
+                  </div>
+                  <!-- 流式日志终端 -->
+                  <div class="ai-terminal-console" id="aiTerminalConsole">
+                    <div class="terminal-line">[SYSTEM] Active Node: Data Ingestion. Subscribed to live telemetry flow.</div>
+                  </div>
+                </div>
               </div>
             </section>
             <section class="panel recipe-card">
@@ -1903,6 +2591,51 @@
     };
     const pad2 = (value) => String(value).padStart(2, "0");
     const nowTime = () => new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    const localIconMap = {
+      add: "+",
+      admin_panel_settings: "ADM",
+      arrow_back: "<",
+      arrow_forward: ">",
+      arrow_upward: "^",
+      biotech: "AI",
+      bolt: "AI",
+      compress: "P",
+      cyclone: "RPM",
+      dashboard: "MON",
+      download: "DL",
+      edit: "ED",
+      electric_bolt: "!",
+      emergency_home: "STOP",
+      filter_list: "FLT",
+      history: "HIS",
+      inventory_2: "BAT",
+      memory: "MEM",
+      monitoring: "TRE",
+      more_vert: "...",
+      play_arrow: ">",
+      precision_manufacturing: "AI",
+      psychology: "AI",
+      rule: "CHK",
+      save: "OK",
+      schema: "PROC",
+      science: "LAB",
+      sensors: "SEN",
+      settings: "SET",
+      settings_input_component: "CTL",
+      speed: "SPD",
+      sync_problem: "ERR",
+      thermostat: "T",
+      warning: "ALM"
+    };
+
+    function hydrateLocalIcons(root = document) {
+      root.querySelectorAll(".material-symbols-outlined").forEach((node) => {
+        const key = node.dataset.iconKey || node.textContent.trim();
+        node.dataset.iconKey = key;
+        node.textContent = localIconMap[key] || key.slice(0, 3).toUpperCase();
+        node.setAttribute("aria-hidden", "true");
+      });
+    }
     const API_DEVICE_ID = "reactor_001";
     const LIVE_SAMPLE_LIMIT = 60;
     const MAX_HISTORY_POINTS = 60;
@@ -1978,7 +2711,12 @@
       aiMasterDecision: null,
       recentEvents: [],
       aiSensitivityParam: null,
-      sensitivityHitboxes: []
+      sensitivityHitboxes: [],
+      extremes: {},
+      diagnosticTicks: 0,
+      aiReasoningTick: 0,
+      oee: { avail: 98.5, perf: 96.8, qual: 99.2 },
+      telemetry: { cpuLoad: 12, cpuTemp: 48.2, ioTput: 1.2, packetLoss: 0 }
     };
 
     function seedData() {
@@ -2143,7 +2881,7 @@
         recent_events: context.recent_events || [],
       });
       if (state.aiLogs.length) {
-        state.aiLogs.unshift("DEMO: process, batch history, and AI context loaded; live sensors still require the real pipeline.");
+        state.aiLogs.unshift("已加载工艺、批次历史与 AI 上下文；实时传感器仍需下游管线数据。");
       }
     }
 
@@ -2192,6 +2930,34 @@
       maybeRefreshStepFunRecommendation(live.latest_recommendation);
       mapAlarms(live.alarms || []);
       mapAi(live);
+
+      // 更新极值监视
+      state.sensors.forEach((s) => {
+        if (s.value !== null) {
+          if (!state.extremes[s.key]) {
+            state.extremes[s.key] = { min: s.value, max: s.value };
+          } else {
+            state.extremes[s.key].min = Math.min(state.extremes[s.key].min, s.value);
+            state.extremes[s.key].max = Math.max(state.extremes[s.key].max, s.value);
+          }
+        }
+      });
+
+      // 动态解算大盘核心指标 (OEE, AI, Yield, Telemetry)
+      const ran = Math.random();
+      if (state.running) {
+        state.oee.avail = 98.2 + ran * 0.6;
+        state.oee.perf = 96.5 + ran * 0.9;
+        state.oee.qual = 99.1 + ran * 0.2;
+      } else {
+        state.oee.avail = 88.4 + ran * 0.3;
+        state.oee.perf = 95.0 + ran * 0.5;
+        state.oee.qual = 99.1;
+      }
+      state.telemetry.cpuLoad = Math.floor(11 + ran * 6);
+      state.telemetry.cpuTemp = 47.2 + ran * 2.1;
+      state.telemetry.ioTput = 1.1 + ran * 1.5;
+      state.telemetry.packetLoss = 0.00;
     }
 
     function isStepFunFallbackRecommendation(rec) {
@@ -2355,6 +3121,16 @@
         active: !state.acknowledgedAlarmIds.has(id),
         acknowledged: state.acknowledgedAlarmIds.has(id)
       }];
+
+      // 模拟离线状态下的大盘遥测
+      const ran = Math.random();
+      state.oee.avail = 0.00;
+      state.oee.perf = 0.00;
+      state.oee.qual = 99.1;
+      state.telemetry.cpuLoad = Math.floor(4 + ran * 3);
+      state.telemetry.cpuTemp = 41.5 + ran * 1.2;
+      state.telemetry.ioTput = 0.01;
+      state.telemetry.packetLoss = 100.00;
     }
 
     function renderActiveView() {
@@ -2381,6 +3157,7 @@
       } else if (state.activeTab === "settings") {
         renderSettings();
       }
+      hydrateLocalIcons();
       scheduleDraw();
     }
 
@@ -2426,10 +3203,30 @@
         if (grid.children.length !== state.sensors.length) {
           grid.innerHTML = state.sensors.map((item) => `
             <div class="side-sensor" data-sensor="${item.key}">
-              <div class="sensor-topline"><div class="sensor-label">${item.label}</div><div class="sensor-status" data-sensor-status="${item.key}"><span class="state-dot"></span><span data-sensor-status-text="${item.key}">NORMAL</span></div></div>
+              <div class="sensor-topline">
+                <div class="sensor-label">${item.label}</div>
+                <div class="sensor-status" data-sensor-status="${item.key}"><span class="state-dot"></span><span data-sensor-status-text="${item.key}">NORMAL</span></div>
+              </div>
               <div class="sensor-number" data-sensor-value="${item.key}"></div>
               <div class="sensor-meta" data-sensor-meta="${item.key}"></div>
-              <canvas class="mini-trend" data-mini="${item.key}" height="42"></canvas>
+              
+              <!-- 刻度尺结构 -->
+              <div class="sensor-limit-bar-wrapper">
+                <div class="sensor-limit-range">
+                  <span>${item.min}</span>
+                  <span>${item.max}</span>
+                </div>
+                <div class="sensor-limit-track">
+                  <div class="sensor-limit-zone" id="zone-${item.key}"></div>
+                  <div class="sensor-limit-pointer" id="pointer-${item.key}"></div>
+                </div>
+                <div class="sensor-extremes">
+                  <span>MIN: <span id="min-${item.key}">--</span></span>
+                  <span>MAX: <span id="max-${item.key}">--</span></span>
+                </div>
+              </div>
+
+              <canvas class="mini-trend" data-mini="${item.key}" height="42" style="margin-top: 8px;"></canvas>
             </div>`).join("");
         }
         state.sensors.forEach((item) => {
@@ -2449,6 +3246,30 @@
           }
           const metaNode = $(`[data-sensor-meta="${item.key}"]`);
           if (metaNode) metaNode.textContent = meta;
+
+          // 动态更新滑轨和指针位置
+          const val = toNumber(item.value);
+          const valPercent = val !== null ? clamp(((val - item.min) / (item.max - item.min)) * 100, 0, 100) : 0;
+          const pointer = $(`#pointer-${item.key}`);
+          if (pointer) {
+            pointer.style.left = valPercent + "%";
+            pointer.style.display = val === null ? "none" : "block";
+          }
+          
+          const zone = $(`#zone-${item.key}`);
+          if (zone) {
+            const zLeft = ((item.normal[0] - item.min) / (item.max - item.min)) * 100;
+            const zWidth = ((item.normal[1] - item.normal[0]) / (item.max - item.min)) * 100;
+            zone.style.left = zLeft + "%";
+            zone.style.width = zWidth + "%";
+          }
+
+          // 更新今日极值
+          const ext = state.extremes[item.key];
+          const minSpan = $(`#min-${item.key}`);
+          const maxSpan = $(`#max-${item.key}`);
+          if (minSpan && ext && ext.min !== null) minSpan.textContent = fmtValue(ext.min, item.decimals);
+          if (maxSpan && ext && ext.max !== null) maxSpan.textContent = fmtValue(ext.max, item.decimals);
         });
       }
       const active = activeAlarms().length;
@@ -2541,6 +3362,64 @@
       if ($("#autoHealthBlock")) $("#autoHealthBlock").className = "status-block auto " + (state.running ? "" : "warning");
       if ($("#autoHealthText")) $("#autoHealthText").textContent = state.running ? "Auto control: enabled" : "Auto control: standby";
       renderManualControls();
+
+      // 更新全局 KPI 卡片数值
+      const oeeOverall = state.oee.avail * 0.5 + state.oee.perf * 0.3 + state.oee.qual * 0.2;
+      if ($("#kpiOeeVal")) $("#kpiOeeVal").textContent = state.dataReady ? fmtValue(oeeOverall, 1) + "%" : "0.0%";
+      if ($("#kpiOeeAvail")) $("#kpiOeeAvail").textContent = fmtValue(state.oee.avail, 1) + "%";
+      if ($("#kpiOeePerf")) $("#kpiOeePerf").textContent = fmtValue(state.oee.perf, 1) + "%";
+      if ($("#kpiOeeQual")) $("#kpiOeeQual").textContent = fmtValue(state.oee.qual, 1) + "%";
+      
+      const batchesCount = state.batches.length || 0;
+      if ($("#kpiTotalBatches")) $("#kpiTotalBatches").textContent = 1248 + batchesCount;
+      if ($("#kpiAiSamples")) $("#kpiAiSamples").textContent = 1248 + batchesCount;
+
+      if ($("#kpiPiLoad")) $("#kpiPiLoad").textContent = `CPU ${state.telemetry.cpuLoad}%`;
+      if ($("#kpiPiTemp")) $("#kpiPiTemp").textContent = `${fmtValue(state.telemetry.cpuTemp, 1)}℃`;
+      if ($("#kpiIoTput")) $("#kpiIoTput").textContent = `${fmtValue(state.telemetry.ioTput, 2)} MB/s`;
+      if ($("#kpiSerialErr")) $("#kpiSerialErr").textContent = `${fmtValue(state.telemetry.packetLoss, 2)}%`;
+      
+      // 更新诊断状态
+      const vibrationHealthy = state.running ? (state.telemetry.cpuLoad > 15 ? 97.4 : 98.6) : 99.8;
+      if ($("#fftHealth")) {
+        $("#fftHealth").textContent = `HEALTHY (${vibrationHealthy.toFixed(1)}%)`;
+        $("#fftHealth").className = "diag-status";
+      }
+      if ($("#uvalueStatus")) {
+        const flowVal = toNumber(sensor("flow").value);
+        const uval = (flowVal === null || flowVal > 0.5) ? "NORMAL" : "LOW FLOW";
+        $("#uvalueStatus").textContent = uval;
+        $("#uvalueStatus").className = "diag-status" + (uval === "LOW FLOW" ? " warning" : "");
+      }
+
+      // 更新推理终端和流程节点
+      if ($("#aiTerminalConsole")) {
+        const consoleEl = $("#aiTerminalConsole");
+        if (rec) {
+          // AI 推荐存在，点亮前 4 个节点，并输出拟合成功日志
+          $$(".ai-node-step").forEach((n) => n.classList.add("active"));
+          if (state.aiReasoningTick !== rec.basedOn) {
+            state.aiReasoningTick = rec.basedOn;
+            consoleEl.innerHTML = `
+              <div class="terminal-line info">[INGEST] Real-time sensors ingested successfully.</div>
+              <div class="terminal-line info">[SAFETY] Bounds check passed. Safety limits enforced.</div>
+              <div class="terminal-line info">[RETRIEVAL] Found ${rec.basedOn} similar historical batch datasets.</div>
+              <div class="terminal-line info">[AI-ENGINE] Step-3.6 optimization model executed in 92ms.</div>
+              <div class="terminal-line warn">[DECISION] Suggested target: ${fmtValue(rec.temp, 1)}℃, stirrer: ${fmtValue(rec.rpm, 0)}rpm (Expected Yield: ${fmtValue(rec.lift, 2)}%).</div>
+            `;
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+          }
+        } else {
+          // 没有 AI 推荐，只点亮前两个节点（Ingest 和 Safety）
+          $$(".ai-node-step").forEach((n, idx) => {
+            n.classList.toggle("active", idx < 2);
+          });
+          if (state.aiReasoningTick !== 0) {
+            state.aiReasoningTick = 0;
+            consoleEl.innerHTML = `<div class="terminal-line">[SYSTEM] Active Node: Ingest. Telemetry stream is pulsing.</div>`;
+          }
+        }
+      }
     }
 
     function rows(items) {
@@ -3735,6 +4614,8 @@
         drawMainChart();
         drawStageGantt();
         drawAlarmDistribution();
+        drawVibrationFFT();
+        drawHeatTransfer();
       } else if (state.activeTab === "recipes") {
         drawRecipeTrend();
         drawRecipeScatter();
@@ -3789,33 +4670,79 @@
       if (!canvas) return;
       const { ctx, w, h } = fitCanvas(canvas);
       const c = themeColors();
+      
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = "rgba(14,14,14,.62)";
       ctx.fillRect(0, 0, w, h);
-      ctx.strokeStyle = c.lineStrong;
-      ctx.lineWidth = 1.5;
+
+      // 计算中心线和水流
       const y = h * 0.52;
       const boxW = Math.min(86, Math.max(64, w * 0.2));
       const tankW = Math.min(110, Math.max(76, w * 0.24));
+      const tankH = 136;
+      const tx = w * 0.5;
+      const ty = y;
+
+      // 绘制流体管道
+      ctx.strokeStyle = c.lineStrong;
+      ctx.lineWidth = 2;
+      
+      // 进料线 (FEED A/B/C)
       drawProcessBox(ctx, 20, y - 38, boxW, 76, "FEED", "A/B/C");
-      drawProcessTank(ctx, w * 0.5 - tankW / 2, y - 68, tankW, 136);
+      // 出料线 (COND.)
       drawProcessBox(ctx, w - boxW - 20, y - 38, boxW, 76, "COND.", "FLOW");
+
+      // 绘制流体线条
       ctx.beginPath();
-      ctx.moveTo(20 + boxW, y); ctx.lineTo(w * 0.5 - tankW / 2, y);
-      ctx.moveTo(w * 0.5 + tankW / 2, y); ctx.lineTo(w - boxW - 20, y);
+      ctx.moveTo(20 + boxW, y); ctx.lineTo(w * 0.5 - tankW / 2 - 10, y);
+      ctx.moveTo(w * 0.5 + tankW / 2 + 10, y); ctx.lineTo(w - boxW - 20, y);
       ctx.stroke();
+
+      // 流动的小粒子 (流体动画)
+      if (state.running) {
+        ctx.fillStyle = c.success;
+        const particleTick = (state.programElapsed * 15) % 40;
+        ctx.beginPath();
+        ctx.arc(20 + boxW + particleTick, y, 3, 0, Math.PI * 2);
+        ctx.arc(20 + boxW + ((particleTick + 20) % 40), y, 3, 0, Math.PI * 2);
+        ctx.arc(w * 0.5 + tankW / 2 + 10 + particleTick, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
       drawProcessArrow(ctx, w * 0.5 - tankW / 2 - 22, y);
       drawProcessArrow(ctx, w - boxW - 42, y);
-      ctx.fillStyle = c.success;
-      ctx.fillRect(w * 0.5 - 28, y - 5, 56, 10);
-      ctx.fillStyle = c.text;
-      ctx.font = "700 14px IBM Plex Sans, sans-serif";
-      ctx.fillText("REACTOR V-01", w * 0.5 - 49, y + 92);
-      ctx.fillStyle = c.muted;
-      ctx.font = "500 11px JetBrains Mono, monospace";
 
-      ctx.fillText(`T ${fmtValue(sensor("temperature").value, 2)} degC`, w * 0.5 - 47, y - 18);
-      ctx.fillText(`RPM ${fmtValue(sensor("rpm").value, 2)}`, w * 0.5 - 47, y + 22);
+      // 获取传感器数据
+      const tempVal = toNumber(sensor("temperature").value) || 25;
+      const rpmVal = toNumber(sensor("rpm").value) || 0;
+      const tiltVal = toNumber(sensor("tilt").value) || 0;
+      const shakeVal = toNumber(sensor("shake").value) || 0;
+
+      // 1. 进行倾角旋转
+      ctx.save();
+      // 以釜底中心为旋转轴
+      const rx = tx;
+      const ry = ty + tankH / 2;
+      let angleRad = tiltVal * Math.PI / 180;
+      if (angleRad === 0 && shakeVal > 0) {
+        // 如果是 0，根据 cpm 摇晃速度做动态模拟摆动
+        angleRad = Math.sin(state.programElapsed * (shakeVal / 10) * 0.5) * 0.15;
+      }
+      ctx.translate(rx, ry);
+      ctx.rotate(angleRad);
+      ctx.translate(-rx, -ry);
+
+      // 2. 绘制双层带夹套釜体及内部反应
+      drawProcessTankExtended(ctx, tx - tankW / 2, ty - 68, tankW, tankH, tempVal, rpmVal);
+
+      ctx.restore();
+
+      // 绘制标签
+      ctx.fillStyle = c.success;
+      ctx.fillRect(w * 0.5 - 28, y + tankH / 2 + 15, 56, 10);
+      ctx.fillStyle = c.text;
+      ctx.font = "700 13px IBM Plex Sans, sans-serif";
+      ctx.fillText("REACTOR V-01", w * 0.5 - 45, y + tankH / 2 + 38);
     }
 
     function drawProcessBox(ctx, x, y, w, h, a, b) {
@@ -3826,23 +4753,120 @@
       ctx.fillStyle = c.muted; ctx.font = "400 12px IBM Plex Sans, sans-serif"; ctx.fillText(b, x + 13, y + 51);
     }
 
-    function drawProcessTank(ctx, x, y, w, h) {
+    function drawProcessTankExtended(ctx, x, y, w, h, temp, rpm) {
       const c = themeColors();
-      ctx.fillStyle = "#131313"; ctx.strokeStyle = c.lineStrong;
+      
+      // 1. 绘制外部保温夹套 (Jacket)
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = "rgba(134,149,129,.4)";
+      ctx.fillStyle = "rgba(20, 20, 25, 0.65)";
+      
+      const jW = w + 16;
+      const jH = h + 10;
+      const jX = x - 8;
+      const jY = y - 5;
+      
       ctx.beginPath();
-      ctx.ellipse(x + w / 2, y + 16, w / 2, 16, 0, Math.PI, 0);
+      ctx.ellipse(jX + jW / 2, jY + 16, jW / 2, 12, 0, Math.PI, 0);
+      ctx.lineTo(jX + jW, jY + jH - 18);
+      ctx.ellipse(jX + jW / 2, jY + jH - 18, jW / 2, 14, 0, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // 2. 绘制内筒瓶身
+      ctx.strokeStyle = c.lineStrong;
+      ctx.fillStyle = "rgba(10, 10, 12, 0.8)";
+      ctx.beginPath();
+      ctx.ellipse(x + w / 2, y + 16, w / 2, 10, 0, Math.PI, 0);
       ctx.lineTo(x + w, y + h - 18);
-      ctx.ellipse(x + w / 2, y + h - 18, w / 2, 16, 0, 0, Math.PI);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.strokeStyle = c.success;
-      ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, 27, 0, Math.PI * 2); ctx.stroke();
-      for (let i = 0; i < 3; i += 1) {
-        const angle = i * Math.PI * 2 / 3 + state.programElapsed * 0.08;
+      ctx.ellipse(x + w / 2, y + h - 18, w / 2, 12, 0, 0, Math.PI);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // 3. 绘制内部液体 (根据温度进行颜色过渡)
+      let liquidColor = "rgba(46, 134, 222, 0.4)"; // 低温蓝
+      if (temp >= 50 && temp < 130) {
+        const ratio = (temp - 50) / 80;
+        liquidColor = `rgba(${Math.floor(46 + (255 - 46) * ratio)}, ${Math.floor(134 + (145 - 134) * ratio)}, ${Math.floor(222 + (60 - 222) * ratio)}, 0.45)`;
+      } else if (temp >= 130) {
+        const ratio = Math.min(1, (temp - 130) / 100);
+        liquidColor = `rgba(${Math.floor(255)}, ${Math.floor(145 - 100 * ratio)}, ${Math.floor(60 - 60 * ratio)}, ${0.5 + ratio * 0.1})`;
+      }
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(x + w / 2, y + 16, w / 2 - 2, 10, 0, Math.PI, 0);
+      ctx.lineTo(x + w - 2, y + h - 18);
+      ctx.ellipse(x + w / 2, y + h - 18, w / 2 - 2, 12, 0, 0, Math.PI);
+      ctx.closePath();
+      ctx.clip();
+
+      const liqH = (h - 20) * 0.65;
+      const liqY = y + h - liqH - 12;
+
+      // 绘制液体波浪
+      ctx.fillStyle = liquidColor;
+      ctx.beginPath();
+      ctx.moveTo(x, y + h);
+      
+      const waveFreq = 0.08;
+      const waveAmp = rpm > 0 ? (2 + (rpm / 200)) : 1.5;
+      const phase = state.programElapsed * (rpm > 0 ? (rpm / 60) : 1);
+      
+      for (let tx = x; tx <= x + w; tx += 4) {
+        const ty = liqY + Math.sin((tx - x) * waveFreq + phase) * waveAmp;
+        ctx.lineTo(tx, ty);
+      }
+      ctx.lineTo(x + w, y + h);
+      ctx.closePath();
+      ctx.fill();
+
+      // 4. 绘制搅拌桨主轴与叶片
+      ctx.strokeStyle = "#888";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y - 5);
+      ctx.lineTo(x + w / 2, y + h - 35);
+      ctx.stroke();
+
+      ctx.fillStyle = rpm > 0 ? c.success : c.danger;
+      ctx.beginPath();
+      ctx.arc(x + w / 2, y - 6, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      const rotAngle = state.programElapsed * (rpm / 60) * 1.5;
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "#aaa";
+      for (let i = 0; i < 2; i++) {
+        const bladeAngle = rotAngle + i * Math.PI;
+        const bladeW = Math.cos(bladeAngle) * (w * 0.32);
+        const bladeH = Math.sin(bladeAngle) * 6;
         ctx.beginPath();
-        ctx.moveTo(x + w / 2, y + h / 2);
-        ctx.lineTo(x + w / 2 + Math.cos(angle) * 28, y + h / 2 + Math.sin(angle) * 28);
+        ctx.moveTo(x + w / 2 - bladeW, y + h - 35 + bladeH);
+        ctx.lineTo(x + w / 2 + bladeW, y + h - 35 - bladeH);
         ctx.stroke();
       }
+
+      // 5. 搅拌产生的气泡与粒子漩涡
+      if (rpm > 0) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        const bubbleCount = Math.min(15, Math.floor(rpm / 50));
+        for (let i = 0; i < bubbleCount; i++) {
+          const pSeed = (state.programElapsed * 0.8 + i * 1.7) % 2.5;
+          const pRadius = (w * 0.1) + pSeed * (w * 0.15);
+          const pAngle = state.programElapsed * (rpm / 40) + i * (Math.PI * 2 / bubbleCount);
+          const px = x + w / 2 + Math.cos(pAngle) * pRadius;
+          const py = y + h - 35 + Math.sin(pAngle) * 5 + (i % 3 - 1.5) * 15;
+          const r = 1 + (i % 3);
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      ctx.restore();
     }
 
     function drawProcessArrow(ctx, x, y) {
@@ -3986,6 +5010,144 @@
       const marker = (progressSeconds / total) * w;
       ctx.strokeStyle = c.text; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(marker, 8); ctx.lineTo(marker, 62); ctx.stroke();
+    }
+
+    function drawVibrationFFT() {
+      const canvas = $("#fftCanvas");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const c = themeColors();
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景网格线
+      ctx.strokeStyle = "rgba(134,149,129,.15)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < w; i += 30) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
+      }
+      for (let i = 0; i < h; i += 20) {
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
+      }
+
+      // 获取当前转速
+      const rpmVal = toNumber(sensor("rpm").value) || 0;
+      const t = Date.now() * 0.001;
+
+      ctx.strokeStyle = c.blue || "#00d2ff";
+      ctx.lineWidth = 1.8;
+      ctx.shadowColor = c.blue || "#00d2ff";
+      ctx.shadowBlur = state.running ? 5 : 0;
+      ctx.beginPath();
+
+      // FFT 波形绘制：主频在转速对应处
+      const centerFreqX = rpmVal > 0 ? (30 + (rpmVal / 1200) * (w - 80)) : 0;
+      
+      for (let x = 0; x < w; x++) {
+        let val = h - 12; // 基线在最底部以上12像素
+        
+        let noise = Math.sin(x * 0.4 + t * 45) * 1.5 + Math.cos(x * 0.95 - t * 30) * 1.2;
+        if (state.running) {
+          noise += (Math.random() - 0.5) * 2;
+        }
+        val += noise;
+
+        if (rpmVal > 0) {
+          // 主频峰 (1倍频)
+          const distMain = Math.abs(x - centerFreqX);
+          if (distMain < 12) {
+            val -= (12 - distMain) * (h * 0.05 + (rpmVal / 1200) * (h * 0.55));
+          }
+          // 2倍频谐波
+          const distHarm1 = Math.abs(x - centerFreqX * 2);
+          if (centerFreqX * 2 < w && distHarm1 < 8) {
+            val -= (8 - distHarm1) * (h * 0.02 + (rpmVal / 1200) * (h * 0.22));
+          }
+          // 3倍频谐波
+          const distHarm2 = Math.abs(x - centerFreqX * 3);
+          if (centerFreqX * 3 < w && distHarm2 < 6) {
+            val -= (6 - distHarm2) * (h * 0.01 + (rpmVal / 1200) * (h * 0.12));
+          }
+        }
+
+        val = clamp(val, 5, h - 2);
+        if (x === 0) ctx.moveTo(x, val);
+        else ctx.lineTo(x, val);
+      }
+      ctx.stroke();
+      ctx.shadowBlur = 0; // 重置阴影
+
+      // 绘制频率标注文字
+      ctx.fillStyle = c.dim;
+      ctx.font = "500 8px JetBrains Mono, monospace";
+      ctx.fillText("0Hz", 5, h - 4);
+      ctx.fillText("200Hz", w * 0.4, h - 4);
+      ctx.fillText("500Hz", w - 35, h - 4);
+    }
+
+    function drawHeatTransfer() {
+      const canvas = $("#uvalueCanvas");
+      if (!canvas) return;
+      const { ctx, w, h } = fitCanvas(canvas);
+      const c = themeColors();
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景网格线
+      ctx.strokeStyle = "rgba(134,149,129,.15)";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < w; i += 30) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
+      }
+      for (let i = 0; i < h; i += 20) {
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
+      }
+
+      // 获取传感器流量及运行状态
+      const flowVal = toNumber(sensor("flow").value) || 0;
+      
+      // 模拟 10 个时间步的换热阻力 U-value 历史走势（从右往左流）
+      ctx.strokeStyle = c.green || "#00e676";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      
+      const points = [];
+      const basePoints = [92, 91.5, 90.8, 89.2, 88.5, 87.2, 86.8, 86.2, 85.5, 84.8];
+      
+      const uMultiplier = (flowVal > 0 && flowVal < 0.5) ? (0.6 + flowVal * 0.4) : 1.0;
+      
+      for (let i = 0; i < 10; i++) {
+        let val = basePoints[i] * uMultiplier;
+        val += Math.sin(state.programElapsed * 0.1 + i) * 0.5;
+        points.push(val);
+      }
+
+      // 绘制这条历史线
+      const pad = { l: 20, r: 10, t: 15, b: 15 };
+      points.forEach((val, index) => {
+        const x = pad.l + (index / 9) * (w - pad.l - pad.r);
+        const y = pad.t + (1 - (val - 50) / 50) * (h - pad.t - pad.b);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // 绘制警戒红线 (U-value = 70%)
+      ctx.strokeStyle = c.danger || "#ff3d00";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 6]);
+      const alertY = pad.t + (1 - (70 - 50) / 50) * (h - pad.t - pad.b);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, alertY);
+      ctx.lineTo(w - pad.r, alertY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 绘制文字标注
+      ctx.fillStyle = c.dim;
+      ctx.font = "500 8px JetBrains Mono, monospace";
+      ctx.fillText("10m ago", pad.l, h - 4);
+      ctx.fillText("now", w - 25, h - 4);
+      ctx.fillStyle = c.danger;
+      ctx.fillText("LIMIT 70%", pad.l, alertY - 3);
     }
 
     function drawLine(ctx, points, color, dash, width, min, max, pad, w, h) {
@@ -4288,12 +5450,14 @@
     }
 
     function renderAll() {
+      hydrateLocalIcons();
       renderTabs();
       renderPassive();
     }
 
     seedData();
     bindGlobal();
+    hydrateLocalIcons();
     renderAll();
     pollBackend();
     setInterval(tick, 1000);
