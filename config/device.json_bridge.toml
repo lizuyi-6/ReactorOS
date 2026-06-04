@@ -48,6 +48,48 @@ offset = 0.0
 min_valid = 0.0
 max_valid = 2000.0
 
+[modbus.registers.pressure_mpa]
+address = 2
+scale = 0.01
+offset = 0.0
+min_valid = 0.0
+max_valid = 10.0
+
+[modbus.registers.shake_speed_cpm]
+address = 3
+scale = 1.0
+offset = 0.0
+min_valid = 0.0
+max_valid = 60.0
+
+[modbus.registers.tilt_angle_deg]
+address = 4
+scale = 0.01
+offset = -45.0
+min_valid = -45.0
+max_valid = 45.0
+
+[modbus.registers.flow_rate_l_min]
+address = 5
+scale = 0.01
+offset = 0.0
+min_valid = 0.0
+max_valid = 20.0
+
+[modbus.registers.product_concentration_percent]
+address = 6
+scale = 0.1
+offset = 0.0
+min_valid = 0.0
+max_valid = 100.0
+
+[modbus.registers.ph]
+address = 7
+scale = 0.01
+offset = 0.0
+min_valid = 0.0
+max_valid = 14.0
+
 [modbus.registers.target_temperature_c]
 address = 10
 scale = 0.1
@@ -55,5 +97,30 @@ offset = 0.0
 
 [modbus.registers.target_stirrer_rpm]
 address = 11
+scale = 1.0
+offset = 0.0
+
+[modbus.registers.target_shake_speed_cpm]
+address = 12
+scale = 1.0
+offset = 0.0
+
+[modbus.registers.target_pressure_mpa]
+address = 13
+scale = 0.01
+offset = 0.0
+
+[modbus.registers.heat_time_s]
+address = 14
+scale = 1.0
+offset = 0.0
+
+[modbus.registers.hold_time_s]
+address = 15
+scale = 1.0
+offset = 0.0
+
+[modbus.registers.cool_time_s]
+address = 16
 scale = 1.0
 offset = 0.0

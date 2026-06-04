@@ -26,3 +26,10 @@ max_heating_minutes = 240.0
 min_stirring_minutes = 15.0
 max_stirring_minutes = 240.0
 
+[[forbidden_control_zones]]
+name = "hot-low-stir"
+reason = "High temperature with weak mixing is blocked at the control layer."
+min_temperature_c = 125.0
+max_temperature_c = 160.0
+min_stirrer_rpm = 0.0
+max_stirrer_rpm = 350.0

@@ -63,6 +63,8 @@ fn default_device_config_uses_external_pipeline_mode() {
     let config = load_device_config("config/device.toml").unwrap();
 
     assert_eq!(config.mode, DeviceMode::Pipeline);
+    assert_eq!(config.modbus.registers.pressure_mpa.address, 2);
+    assert_eq!(config.modbus.registers.hold_time_s.address, 15);
 }
 
 #[test]

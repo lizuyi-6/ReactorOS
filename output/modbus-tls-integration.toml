@@ -1,0 +1,25 @@
+[mqtt]
+enabled = false
+host = "127.0.0.1"
+port = 8883
+client_id = "xingshu-reactor-001"
+use_tls = true
+ca_cert = "output/tls-test/server.crt"
+client_cert = "output/tls-test/server.crt"
+client_key = "output/tls-test/server.key"
+keep_alive_s = 30
+queue_capacity = 16
+task_topic = "xingshu/reactor_001/tasks"
+receipt_topic = "xingshu/reactor_001/task_receipts"
+status_topic = "xingshu/reactor_001/status"
+alert_topic = "xingshu/reactor_001/alerts"
+alert_interval_s = 5
+
+[modbus_tcp]
+enabled = true
+bind = "127.0.0.1:18502"
+unit_id = 1
+require_tls = true
+tls_cert = "output/tls-test/server.crt"
+tls_key = "output/tls-test/server.key"
+max_pdu_bytes = 253

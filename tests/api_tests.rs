@@ -4,11 +4,12 @@ use axum::{
     body::{to_bytes, Body},
     http::{Request, StatusCode},
 };
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use reactor_edge_daemon::{
     api::{router, AppState},
     config::{
-        ControlConfig, DeviceMode, OptimizerBounds, SafetyConfig, StirrerSafety, TemperatureSafety,
+        load_device_config, ControlConfig, DeviceConfig, DeviceMode, ForbiddenControlZone,
+        OptimizerBounds, SafetyConfig, StirrerSafety, TemperatureSafety,
     },
     control::SafeCommand,
     db::{Db, ProductResult},
@@ -20,13 +21,42 @@ use reactor_edge_daemon::{
     memory::{
         AiMemory, ForbiddenZone, MemoryOptimizerBounds, RecommendationMemory, ReferenceBatch,
     },
+    modbus_tcp::{handle_modbus_tcp_pdu, handle_modbus_tcp_stream},
+    mqtt::{execute_mqtt_task_payload, load_integration_config, mqtt_alert_snapshot},
     state::{ControlTargets, DeviceStatusSnapshot, RuntimeState, SensorSnapshot, SharedState},
 };
 use serde_json::{json, Value};
-use tokio::sync::RwLock;
+use sha2::{Digest, Sha256};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::RwLock,
+};
+use tokio_rustls::TlsConnector;
+
+const TEST_TLS_CERT: &str = "tests/fixtures/tls/server.crt";
+const TEST_TLS_KEY: &str = "tests/fixtures/tls/server.key";
 
 fn test_device() -> SharedDevice {
     Arc::new(PipelineDevice)
+}
+
+fn device_config() -> Arc<DeviceConfig> {
+    Arc::new(load_device_config("config/device.toml").unwrap())
+}
+
+fn auth_header(role: &str) -> String {
+    match role {
+        "operator" | "engineer" | "admin" => {}
+        _ => panic!("unknown test role {role}"),
+    }
+    let expires_at = Utc::now() + Duration::hours(12);
+    let payload = format!("{role}:{role}:{}", expires_at.timestamp());
+    let mut hasher = Sha256::new();
+    hasher.update(b"xingshu-local-rbac-session-secret");
+    hasher.update(b":");
+    hasher.update(payload.as_bytes());
+    format!("Bearer {payload}:{:x}", hasher.finalize())
 }
 
 #[derive(Default)]
@@ -150,6 +180,14 @@ fn safety() -> SafetyConfig {
             min_stirring_minutes: 15.0,
             max_stirring_minutes: 240.0,
         },
+        forbidden_control_zones: vec![ForbiddenControlZone {
+            name: "hot-low-stir".to_string(),
+            reason: "bench safety envelope".to_string(),
+            min_temperature_c: 125.0,
+            max_temperature_c: 160.0,
+            min_stirrer_rpm: 0.0,
+            max_stirrer_rpm: 350.0,
+        }],
     }
 }
 
@@ -221,6 +259,38 @@ fn add_ai_outcomes(db: &Db) {
     }
 }
 
+async fn modbus_tcp_test_state() -> AppState {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = Some(SensorSnapshot {
+            temperature_c: 42.5,
+            pressure_mpa: 0.18,
+            stirrer_rpm: 260.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.0,
+            product_concentration_percent: 10.0,
+            ph: 6.8,
+            captured_at: Utc::now(),
+        });
+    }
+    AppState {
+        db,
+        runtime,
+        device: test_device(),
+        device_mode: DeviceMode::Pipeline,
+        device_config: device_config(),
+        safety,
+        ai_memory: memory(),
+        ai_provider: None,
+        test_reset_enabled: false,
+    }
+}
+
 #[tokio::test]
 async fn demo_context_seeds_ai_and_process_data_without_sensor_samples() {
     let safety = Arc::new(safety());
@@ -237,6 +307,7 @@ async fn demo_context_seeds_ai_and_process_data_without_sensor_samples() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory,
             ai_provider: None,
@@ -294,6 +365,7 @@ async fn health_endpoint_works() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -346,6 +418,7 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -396,6 +469,7 @@ async fn live_endpoint_supports_lightweight_limits_for_low_power_clients() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -434,6 +508,7 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -524,6 +599,7 @@ async fn live_endpoint_returns_service_unavailable_when_current_device_read_has_
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -582,6 +658,7 @@ async fn devices_status_counts_online_json_bridge_even_when_sample_is_incomplete
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -631,6 +708,7 @@ async fn device_capabilities_endpoint_lists_components_and_blocks_unknown_compon
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -664,6 +742,7 @@ async fn device_capabilities_endpoint_lists_components_and_blocks_unknown_compon
             Request::builder()
                 .method("POST")
                 .uri("/api/devices/reactor_001/components/shake_stepper/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(json!({"action":"stop"}).to_string()))
                 .unwrap(),
@@ -707,6 +786,7 @@ async fn device_status_groups_sensors_and_controllable_components_by_device() {
             runtime,
             device: component_test_device(),
             device_mode: DeviceMode::JsonBridge,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -757,6 +837,7 @@ async fn unknown_api_routes_return_json_error_code() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -793,6 +874,7 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -912,6 +994,7 @@ async fn malformed_pipeline_sample_returns_json_error_code() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -962,6 +1045,7 @@ async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1007,6 +1091,7 @@ async fn test_pipeline_sample_endpoint_wraps_the_v1_pipeline_for_e2e() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1079,6 +1164,7 @@ async fn live_endpoint_rejects_stale_pipeline_samples() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1171,6 +1257,7 @@ async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory,
             ai_provider: None,
@@ -1198,7 +1285,7 @@ async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
     assert!(body["latest_recommendation"]["heating_minutes"].is_number());
     assert!(body["latest_recommendation"]["stirring_minutes"].is_number());
     assert_eq!(body["ai_provider"]["mode"], "local_optimizer");
-    assert_eq!(body["ai_provider"]["model"], "local-tpe-lite");
+    assert_eq!(body["ai_provider"]["model"], "local-ga-sa-pid");
 }
 
 #[tokio::test]
@@ -1211,6 +1298,7 @@ async fn latest_recommendation_waits_for_real_product_results() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1237,6 +1325,73 @@ async fn latest_recommendation_waits_for_real_product_results() {
         .as_str()
         .unwrap()
         .contains("product result data unavailable"));
+}
+
+#[tokio::test]
+async fn ai_experiment_plan_drafts_safety_gated_sop_without_control_write() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    add_ai_outcomes(&db);
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.targets.target_pressure_mpa = 0.5;
+        state.targets.shake_speed_cpm = 24.0;
+    }
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/ai/experiment-plan")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    let plan = &body["data"];
+    assert_eq!(plan["status"], "draft_requires_operator_review");
+    assert!(plan["plan_id"]
+        .as_str()
+        .unwrap()
+        .starts_with("xingshu-plan-"));
+    assert_eq!(plan["steps"].as_array().unwrap().len(), 3);
+    assert!(plan["sop_summary"]
+        .as_str()
+        .unwrap()
+        .contains("three-stage"));
+    assert!(plan["safety_notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("does not start")));
+    assert!(plan["model_boundary"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("Local Qwen LoRA")));
+    assert!(plan["steps"][0]["target_temperature_c"].as_f64().unwrap() <= 160.0);
+    assert!(plan["steps"][1]["target_stirrer_rpm"].as_f64().unwrap() <= 1200.0);
+    assert!(db.recent_control_events(10).unwrap().is_empty());
+    assert!(runtime.read().await.active_batch_id.is_none());
 }
 
 #[tokio::test]
@@ -1270,6 +1425,7 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1284,6 +1440,7 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
             Request::builder()
                 .method("POST")
                 .uri("/api/control/targets")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1321,6 +1478,901 @@ async fn operator_target_update_is_audited_with_clamped_targets() {
     assert_eq!(event["target_temperature_c"], 160.0);
     assert_eq!(event["target_stirrer_rpm"], 1200.0);
     assert_eq!(event["target_shake_speed_cpm"], 60.0);
+    assert!(event["event_hash"].as_str().unwrap().len() >= 64);
+}
+
+#[tokio::test]
+async fn operator_target_update_rejects_forbidden_temperature_stirrer_zone() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/control/targets")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "temperature_c": 130.0,
+                        "stirrer_rpm": 300.0,
+                        "shake_speed_cpm": 30.0
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("forbidden control zone hot-low-stir"));
+    assert_eq!(db.recent_control_events(10).unwrap().len(), 0);
+    let runtime = runtime.read().await;
+    assert_eq!(runtime.targets.temperature_c, 60.0);
+    assert_eq!(runtime.targets.stirrer_rpm, 300.0);
+}
+
+#[tokio::test]
+async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 42.5,
+            pressure_mpa: 0.18,
+            stirrer_rpm: 260.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.0,
+            product_concentration_percent: 10.0,
+            ph: 6.8,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let config_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/config/summary")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(config_response.status(), StatusCode::OK);
+    let body = to_bytes(config_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["device_mode"], "pipeline");
+    assert_eq!(
+        body["data"]["device"]["modbus"]["registers"]["temperature_c"]["address"],
+        0
+    );
+    assert_eq!(body["data"]["integrations"]["rest_api"], true);
+    assert_eq!(body["data"]["integrations"]["ainas_ready"], true);
+    assert_eq!(body["data"]["integrations"]["ainas_task_api"], true);
+    assert_eq!(
+        body["data"]["data_security"]["storage_encryption"]["algorithm"],
+        "AES-256-GCM"
+    );
+    assert_eq!(
+        body["data"]["data_security"]["storage_encryption"]["enabled"],
+        false
+    );
+    assert!(
+        body["data"]["data_security"]["storage_encryption"]["encrypted_fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|field| field == "integration_tasks.request_json")
+    );
+    assert_eq!(body["data"]["permissions"]["mode"], "local_role_policy");
+    assert_eq!(
+        body["data"]["permissions"]["authentication"],
+        "bearer_session_enforced"
+    );
+    assert_eq!(body["data"]["integrations"]["mqtt"], false);
+    assert_eq!(
+        body["data"]["integrations"]["mqtt_status"]["task_topic"],
+        "xingshu/reactor_001/tasks"
+    );
+    assert!(body["data"]["local_ai"]["model_family"].is_string());
+    assert!(body["data"]["local_ai"]["runtime"].is_string());
+    assert!(body["data"]["local_ai"]["ready_for_inference"].is_boolean());
+    assert!(body["data"]["local_ai"]["ready_for_training"].is_boolean());
+    assert!(body["data"]["local_ai"]["inference"]["detail"].is_string());
+    assert!(body["data"]["local_ai"]["missing"].is_array());
+
+    let modbus_map_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/modbus/registers")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(modbus_map_response.status(), StatusCode::OK);
+    let body = to_bytes(modbus_map_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["tcp"]["enabled"], false);
+    assert_eq!(body["data"]["read_registers"].as_array().unwrap().len(), 8);
+    assert_eq!(body["data"]["write_registers"].as_array().unwrap().len(), 7);
+    assert_eq!(body["data"]["coils"].as_array().unwrap().len(), 4);
+    assert_eq!(body["data"]["discrete_inputs"].as_array().unwrap().len(), 5);
+    assert!(body["data"]["read_registers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|register| register["name"] == "pressure_mpa" && register["address"] == 2));
+
+    let permissions_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/permissions/roles")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(permissions_response.status(), StatusCode::OK);
+    let body = to_bytes(permissions_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["data"]["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|role| role["role"] == "operator"));
+
+    let write_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_temperature_c/write")
+                .header("authorization", auth_header("engineer"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "value": 500.0,
+                        "reason": "test modbus debug write"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(write_response.status(), StatusCode::OK);
+    let body = to_bytes(write_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["applied_value"], 160.0);
+    assert_eq!(body["data"]["raw"], 1600);
+
+    let read_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/modbus/registers/target_temperature_c/read")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(read_response.status(), StatusCode::OK);
+    let body = to_bytes(read_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["value"], 160.0);
+    assert_eq!(body["data"]["source"], "runtime_targets");
+
+    let pressure_read_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/modbus/registers/pressure_mpa/read")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pressure_read_response.status(), StatusCode::OK);
+    let body = to_bytes(pressure_read_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["value"], 0.18);
+    assert_eq!(body["data"]["raw"], 18);
+
+    let pressure_write_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_pressure_mpa/write")
+                .header("authorization", auth_header("engineer"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "value": 12.0 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pressure_write_response.status(), StatusCode::OK);
+    let body = to_bytes(pressure_write_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["applied_value"], 10.0);
+    assert_eq!(body["data"]["raw"], 1000);
+
+    let audit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/audit/logs?page=1&page_size=10")
+                .header("authorization", auth_header("engineer"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let body = to_bytes(audit_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["total"], 2);
+    assert_eq!(body["data"]["chain"]["valid"], true);
+    assert!(body["data"]["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|event| event["event_type"] == "modbus_register_write"
+            && event["event_hash"].as_str().unwrap().len() == 64));
+
+    let csv_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/audit/export.csv")
+                .header("authorization", auth_header("engineer"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(csv_response.status(), StatusCode::OK);
+    let body = to_bytes(csv_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let csv = String::from_utf8(body.to_vec()).unwrap();
+    assert!(csv.contains("modbus_register_write"));
+    assert!(csv.contains("event_hash"));
+}
+
+#[tokio::test]
+async fn rbac_login_and_role_permissions_gate_sensitive_upper_computer_actions() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let login = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "username": "engineer", "password": "engineer123" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::OK);
+    let body = to_bytes(login.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let token = body["data"]["token"].as_str().unwrap();
+    assert_eq!(body["data"]["user"]["role"], "engineer");
+    assert!(body["data"]["user"]["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|permission| permission == "modbus_debug"));
+
+    let me = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/auth/me")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(me.status(), StatusCode::OK);
+
+    let unauthenticated_write = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/control/targets")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "temperature_c": 60.0, "stirrer_rpm": 300.0 }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unauthenticated_write.status(), StatusCode::UNAUTHORIZED);
+
+    let operator_modbus_write = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_temperature_c/write")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "value": 61.0 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(operator_modbus_write.status(), StatusCode::FORBIDDEN);
+
+    let engineer_modbus_write = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_temperature_c/write")
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "value": 61.0 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(engineer_modbus_write.status(), StatusCode::OK);
+}
+
+#[test]
+fn integration_config_template_defines_disabled_tls_mqtt_bridge() {
+    let config = load_integration_config("config/integration.toml").unwrap();
+
+    assert!(!config.mqtt.enabled);
+    assert!(config.mqtt.use_tls);
+    assert_eq!(config.mqtt.port, 8883);
+    assert_eq!(config.mqtt.task_topic, "xingshu/reactor_001/tasks");
+    assert_eq!(
+        config.mqtt.receipt_topic,
+        "xingshu/reactor_001/task_receipts"
+    );
+    assert_eq!(config.mqtt.alert_topic, "xingshu/reactor_001/alerts");
+    assert_eq!(config.mqtt.alert_interval_s, 5);
+    assert_eq!(
+        config.mqtt.ca_cert.as_deref(),
+        Some(std::path::Path::new("output/tls-test/server.crt"))
+    );
+    assert_eq!(
+        config.mqtt.client_cert.as_deref(),
+        Some(std::path::Path::new("output/tls-test/server.crt"))
+    );
+    assert_eq!(
+        config.mqtt.client_key.as_deref(),
+        Some(std::path::Path::new("output/tls-test/server.key"))
+    );
+    assert!(!config.modbus_tcp.enabled);
+    assert!(config.modbus_tcp.require_tls);
+    assert_eq!(config.modbus_tcp.bind, "0.0.0.0:502");
+    assert_eq!(
+        config.modbus_tcp.tls_cert.as_deref(),
+        Some(std::path::Path::new("output/tls-test/server.crt"))
+    );
+    assert_eq!(
+        config.modbus_tcp.tls_key.as_deref(),
+        Some(std::path::Path::new("output/tls-test/server.key"))
+    );
+}
+
+#[tokio::test]
+async fn mqtt_alert_snapshot_reports_runtime_alarm_state() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.emergency_stop = true;
+        state.last_control_error = Some("device write failed".to_string());
+    }
+    let app_state = AppState {
+        db,
+        runtime,
+        device: test_device(),
+        device_mode: DeviceMode::Pipeline,
+        device_config: device_config(),
+        safety,
+        ai_memory: memory(),
+        ai_provider: None,
+        test_reset_enabled: false,
+    };
+
+    let snapshot = mqtt_alert_snapshot(&app_state).await;
+
+    assert!(snapshot.active);
+    assert_eq!(snapshot.active_count, 2);
+    assert_eq!(snapshot.high_count, 1);
+    assert_eq!(snapshot.warning_count, 1);
+    assert!(snapshot.emergency_stop);
+    assert!(!snapshot.sensor_fresh);
+    assert_eq!(
+        snapshot.alarms[0].get("type").and_then(Value::as_str),
+        Some("emergency_stop")
+    );
+}
+
+#[tokio::test]
+async fn mqtt_task_payload_executes_targets_and_persists_receipt() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app_state = AppState {
+        db: db.clone(),
+        runtime: runtime.clone(),
+        device: test_device(),
+        device_mode: DeviceMode::Pipeline,
+        device_config: device_config(),
+        safety,
+        ai_memory: memory(),
+        ai_provider: None,
+        test_reset_enabled: false,
+    };
+
+    let receipt = execute_mqtt_task_payload(
+        &app_state,
+        json!({
+            "external_task_id": "mqtt-live-001",
+            "action": "set_targets",
+            "target_temperature_c": 72.5,
+            "target_pressure_mpa": 0.8,
+            "target_shake_speed_cpm": 45.0,
+            "reason": "mqtt validation"
+        })
+        .to_string()
+        .as_bytes(),
+    )
+    .await;
+
+    assert!(receipt.ok);
+    assert_eq!(receipt.source, "mqtt");
+    assert_eq!(receipt.status, "executed");
+    assert_eq!(receipt.external_task_id.as_deref(), Some("mqtt-live-001"));
+    let targets = runtime.read().await.targets.clone();
+    assert_eq!(targets.temperature_c, 72.5);
+    assert_eq!(targets.target_pressure_mpa, 0.8);
+    assert_eq!(targets.shake_speed_cpm, 45.0);
+
+    let tasks = db.integration_tasks(Some("mqtt"), 10).unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].source, "mqtt");
+    assert_eq!(tasks[0].status, "executed");
+    assert_eq!(tasks[0].action, "set_targets");
+
+    let rejected = execute_mqtt_task_payload(&app_state, b"{not-json").await;
+    assert!(!rejected.ok);
+    assert_eq!(rejected.status, "rejected");
+    assert!(rejected.error.unwrap().contains("invalid MQTT task JSON"));
+}
+
+#[tokio::test]
+async fn modbus_tcp_pdu_reads_and_writes_safety_gated_map() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = Some(SensorSnapshot {
+            temperature_c: 42.5,
+            pressure_mpa: 0.18,
+            stirrer_rpm: 260.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.0,
+            product_concentration_percent: 10.0,
+            ph: 6.8,
+            captured_at: Utc::now(),
+        });
+    }
+    let app_state = AppState {
+        db: db.clone(),
+        runtime: runtime.clone(),
+        device: test_device(),
+        device_mode: DeviceMode::Pipeline,
+        device_config: device_config(),
+        safety,
+        ai_memory: memory(),
+        ai_provider: None,
+        test_reset_enabled: false,
+    };
+
+    let holding = handle_modbus_tcp_pdu(&app_state, &[0x03, 0x00, 0x00, 0x00, 0x03]).await;
+    assert_eq!(
+        holding,
+        vec![0x03, 0x06, 0x01, 0xA9, 0x01, 0x04, 0x00, 0x12]
+    );
+
+    let write_pressure = handle_modbus_tcp_pdu(&app_state, &[0x06, 0x00, 0x0D, 0x03, 0x84]).await;
+    assert_eq!(write_pressure, vec![0x06, 0x00, 0x0D, 0x03, 0x84]);
+    assert_eq!(runtime.read().await.targets.target_pressure_mpa, 9.0);
+    assert_eq!(
+        db.audit_events(10, 0, Some("modbus_register_write"))
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let target_pressure = handle_modbus_tcp_pdu(&app_state, &[0x03, 0x00, 0x0D, 0x00, 0x01]).await;
+    assert_eq!(target_pressure, vec![0x03, 0x02, 0x03, 0x84]);
+
+    let coils = handle_modbus_tcp_pdu(&app_state, &[0x01, 0x00, 0x00, 0x00, 0x04]).await;
+    assert_eq!(coils, vec![0x01, 0x01, 0x00]);
+
+    let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0x00, 0x00, 0x00, 0x02]).await;
+    assert_eq!(discrete, vec![0x02, 0x01, 0x03]);
+
+    let illegal = handle_modbus_tcp_pdu(&app_state, &[0x03, 0x00, 0x63, 0x00, 0x01]).await;
+    assert_eq!(illegal, vec![0x83, 0x02]);
+}
+
+#[tokio::test]
+async fn modbus_tcp_stream_accepts_real_mbap_read_request() {
+    let app_state = modbus_tcp_test_state().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let _ = handle_modbus_tcp_stream(stream, app_state, 253).await;
+    });
+
+    let mut client = TcpStream::connect(addr).await.unwrap();
+    client
+        .write_all(&[
+            0x12, 0x34, // transaction id
+            0x00, 0x00, // protocol id
+            0x00, 0x06, // unit id + five-byte PDU
+            0x01, // unit id
+            0x03, // read holding registers
+            0x00, 0x00, // start address
+            0x00, 0x02, // quantity
+        ])
+        .await
+        .unwrap();
+    let mut header = [0_u8; 7];
+    client.read_exact(&mut header).await.unwrap();
+    assert_eq!(&header, &[0x12, 0x34, 0x00, 0x00, 0x00, 0x07, 0x01]);
+    let mut pdu = vec![0_u8; 6];
+    client.read_exact(&mut pdu).await.unwrap();
+    assert_eq!(pdu, vec![0x03, 0x04, 0x01, 0xA9, 0x01, 0x04]);
+
+    drop(client);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn modbus_tcp_tls_stream_accepts_real_mbap_read_request() {
+    reactor_edge_daemon::tls::install_rustls_provider();
+    let app_state = modbus_tcp_test_state().await;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let certs = reactor_edge_daemon::tls::load_cert_chain(TEST_TLS_CERT).unwrap();
+    let key = reactor_edge_daemon::tls::load_private_key(TEST_TLS_KEY).unwrap();
+    let server_config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .unwrap();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let stream = acceptor.accept(stream).await.unwrap();
+        let _ = handle_modbus_tcp_stream(stream, app_state, 253).await;
+    });
+
+    let mut root_store = rustls::RootCertStore::empty();
+    let certs = reactor_edge_daemon::tls::load_cert_chain(TEST_TLS_CERT).unwrap();
+    let added = root_store.add_parsable_certificates(certs);
+    assert!(added.0 > 0);
+    let client_config = Arc::new(
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth(),
+    );
+    let connector = TlsConnector::from(client_config);
+    let server_name = rustls::pki_types::ServerName::try_from("localhost").unwrap();
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let mut client = connector.connect(server_name, stream).await.unwrap();
+    client
+        .write_all(&[
+            0x12, 0x35, // transaction id
+            0x00, 0x00, // protocol id
+            0x00, 0x06, // unit id + five-byte PDU
+            0x01, // unit id
+            0x03, // read holding registers
+            0x00, 0x00, // start address
+            0x00, 0x02, // quantity
+        ])
+        .await
+        .unwrap();
+    let mut header = [0_u8; 7];
+    client.read_exact(&mut header).await.unwrap();
+    assert_eq!(&header, &[0x12, 0x35, 0x00, 0x00, 0x00, 0x07, 0x01]);
+    let mut pdu = vec![0_u8; 6];
+    client.read_exact(&mut pdu).await.unwrap();
+    assert_eq!(pdu, vec![0x03, 0x04, 0x01, 0xA9, 0x01, 0x04]);
+
+    drop(client);
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn ainas_task_api_requires_auth_executes_targets_and_persists_task() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+    let payload = json!({
+        "external_task_id": "ainas-001",
+        "action": "set_targets",
+        "target_temperature_c": 999.0,
+        "target_stirrer_rpm": 9999.0,
+        "target_shake_speed_cpm": 80.0,
+        "reason": "AINAS acceptance task"
+    });
+
+    let unauthorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = to_bytes(created.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["source"], "ainas");
+    assert_eq!(body["data"]["external_task_id"], "ainas-001");
+    assert_eq!(body["data"]["action"], "set_targets");
+    assert_eq!(body["data"]["status"], "executed");
+    assert_eq!(body["data"]["response"]["targets"]["temperature_c"], 160.0);
+    assert_eq!(body["data"]["response"]["targets"]["stirrer_rpm"], 1200.0);
+    assert_eq!(body["data"]["response"]["targets"]["shake_speed_cpm"], 60.0);
+    let task_id = body["data"]["id"].as_i64().unwrap();
+
+    let list = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/integrations/ainas/tasks?limit=10")
+                .header("authorization", auth_header("engineer"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = to_bytes(list.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"][0]["id"], task_id);
+
+    let detail = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/integrations/ainas/tasks/{task_id}"))
+                .header("authorization", auth_header("engineer"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), StatusCode::OK);
+
+    let events = db.recent_control_events(5).unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.event_type == "ainas_targets_updated"));
+}
+
+#[tokio::test]
+async fn ainas_task_api_can_start_and_stop_process_through_safety_lifecycle() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let process_id = add_simple_process(&db, "ainas lifecycle");
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(50.0, 0.1, 120.0, 12.0, 20.0)).await;
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let started = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "external_task_id": "ainas-start-001",
+                        "action": "start_process",
+                        "process_id": process_id
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(started.status(), StatusCode::OK);
+    let body = to_bytes(started.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["status"], "executed");
+    assert_eq!(body["data"]["response"]["process"]["id"], process_id);
+    assert_eq!(body["data"]["response"]["batch"]["process_id"], process_id);
+    let batch_id = body["data"]["response"]["batch"]["id"].as_i64().unwrap();
+    assert_eq!(runtime.read().await.active_batch_id, Some(batch_id));
+
+    let stopped = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "external_task_id": "ainas-stop-001",
+                        "action": "stop_process",
+                        "process_id": process_id
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stopped.status(), StatusCode::OK);
+    let body = to_bytes(stopped.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["data"]["status"], "executed");
+    assert_eq!(body["data"]["response"]["stopped_batch_id"], batch_id);
+    assert_eq!(runtime.read().await.active_batch_id, None);
+
+    let events = db.recent_control_events(10).unwrap();
+    assert!(events
+        .iter()
+        .any(|event| event.event_type == "ainas_process_started"));
+    assert!(events
+        .iter()
+        .any(|event| event.event_type == "ainas_process_stopped"));
 }
 
 #[tokio::test]
@@ -1354,6 +2406,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1368,6 +2421,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1470,6 +2524,7 @@ async fn v1_control_rejects_values_outside_interface_document_ranges() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1483,6 +2538,7 @@ async fn v1_control_rejects_values_outside_interface_document_ranges() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1523,6 +2579,7 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1536,6 +2593,7 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1593,6 +2651,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1607,6 +2666,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             Request::builder()
                 .method("POST")
                 .uri("/api/batches/start")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1633,6 +2693,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1675,6 +2736,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             Request::builder()
                 .method("POST")
                 .uri(stop_uri)
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1688,6 +2750,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             Request::builder()
                 .method("POST")
                 .uri("/api/product-results")
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1738,6 +2801,190 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
 }
 
 #[tokio::test]
+async fn batch_export_and_report_are_generated_from_backend_data() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: true,
+        },
+        PathBuf::from("static"),
+    );
+
+    let start = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/batches/start")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "name": "report validation",
+                        "target_temperature_c": 78.0,
+                        "target_stirrer_rpm": 410.0,
+                        "heating_minutes": 55.0,
+                        "stirring_minutes": 45.0
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::OK);
+    let body = to_bytes(start.into_body(), usize::MAX).await.unwrap();
+    let batch: Value = serde_json::from_slice(&body).unwrap();
+    let batch_id = batch["id"].as_i64().unwrap();
+
+    for sample in [
+        json!({
+            "temperature_c": 77.8,
+            "pressure_mpa": 0.42,
+            "stirrer_rpm": 405.0,
+            "shake_speed_cpm": 28.0,
+            "tilt_state": 1,
+            "flow_rate_l_min": 1.2,
+            "product_concentration_percent": 51.0,
+            "ph": 6.7
+        }),
+        json!({
+            "temperature_c": 78.4,
+            "pressure_mpa": 0.44,
+            "stirrer_rpm": 412.0,
+            "shake_speed_cpm": 29.0,
+            "tilt_state": 0,
+            "flow_rate_l_min": 1.3,
+            "product_concentration_percent": 55.0,
+            "ph": 6.8
+        }),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/reactor/reactor_001/samples")
+                    .header("content-type", "application/json")
+                    .body(Body::from(sample.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let finish = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/batches/{batch_id}/finish"))
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(finish.status(), StatusCode::NO_CONTENT);
+
+    let result = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/product-results")
+                .header("authorization", auth_header("engineer"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "batch_id": batch_id,
+                        "yield_percent": 83.2,
+                        "product_ratio": 0.91,
+                        "notes": "report validation result"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.status(), StatusCode::OK);
+
+    let export = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/batches/export.csv")
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(export.status(), StatusCode::OK);
+    let body = to_bytes(export.into_body(), usize::MAX).await.unwrap();
+    let csv = String::from_utf8(body.to_vec()).unwrap();
+    assert!(csv.contains("report validation"));
+    assert!(csv.contains("83.2"));
+
+    let xlsx = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/batches/export.xlsx")
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(xlsx.status(), StatusCode::OK);
+    assert_eq!(
+        xlsx.headers()["content-type"],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    let body = to_bytes(xlsx.into_body(), usize::MAX).await.unwrap();
+    assert!(body.starts_with(b"PK\x03\x04"));
+    let workbook = String::from_utf8_lossy(&body);
+    assert!(workbook.contains("xl/worksheets/sheet1.xml"));
+    assert!(workbook.contains("xl/worksheets/sheet2.xml"));
+    assert!(workbook.contains("xl/worksheets/sheet3.xml"));
+    assert!(workbook.contains("report validation"));
+    assert!(workbook.contains("average_yield_percent"));
+
+    let report = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/batches/{batch_id}/report.md"))
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.status(), StatusCode::OK);
+    let body = to_bytes(report.into_body(), usize::MAX).await.unwrap();
+    let report = String::from_utf8(body.to_vec()).unwrap();
+    assert!(report.contains("# Experiment Report"));
+    assert!(report.contains("report validation"));
+    assert!(report.contains("Sensor Statistics"));
+    assert!(report.contains("Yield: 83.20%"));
+    assert!(report.contains("batch_started"));
+    assert!(report.contains("product_result_recorded"));
+}
+
+#[tokio::test]
 async fn process_configuration_persists_steps_and_applies_to_batch_history() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -1768,6 +3015,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1782,9 +3030,11 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
             Request::builder()
                 .method("POST")
                 .uri("/api/processes")
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
                 .body(Body::from(
-                    json!({ "name": "RX-78 高分子聚合", "description": "lab process" }).to_string(),
+                    json!({ "name": "RX-78 polymerization", "description": "lab process" })
+                        .to_string(),
                 ))
                 .unwrap(),
         )
@@ -1797,8 +3047,8 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
     let process_id = body["data"]["id"].as_i64().unwrap();
 
     for (name, temp, duration, rpm, pressure) in [
-        ("加热", 120.0, 45.0, 150.0, 0.5),
-        ("保温", 120.0, 120.0, 300.0, 2.4),
+        ("鍔犵儹", 120.0, 45.0, 150.0, 0.5),
+        ("淇濇俯", 120.0, 120.0, 300.0, 2.4),
     ] {
         let response = app
             .clone()
@@ -1806,6 +3056,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
                 Request::builder()
                     .method("POST")
                     .uri(format!("/api/processes/{process_id}/steps"))
+                    .header("authorization", auth_header("engineer"))
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({
@@ -1816,7 +3067,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
                             "target_stirrer_rpm": rpm,
                             "target_shake_speed_cpm": 30,
                             "target_pressure_mpa": pressure,
-                            "cooling_mode": "自然"
+                            "cooling_mode": "鑷劧"
                         })
                         .to_string(),
                     ))
@@ -1848,6 +3099,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/processes/{process_id}/apply"))
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1972,6 +3224,7 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -1986,6 +3239,7 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/processes/{}/start", process.id))
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2029,6 +3283,7 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/processes/{}/start", process.id))
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2046,6 +3301,7 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
             Request::builder()
                 .method("POST")
                 .uri("/api/processes/current/stop")
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2113,6 +3369,7 @@ async fn process_stop_without_active_batch_returns_json_error_code() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2126,6 +3383,7 @@ async fn process_stop_without_active_batch_returns_json_error_code() {
             Request::builder()
                 .method("POST")
                 .uri("/api/processes/current/stop")
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2149,6 +3407,7 @@ async fn ai_master_control_rejects_missing_sensor_sample_with_json_error_code() 
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2162,6 +3421,7 @@ async fn ai_master_control_rejects_missing_sensor_sample_with_json_error_code() 
             Request::builder()
                 .method("POST")
                 .uri("/api/ai/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(json!({"dry_run": false}).to_string()))
                 .unwrap(),
@@ -2211,6 +3471,7 @@ async fn ai_master_control_dry_run_plans_process_and_shake_without_side_effects(
             runtime: runtime.clone(),
             device: component_test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2224,6 +3485,7 @@ async fn ai_master_control_dry_run_plans_process_and_shake_without_side_effects(
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/ai/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -2288,6 +3550,7 @@ async fn ai_master_control_execute_starts_process_and_audits_decision() {
             runtime,
             device: component_test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2302,6 +3565,7 @@ async fn ai_master_control_execute_starts_process_and_audits_decision() {
             Request::builder()
                 .method("POST")
                 .uri("/api/ai/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -2386,6 +3650,7 @@ async fn ai_master_control_stops_active_process_when_product_concentration_is_hi
             runtime,
             device: component_test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2400,6 +3665,7 @@ async fn ai_master_control_stops_active_process_when_product_concentration_is_hi
             Request::builder()
                 .method("POST")
                 .uri("/api/ai/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -2453,6 +3719,7 @@ async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: memory(),
             ai_provider: None,
@@ -2479,8 +3746,11 @@ async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
             Request::builder()
                 .method("POST")
                 .uri("/api/processes")
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "name": "离线可配置工艺" }).to_string()))
+                .body(Body::from(
+                    json!({ "name": "offline configurable process" }).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -2593,6 +3863,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
             runtime,
             device: test_device(),
             device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
             safety,
             ai_memory: ai_memory.clone(),
             ai_provider: None,
@@ -2617,7 +3888,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
         .unwrap();
     let rec: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(rec["provider"]["mode"], "local_optimizer");
-    assert_eq!(rec["provider"]["model"], "local-tpe-lite");
+    assert_eq!(rec["provider"]["model"], "local-ga-sa-pid");
     let temp = rec["target_temperature_c"].as_f64().unwrap();
     let rpm = rec["target_stirrer_rpm"].as_f64().unwrap();
     let heating = rec["heating_minutes"].as_f64().unwrap();
@@ -2639,6 +3910,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({

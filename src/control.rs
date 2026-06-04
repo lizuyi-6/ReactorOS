@@ -6,6 +6,30 @@ use crate::{
     state::{ControlTargets, SensorSnapshot},
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SafetyGuardRequest {
+    DecideControl {
+        safety: SafetyConfig,
+        sample: Option<SensorSnapshot>,
+        targets: ControlTargets,
+        auto_enabled: bool,
+        manual_lock: bool,
+        emergency_stop: bool,
+    },
+    ClampTargets {
+        safety: SafetyConfig,
+        targets: ControlTargets,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SafetyGuardResponse {
+    ControlDecision(ControlDecision),
+    ClampedTargets(ControlTargets),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SafeCommand {
     pub target_temperature_c: f64,
@@ -25,6 +49,7 @@ pub enum ControlBlockReason {
     EmergencyStop,
     MissingSensorSample,
     SensorStale,
+    ForbiddenControlZone,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -74,6 +99,9 @@ pub fn decide_control(
         safety.stirrer.max_rpm,
         safety.stirrer.max_step_rpm,
     );
+    if is_forbidden_control_zone(safety, temperature, stirrer) {
+        return ControlDecision::Blocked(ControlBlockReason::ForbiddenControlZone);
+    }
 
     ControlDecision::Write(SafeCommand {
         target_temperature_c: round2(temperature),
@@ -104,6 +132,51 @@ pub fn clamp_operator_targets(safety: &SafetyConfig, targets: ControlTargets) ->
         ),
         shake_speed_cpm: round2(targets.shake_speed_cpm.clamp(0.0, 60.0)),
         target_pressure_mpa: round2(targets.target_pressure_mpa.clamp(0.0, 10.0)),
+    }
+}
+
+pub fn is_forbidden_control_zone(
+    safety: &SafetyConfig,
+    temperature_c: f64,
+    stirrer_rpm: f64,
+) -> bool {
+    safety
+        .forbidden_control_zones
+        .iter()
+        .any(|zone| zone.contains(temperature_c, stirrer_rpm))
+}
+
+pub fn forbidden_control_zone<'a>(
+    safety: &'a SafetyConfig,
+    temperature_c: f64,
+    stirrer_rpm: f64,
+) -> Option<&'a crate::config::ForbiddenControlZone> {
+    safety
+        .forbidden_control_zones
+        .iter()
+        .find(|zone| zone.contains(temperature_c, stirrer_rpm))
+}
+
+pub fn evaluate_safety_request(request: SafetyGuardRequest) -> SafetyGuardResponse {
+    match request {
+        SafetyGuardRequest::DecideControl {
+            safety,
+            sample,
+            targets,
+            auto_enabled,
+            manual_lock,
+            emergency_stop,
+        } => SafetyGuardResponse::ControlDecision(decide_control(
+            &safety,
+            sample.as_ref(),
+            &targets,
+            auto_enabled,
+            manual_lock,
+            emergency_stop,
+        )),
+        SafetyGuardRequest::ClampTargets { safety, targets } => {
+            SafetyGuardResponse::ClampedTargets(clamp_operator_targets(&safety, targets))
+        }
     }
 }
 

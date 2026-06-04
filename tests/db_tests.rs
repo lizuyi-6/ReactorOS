@@ -4,6 +4,8 @@ use reactor_edge_daemon::{
     optimizer::recommend,
     state::SensorSnapshot,
 };
+use rusqlite::{params, Connection};
+use serde_json::json;
 use std::sync::Arc;
 
 fn sample(index: usize) -> SensorSnapshot {
@@ -126,4 +128,89 @@ fn migration_creates_indexes_for_hot_history_queries() {
     assert!(indexes.contains(&"idx_sensor_samples_captured_id".to_string()));
     assert!(indexes.contains(&"idx_sensor_samples_batch_id_id".to_string()));
     assert!(indexes.contains(&"idx_control_events_batch_id_id".to_string()));
+}
+
+#[test]
+fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reactor.sqlite3");
+    let db = Db::open_with_encryption_key(&path, [7_u8; 32]).unwrap();
+    let request = json!({
+        "action": "set_targets",
+        "external_task_id": "secure-001",
+        "reason": "sensitive AINAS payload",
+        "target_temperature_c": 62.5
+    });
+    let task = db
+        .create_integration_task("ainas", Some("secure-001"), "set_targets", &request)
+        .unwrap();
+    let response = json!({
+        "code": 0,
+        "message": "success",
+        "data": { "receipt": "private-third-party-receipt" }
+    });
+    db.update_integration_task(task.id, "executed", &response)
+        .unwrap();
+
+    let raw = raw_task_payloads(&path, task.id);
+    assert!(raw.0.starts_with("xingshu:v1:aes256gcm:"));
+    assert!(raw.1.starts_with("xingshu:v1:aes256gcm:"));
+    assert!(!raw.0.contains("sensitive AINAS payload"));
+    assert!(!raw.1.contains("private-third-party-receipt"));
+
+    let stored = db.integration_task(task.id).unwrap().unwrap();
+    assert_eq!(stored.request["reason"], "sensitive AINAS payload");
+    assert_eq!(
+        stored.response["data"]["receipt"],
+        "private-third-party-receipt"
+    );
+
+    let status = db.encryption_status();
+    assert!(status.enabled);
+    assert_eq!(status.algorithm, "AES-256-GCM");
+    assert!(status
+        .encrypted_fields
+        .contains(&"integration_tasks.request_json"));
+    assert!(status
+        .encrypted_fields
+        .contains(&"integration_tasks.response_json"));
+}
+
+#[test]
+fn integration_task_reader_keeps_plaintext_rows_compatible() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reactor.sqlite3");
+    let db = Db::open_with_encryption_key(&path, [9_u8; 32]).unwrap();
+    let now = Utc::now().to_rfc3339();
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            r#"
+            INSERT INTO integration_tasks
+                (external_task_id, source, action, status, request_json, response_json, created_at, updated_at)
+            VALUES (?1, 'ainas', 'set_targets', 'executed', ?2, ?3, ?4, ?4)
+            "#,
+            params![
+                "legacy-001",
+                json!({ "action": "set_targets", "reason": "legacy plaintext payload" }).to_string(),
+                json!({ "code": 0, "message": "legacy plaintext response" }).to_string(),
+                now
+            ],
+        )
+        .unwrap();
+    }
+
+    let legacy = db.integration_tasks(Some("ainas"), 1).unwrap();
+    assert_eq!(legacy[0].request["reason"], "legacy plaintext payload");
+    assert_eq!(legacy[0].response["message"], "legacy plaintext response");
+}
+
+fn raw_task_payloads(path: &std::path::Path, task_id: i64) -> (String, String) {
+    let conn = Connection::open(path).unwrap();
+    conn.query_row(
+        "SELECT request_json, response_json FROM integration_tasks WHERE id = ?1",
+        params![task_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .unwrap()
 }

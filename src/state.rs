@@ -20,7 +20,7 @@ pub struct SensorSnapshot {
     pub captured_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlTargets {
     pub temperature_c: f64,
     pub heat_time_s: f64,

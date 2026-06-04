@@ -380,6 +380,7 @@ offset = 0.0
                     min_stirring_minutes: 15.0,
                     max_stirring_minutes: 240.0,
                 },
+                forbidden_control_zones: Vec::new(),
             },
         )
         .await
@@ -504,6 +505,7 @@ offset = 0.0
                     min_stirring_minutes: 15.0,
                     max_stirring_minutes: 240.0,
                 },
+                forbidden_control_zones: Vec::new(),
             },
         )
         .await

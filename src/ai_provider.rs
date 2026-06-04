@@ -228,7 +228,7 @@ pub fn local_envelope(recommendation: Recommendation) -> AiRecommendationEnvelop
         recommendation,
         provider: AiRecommendationProvider {
             mode: "local_optimizer".to_string(),
-            model: "local-tpe-lite".to_string(),
+            model: "local-ga-sa-pid".to_string(),
             fallback_reason: None,
         },
     }

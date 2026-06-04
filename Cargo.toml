@@ -2,20 +2,29 @@
 name = "reactor-edge-daemon"
 version = "0.1.0"
 edition = "2021"
+default-run = "reactor-edge-daemon"
 
 [dependencies]
 anyhow = "1.0.95"
+aes-gcm = "0.10.3"
 axum = { version = "0.7.9", features = ["ws"] }
+axum-server = { version = "0.7.0", features = ["tls-rustls"] }
+base64 = "0.22.1"
 chrono = { version = "0.4.39", features = ["serde"] }
 clap = { version = "4.5.23", features = ["derive"] }
 rand = "0.8.5"
 reqwest = { version = "0.12.12", default-features = false, features = ["json", "rustls-tls"] }
+rumqttc = "0.25.1"
 rusqlite = { version = "0.32.1", features = ["bundled", "chrono"] }
+rustls = { version = "0.23.40", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2.2.0"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
+sha2 = "0.10.8"
 serialport = "4.6.1"
 thiserror = "2.0.9"
 tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-rustls = "0.26.4"
 toml = "0.8.19"
 tower-http = { version = "0.6.2", features = ["fs", "trace"] }
 tracing = "0.1.41"

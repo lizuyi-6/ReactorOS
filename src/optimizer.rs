@@ -70,14 +70,31 @@ pub fn recommend_with_memory(
     let best = &elites[0];
 
     let mut rng = rand::thread_rng();
-    let candidate = sample_allowed_candidate(&mut rng, elites, &effective_bounds, forbidden_zones);
-    let (temp, rpm, heating, stirring, forbidden_note) = match candidate {
-        Some(candidate) => (
-            candidate.temperature_c,
-            candidate.stirrer_rpm,
-            candidate.heating_minutes,
-            candidate.stirring_minutes,
+    let candidate = hybrid_search_candidate(
+        &mut rng,
+        &sorted,
+        elites,
+        &effective_bounds,
+        forbidden_zones,
+        objective_weights,
+    )
+    .or_else(|| {
+        sample_allowed_candidate(&mut rng, elites, &effective_bounds, forbidden_zones).map(
+            |candidate| SearchOutcome {
+                candidate,
+                note: "Local stochastic optimizer used elite-neighborhood fallback sampling."
+                    .to_string(),
+            },
+        )
+    });
+    let (temp, rpm, heating, stirring, forbidden_note, optimizer_note) = match candidate {
+        Some(search) => (
+            search.candidate.temperature_c,
+            search.candidate.stirrer_rpm,
+            search.candidate.heating_minutes,
+            search.candidate.stirring_minutes,
             "",
+            search.note,
         ),
         None => {
             let fallback = safe_midpoint(&effective_bounds, forbidden_zones);
@@ -87,6 +104,7 @@ pub fn recommend_with_memory(
                 fallback.heating_minutes,
                 fallback.stirring_minutes,
                 " All sampled candidates matched a forbidden zone; using the nearest safe midpoint.",
+                "Local optimizer fell back to nearest safe midpoint.".to_string(),
             )
         }
     };
@@ -105,6 +123,7 @@ pub fn recommend_with_memory(
             memory_outcomes.len(),
             memory,
             forbidden_note,
+            &optimizer_note,
         ),
     }
 }
@@ -175,6 +194,290 @@ struct Candidate {
     stirrer_rpm: f64,
     heating_minutes: f64,
     stirring_minutes: f64,
+}
+
+#[derive(Debug, Clone)]
+struct SearchOutcome {
+    candidate: Candidate,
+    note: String,
+}
+
+fn hybrid_search_candidate(
+    rng: &mut impl Rng,
+    outcomes: &[BatchOutcome],
+    elites: &[BatchOutcome],
+    bounds: &OptimizerBounds,
+    forbidden_zones: &[ForbiddenZone],
+    weights: (f64, f64),
+) -> Option<SearchOutcome> {
+    let mut population = seed_population(rng, elites, bounds, forbidden_zones);
+    if population.is_empty() {
+        return None;
+    }
+
+    for _ in 0..18 {
+        population.sort_by(|a, b| {
+            candidate_quality(b, outcomes, bounds, weights)
+                .total_cmp(&candidate_quality(a, outcomes, bounds, weights))
+        });
+        population.truncate(12);
+        let parents = population.clone();
+        for _ in 0..12 {
+            let first = &parents[rng.gen_range(0..parents.len())];
+            let second = &parents[rng.gen_range(0..parents.len())];
+            let child = crossover_candidate(rng, first, second, bounds);
+            let child = mutate_candidate(rng, child, bounds, 1.0);
+            let child = pid_correct_candidate(child, outcomes, elites, bounds);
+            if !is_forbidden(&child, forbidden_zones) {
+                population.push(child);
+            }
+        }
+    }
+
+    population.sort_by(|a, b| {
+        candidate_quality(b, outcomes, bounds, weights)
+            .total_cmp(&candidate_quality(a, outcomes, bounds, weights))
+    });
+    let mut current = population[0].clone();
+    let mut current_score = candidate_quality(&current, outcomes, bounds, weights);
+    let mut temperature = 8.0_f64;
+
+    for _ in 0..32 {
+        let neighbor = mutate_candidate(rng, current.clone(), bounds, temperature / 8.0);
+        let neighbor = pid_correct_candidate(neighbor, outcomes, elites, bounds);
+        if is_forbidden(&neighbor, forbidden_zones) {
+            temperature *= 0.86;
+            continue;
+        }
+        let neighbor_score = candidate_quality(&neighbor, outcomes, bounds, weights);
+        let delta = neighbor_score - current_score;
+        let accept_probability = (delta / temperature.max(0.001)).exp().clamp(0.0, 1.0);
+        if delta >= 0.0 || rng.gen_bool(accept_probability) {
+            current = neighbor;
+            current_score = neighbor_score;
+        }
+        temperature *= 0.86;
+    }
+
+    Some(SearchOutcome {
+        candidate: current,
+        note: "Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction.".to_string(),
+    })
+}
+
+fn seed_population(
+    rng: &mut impl Rng,
+    elites: &[BatchOutcome],
+    bounds: &OptimizerBounds,
+    forbidden_zones: &[ForbiddenZone],
+) -> Vec<Candidate> {
+    let mut population = Vec::new();
+    for elite in elites {
+        push_if_allowed(
+            &mut population,
+            outcome_candidate(elite, bounds),
+            forbidden_zones,
+        );
+    }
+    push_if_allowed(
+        &mut population,
+        safe_midpoint(bounds, forbidden_zones),
+        forbidden_zones,
+    );
+    for _ in 0..32 {
+        if let Some(candidate) = sample_allowed_candidate(rng, elites, bounds, forbidden_zones) {
+            population.push(candidate);
+        }
+    }
+    population
+}
+
+fn push_if_allowed(
+    population: &mut Vec<Candidate>,
+    candidate: Candidate,
+    forbidden_zones: &[ForbiddenZone],
+) {
+    if !is_forbidden(&candidate, forbidden_zones) {
+        population.push(candidate);
+    }
+}
+
+fn outcome_candidate(outcome: &BatchOutcome, bounds: &OptimizerBounds) -> Candidate {
+    Candidate {
+        temperature_c: outcome
+            .target_temperature_c
+            .clamp(bounds.min_temperature_c, bounds.max_temperature_c),
+        stirrer_rpm: outcome
+            .target_stirrer_rpm
+            .clamp(bounds.min_stirrer_rpm, bounds.max_stirrer_rpm),
+        heating_minutes: outcome
+            .heating_minutes
+            .clamp(bounds.min_heating_minutes, bounds.max_heating_minutes),
+        stirring_minutes: outcome
+            .stirring_minutes
+            .clamp(bounds.min_stirring_minutes, bounds.max_stirring_minutes),
+    }
+}
+
+fn crossover_candidate(
+    rng: &mut impl Rng,
+    first: &Candidate,
+    second: &Candidate,
+    bounds: &OptimizerBounds,
+) -> Candidate {
+    let blend = rng.gen_range(0.25..=0.75);
+    Candidate {
+        temperature_c: blend_value(first.temperature_c, second.temperature_c, blend)
+            .clamp(bounds.min_temperature_c, bounds.max_temperature_c),
+        stirrer_rpm: blend_value(first.stirrer_rpm, second.stirrer_rpm, blend)
+            .clamp(bounds.min_stirrer_rpm, bounds.max_stirrer_rpm),
+        heating_minutes: blend_value(first.heating_minutes, second.heating_minutes, blend)
+            .clamp(bounds.min_heating_minutes, bounds.max_heating_minutes),
+        stirring_minutes: blend_value(first.stirring_minutes, second.stirring_minutes, blend)
+            .clamp(bounds.min_stirring_minutes, bounds.max_stirring_minutes),
+    }
+}
+
+fn mutate_candidate(
+    rng: &mut impl Rng,
+    candidate: Candidate,
+    bounds: &OptimizerBounds,
+    scale: f64,
+) -> Candidate {
+    let scale = scale.clamp(0.2, 1.5);
+    Candidate {
+        temperature_c: mutate_axis(
+            rng,
+            candidate.temperature_c,
+            bounds.min_temperature_c,
+            bounds.max_temperature_c,
+            0.08 * scale,
+        ),
+        stirrer_rpm: mutate_axis(
+            rng,
+            candidate.stirrer_rpm,
+            bounds.min_stirrer_rpm,
+            bounds.max_stirrer_rpm,
+            0.08 * scale,
+        ),
+        heating_minutes: mutate_axis(
+            rng,
+            candidate.heating_minutes,
+            bounds.min_heating_minutes,
+            bounds.max_heating_minutes,
+            0.10 * scale,
+        ),
+        stirring_minutes: mutate_axis(
+            rng,
+            candidate.stirring_minutes,
+            bounds.min_stirring_minutes,
+            bounds.max_stirring_minutes,
+            0.10 * scale,
+        ),
+    }
+}
+
+fn pid_correct_candidate(
+    candidate: Candidate,
+    outcomes: &[BatchOutcome],
+    elites: &[BatchOutcome],
+    bounds: &OptimizerBounds,
+) -> Candidate {
+    let best = &outcomes[0];
+    let second = outcomes.get(1).unwrap_or(best);
+    let elite_mean = Candidate {
+        temperature_c: mean(elites, |item| item.target_temperature_c),
+        stirrer_rpm: mean(elites, |item| item.target_stirrer_rpm),
+        heating_minutes: mean(elites, |item| item.heating_minutes),
+        stirring_minutes: mean(elites, |item| item.stirring_minutes),
+    };
+
+    Candidate {
+        temperature_c: pid_axis(
+            candidate.temperature_c,
+            best.target_temperature_c,
+            elite_mean.temperature_c,
+            best.target_temperature_c - second.target_temperature_c,
+            bounds.min_temperature_c,
+            bounds.max_temperature_c,
+        ),
+        stirrer_rpm: pid_axis(
+            candidate.stirrer_rpm,
+            best.target_stirrer_rpm,
+            elite_mean.stirrer_rpm,
+            best.target_stirrer_rpm - second.target_stirrer_rpm,
+            bounds.min_stirrer_rpm,
+            bounds.max_stirrer_rpm,
+        ),
+        heating_minutes: pid_axis(
+            candidate.heating_minutes,
+            best.heating_minutes,
+            elite_mean.heating_minutes,
+            best.heating_minutes - second.heating_minutes,
+            bounds.min_heating_minutes,
+            bounds.max_heating_minutes,
+        ),
+        stirring_minutes: pid_axis(
+            candidate.stirring_minutes,
+            best.stirring_minutes,
+            elite_mean.stirring_minutes,
+            best.stirring_minutes - second.stirring_minutes,
+            bounds.min_stirring_minutes,
+            bounds.max_stirring_minutes,
+        ),
+    }
+}
+
+fn candidate_quality(
+    candidate: &Candidate,
+    outcomes: &[BatchOutcome],
+    bounds: &OptimizerBounds,
+    weights: (f64, f64),
+) -> f64 {
+    let temp_span = (bounds.max_temperature_c - bounds.min_temperature_c).max(1.0);
+    let rpm_span = (bounds.max_stirrer_rpm - bounds.min_stirrer_rpm).max(1.0);
+    let heating_span = (bounds.max_heating_minutes - bounds.min_heating_minutes).max(1.0);
+    let stirring_span = (bounds.max_stirring_minutes - bounds.min_stirring_minutes).max(1.0);
+    let mut weighted_score = 0.0;
+    let mut total_weight = 0.0;
+    for outcome in outcomes {
+        let distance = (((candidate.temperature_c - outcome.target_temperature_c) / temp_span)
+            .powi(2)
+            + ((candidate.stirrer_rpm - outcome.target_stirrer_rpm) / rpm_span).powi(2)
+            + ((candidate.heating_minutes - outcome.heating_minutes) / heating_span).powi(2)
+            + ((candidate.stirring_minutes - outcome.stirring_minutes) / stirring_span).powi(2))
+        .sqrt();
+        let weight = 1.0 / (0.08 + distance);
+        weighted_score += score_with_weights(outcome, weights) * weight;
+        total_weight += weight;
+    }
+    if total_weight == 0.0 {
+        0.0
+    } else {
+        weighted_score / total_weight
+    }
+}
+
+fn blend_value(first: f64, second: f64, ratio: f64) -> f64 {
+    first * ratio + second * (1.0 - ratio)
+}
+
+fn mutate_axis(rng: &mut impl Rng, value: f64, min: f64, max: f64, ratio: f64) -> f64 {
+    let span = (max - min).max(1.0);
+    (value + rng.gen_range(-(span * ratio)..=(span * ratio))).clamp(min, max)
+}
+
+fn pid_axis(
+    current: f64,
+    best: f64,
+    integral_anchor: f64,
+    derivative: f64,
+    min: f64,
+    max: f64,
+) -> f64 {
+    let proportional = best - current;
+    let integral = integral_anchor - current;
+    (current + proportional * 0.18 + integral * 0.06 + derivative * 0.03).clamp(min, max)
 }
 
 fn sample_allowed_candidate(
@@ -305,6 +608,7 @@ fn rationale(
     memory_outcome_count: usize,
     memory: Option<&AiMemory>,
     forbidden_note: &str,
+    optimizer_note: &str,
 ) -> String {
     let memory_note = memory
         .filter(|memory| memory.recommendation.enabled)
@@ -324,7 +628,7 @@ fn rationale(
     };
 
     format!(
-        "Based on the top {elite_count} batches from {real_outcome_count} recorded and {memory_outcome_count} file reference outcomes; best batch {} reached yield {:.2}% and product ratio {:.3}.{memory_note}{reference_note}{forbidden_note}",
+        "Based on the top {elite_count} batches from {real_outcome_count} recorded and {memory_outcome_count} file reference outcomes; best batch {} reached yield {:.2}% and product ratio {:.3}. {optimizer_note}{memory_note}{reference_note}{forbidden_note}",
         best.batch_id, best.yield_percent, best.product_ratio
     )
 }

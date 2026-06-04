@@ -1,16 +1,19 @@
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Parser;
 use reactor_edge_daemon::{
     ai_provider::AiProvider,
-    api::{serve, AppState},
+    api::{serve, AppState, HttpTlsConfig},
     config::{load_device_config, load_safety_config, DeviceMode},
-    control::{decide_control, ControlDecision},
+    control::ControlDecision,
     db::Db,
     demo::seed_demo_context,
     device::build_device,
     memory::load_ai_memory,
+    modbus_tcp::start_modbus_tcp_server,
+    mqtt::{load_integration_config, start_mqtt_bridge},
+    safety_guard::evaluate_with_process,
     state::{RuntimeState, SharedState},
 };
 use tokio::{sync::RwLock, time::sleep};
@@ -24,14 +27,22 @@ struct Args {
     safety: PathBuf,
     #[arg(long, default_value = "config/ai_memory.toml")]
     memory: PathBuf,
+    #[arg(long, default_value = "config/integration.toml")]
+    integration: PathBuf,
     #[arg(long, default_value = "data/reactor.sqlite3")]
     db: PathBuf,
     #[arg(long, default_value = "static")]
     assets: PathBuf,
     #[arg(long, default_value = "127.0.0.1:8000")]
     bind: SocketAddr,
+    #[arg(long)]
+    tls_cert: Option<PathBuf>,
+    #[arg(long)]
+    tls_key: Option<PathBuf>,
     #[arg(long, default_value_t = false)]
     enable_test_reset: bool,
+    #[arg(long)]
+    safety_guard: Option<PathBuf>,
     #[arg(long, default_value_t = false)]
     seed_demo_context: bool,
 }
@@ -43,10 +54,17 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
+    let tls = match (args.tls_cert.clone(), args.tls_key.clone()) {
+        (Some(cert), Some(key)) => Some(HttpTlsConfig { cert, key }),
+        (None, None) => None,
+        _ => bail!("--tls-cert and --tls-key must be provided together"),
+    };
     let device_config = load_device_config(&args.config)?;
     let device_mode = device_config.mode.clone();
+    let device_config = Arc::new(device_config);
     let safety = Arc::new(load_safety_config(&args.safety)?);
     let ai_memory = Arc::new(load_ai_memory(&args.memory)?);
+    let integration = load_integration_config(&args.integration)?;
     ai_memory.validate_against_optimizer_bounds(&safety.optimizer)?;
     let ai_provider = AiProvider::from_env()?.map(Arc::new);
     let db = Db::open(&args.db)?;
@@ -66,6 +84,7 @@ async fn main() -> Result<()> {
     let loop_safety = Arc::clone(&safety);
     let loop_device = Arc::clone(&device);
     let loop_device_mode = device_mode.clone();
+    let loop_safety_guard = args.safety_guard.clone();
     tokio::spawn(async move {
         control_loop(
             loop_device,
@@ -73,25 +92,26 @@ async fn main() -> Result<()> {
             loop_state,
             loop_safety,
             loop_device_mode,
+            loop_safety_guard,
         )
         .await;
     });
 
-    serve(
-        AppState {
-            db,
-            runtime,
-            device,
-            device_mode,
-            safety,
-            ai_memory,
-            ai_provider,
-            test_reset_enabled: args.enable_test_reset,
-        },
-        args.assets,
-        args.bind,
-    )
-    .await
+    let app_state = AppState {
+        db,
+        runtime,
+        device,
+        device_mode,
+        device_config,
+        safety,
+        ai_memory,
+        ai_provider,
+        test_reset_enabled: args.enable_test_reset,
+    };
+    start_mqtt_bridge(integration.mqtt, app_state.clone());
+    start_modbus_tcp_server(integration.modbus_tcp, app_state.clone());
+
+    serve(app_state, args.assets, args.bind, tls).await
 }
 
 async fn control_loop(
@@ -100,6 +120,7 @@ async fn control_loop(
     runtime: SharedState,
     safety: Arc<reactor_edge_daemon::config::SafetyConfig>,
     device_mode: DeviceMode,
+    safety_guard: Option<PathBuf>,
 ) {
     let interval = Duration::from_millis(safety.control.control_interval_ms);
     let mut last_written_command: Option<SafeCommandFingerprint> = None;
@@ -137,14 +158,7 @@ async fn control_loop(
 
         let decision = {
             let state = runtime.read().await;
-            decide_control(
-                &safety,
-                state.latest_sample.as_ref(),
-                &state.targets,
-                state.auto_enabled,
-                state.manual_lock,
-                state.emergency_stop,
-            )
+            decide_control_with_optional_guard(&safety, &state, safety_guard.as_deref())
         };
 
         match decision {
@@ -182,6 +196,40 @@ async fn control_loop(
         }
 
         sleep(interval).await;
+    }
+}
+
+fn decide_control_with_optional_guard(
+    safety: &reactor_edge_daemon::config::SafetyConfig,
+    state: &RuntimeState,
+    safety_guard: Option<&std::path::Path>,
+) -> ControlDecision {
+    let request = reactor_edge_daemon::control::SafetyGuardRequest::DecideControl {
+        safety: safety.clone(),
+        sample: state.latest_sample.clone(),
+        targets: state.targets.clone(),
+        auto_enabled: state.auto_enabled,
+        manual_lock: state.manual_lock,
+        emergency_stop: state.emergency_stop,
+    };
+    if let Some(guard) = safety_guard {
+        match evaluate_with_process(guard, &request) {
+            Ok(reactor_edge_daemon::control::SafetyGuardResponse::ControlDecision(decision)) => {
+                return decision;
+            }
+            Ok(other) => {
+                tracing::warn!("safety guard returned unexpected response: {other:?}");
+            }
+            Err(err) => {
+                tracing::warn!(
+                    "safety guard process failed; falling back to in-process safety: {err}"
+                );
+            }
+        }
+    }
+    match reactor_edge_daemon::control::evaluate_safety_request(request) {
+        reactor_edge_daemon::control::SafetyGuardResponse::ControlDecision(decision) => decision,
+        reactor_edge_daemon::control::SafetyGuardResponse::ClampedTargets(_) => unreachable!(),
     }
 }
 
