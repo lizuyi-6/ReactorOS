@@ -696,7 +696,7 @@ async fn audit_logs(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let total = state.db.audit_event_count(event_type)?;
+    let total = state.db.audit_event_count_sqlx(event_type).await?;
     let events = state
         .db
         .audit_events(page_size, (page - 1) * page_size, event_type)?;

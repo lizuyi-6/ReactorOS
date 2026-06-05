@@ -22,6 +22,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 
 use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
 
@@ -48,6 +49,7 @@ struct DbInner {
     reads: Vec<Mutex<Connection>>,
     next_read: AtomicUsize,
     encryption: Option<DbEncryption>,
+    sqlx_pool: Option<sqlx::SqlitePool>,
 }
 
 enum DbConnectionGuard<'a> {
@@ -245,7 +247,8 @@ impl Db {
                 })?,
             ));
         }
-        let db = Self::from_connections(write, reads, encryption);
+        let sqlx_pool = open_sqlx_pool(path.as_ref());
+        let db = Self::from_connections(write, reads, encryption, sqlx_pool);
         db.migrate()?;
         Ok(db)
     }
@@ -255,6 +258,7 @@ impl Db {
             configure_connection(Connection::open_in_memory()?)?,
             vec![],
             db_encryption_from_env()?,
+            None,
         );
         db.migrate()?;
         Ok(db)
@@ -265,6 +269,7 @@ impl Db {
             configure_connection(Connection::open_in_memory()?)?,
             vec![],
             Some(DbEncryption::from_key(key, "test")),
+            None,
         );
         db.migrate()?;
         Ok(db)
@@ -290,6 +295,7 @@ impl Db {
         write: Connection,
         reads: Vec<Mutex<Connection>>,
         encryption: Option<DbEncryption>,
+        sqlx_pool: Option<sqlx::SqlitePool>,
     ) -> Self {
         Self {
             inner: Arc::new(DbInner {
@@ -297,6 +303,7 @@ impl Db {
                 reads,
                 next_read: AtomicUsize::new(0),
                 encryption,
+                sqlx_pool,
             }),
         }
     }
@@ -1487,6 +1494,25 @@ impl Db {
         }
     }
 
+    pub async fn audit_event_count_sqlx(&self, event_type: Option<&str>) -> Result<usize> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.audit_event_count(event_type);
+        };
+        let count: i64 = if let Some(event_type) = event_type {
+            sqlx::query_scalar("SELECT COUNT(*) FROM control_events WHERE event_type = ?1")
+                .bind(event_type)
+                .fetch_one(pool)
+                .await
+                .context("failed to count filtered control events with SQLx")?
+        } else {
+            sqlx::query_scalar("SELECT COUNT(*) FROM control_events")
+                .fetch_one(pool)
+                .await
+                .context("failed to count control events with SQLx")?
+        };
+        Ok(count as usize)
+    }
+
     pub fn audit_chain_status(&self) -> Result<AuditChainStatus> {
         let conn = self.read_conn()?;
         let total_hashed_events: usize = conn.query_row(
@@ -1913,6 +1939,23 @@ fn touch_process(conn: &Connection, process_id: i64) -> rusqlite::Result<()> {
 
 fn open_configured_connection(path: &Path) -> Result<Connection> {
     configure_connection(Connection::open(path)?)
+}
+
+fn open_sqlx_pool(path: &Path) -> Option<sqlx::SqlitePool> {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return None;
+    }
+    let options = SqliteConnectOptions::new()
+        .filename(path)
+        .create_if_missing(true)
+        .foreign_keys(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .busy_timeout(SQLITE_BUSY_TIMEOUT);
+    Some(
+        SqlitePoolOptions::new()
+            .max_connections((READ_CONNECTIONS + 1) as u32)
+            .connect_lazy_with(options),
+    )
 }
 
 fn configure_connection(conn: Connection) -> Result<Connection> {

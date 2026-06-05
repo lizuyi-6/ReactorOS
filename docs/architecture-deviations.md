@@ -11,7 +11,7 @@
 当前上位机主体软件已经达到本地运行、演示、联调准备和继续验收状态。PRD 中多数“上位机基础功能”已有代码、测试或文档证据，但以下几类不能直接宣称完全满足 PRD：
 
 - 本地 Qwen3.5-2B + LoRA 推理、训练、自进化、GGUF 转换和 RK 端延迟验收。
-- PRD 指定的 SQLx 技术栈；Vue3、Element Plus、ECharts、Pinia 迁移已在 `codex/prd-tech-stack-migration` 分支启动但尚未替换生产 HMI，Modbus RTU 主站路径已迁到 `tokio-modbus`，Modbus TCP server 仍为自实现。
+- PRD 指定的 SQLx 技术栈仍在迁移中；`Db::open` 文件库已建立 SQLx SQLite pool，`GET /api/audit/logs` 的审计总数查询已走 SQLx，主体持久化读写仍保留 `rusqlite`。Vue3、Element Plus、ECharts、Pinia 迁移已在 `codex/prd-tech-stack-migration` 分支启动但尚未替换生产 HMI，Modbus RTU 主站路径已迁到 `tokio-modbus`，Modbus TCP server 仍为自实现。
 - 生产级安全与运维能力，包括 watchdog/权限隔离、自动备份、介质安全擦除、生产密钥托管和安全扫描。
 - 真实硬件、真实第三方平台、release/RK 稳态性能和长期运行验收。
 
@@ -20,7 +20,7 @@
 | 编号 | PRD 表述 | 当前实现 | 状态 | 影响 | 补偿或下一步 |
 | --- | --- | --- | --- | --- | --- |
 | D1 | 前端采用 Vue 3.4+、Vite、Element Plus、ECharts、Pinia | `frontend/` 已接入 Vue 3、Vite、Element Plus、ECharts、Pinia、Vue Router，包含 PRD 七大页面迁移壳、Pinia 后端数据 store 和 ECharts 实时曲线；生产服务仍托管 `static/index.html` | 迁移中 | PRD 前端栈已开始落地，但功能 parity、视觉验收和生产替换未完成 | 继续把 `static/index.html` 的控制、审计、Modbus 写入、中英切换和视觉验收迁入 Vue；通过后再把 daemon 静态资源切到 `frontend/dist/index.html` |
-| D2 | 后端数据库采用 SQLx ORM | 当前采用 `rusqlite`、SQLite WAL、手写 row mapping | 已接受的工程偏离 | 功能等效，但编译期 SQL 校验和连接池能力与 SQLx 不同 | 在开发文档中明确低依赖、本地部署优先；如后续切 PostgreSQL/多连接，再评估 SQLx |
+| D2 | 后端数据库采用 SQLx ORM | 文件数据库已接入 SQLx SQLite pool，审计日志 total count 查询已由 `GET /api/audit/logs` 真实调用 SQLx；主体 schema/migration、写入和多数 row mapping 仍使用 `rusqlite` | 迁移中 | 已开始对齐 PRD 技术栈，但当前仍是混合数据库层；尚未获得全面 SQLx 查询封装、连接池读写一致性和更广泛编译期 SQL 约束 | 继续把审计列表、批次/样本/history、集成任务和 migration 迁到 SQLx；迁完后移除或收缩 `rusqlite` 到兼容工具路径 |
 | D3 | Modbus 后端库采用 `tokio-modbus` | `DeviceMode::Modbus` 的 RTU 主站读写已迁到 `tokio-modbus` + `tokio-serial`；Modbus TCP server 仍为自实现 MBAP/PDU 处理 | 部分迁移 | RTU 主站技术栈已对齐 PRD；TCP server 还需评估是否改用 `tokio-modbus` server feature 或保留现有 TLS/审计集成实现 | 补 STM32 实机 RTU 验收；评估 Modbus TCP server 是否迁到 `tokio-modbus` server feature；继续用 Modbus Poll/Slave、故障注入和 TLS 工具补足互操作证据 |
 | D4 | 本地 LoRA 推理、自训练、自进化、GGUF 转换 | `local_ai.rs` 只探测模型、adapter、脚本和资产路径；daemon 未执行真实推理/训练 | P0 未交付 | PRD P0 卖点未完成，不能宣称 M2/M3 完成 | 算法侧提供模型/adapter/训练脚本/RK 报告；上位机接入 llama.cpp HTTP 或等效推理服务 |
 | D5 | 独立安全过滤器/安全进程 | `reactor-safety-guard` 已调用共享安全判断，不是空壳；外部进程等待已使用 `wait-timeout` 超时等待并在超时后 kill 子进程；但默认未启用，生产 watchdog 和权限隔离未完成 | 部分完成 | 本地安全逻辑成立，生产隔离和故障演练证据不足 | 部署时强制启用 `--safety-guard`，补 watchdog、低权限用户、故障注入验收 |
@@ -40,9 +40,9 @@ PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。`codex/prd-
 
 ### 3.2 数据库和 Modbus 技术栈
 
-PRD 写明 SQLx 和 tokio-modbus。当前 `codex/prd-tech-stack-migration` 分支已把 `DeviceMode::Modbus` 的 RTU 主站从 `serialport` 手写 RTU 帧迁到 `tokio-modbus` + `tokio-serial`，保留 ESP32 串口桥的 `serialport`。数据库仍使用 `rusqlite`，Modbus TCP server 仍为自实现 MBAP/PDU 处理，主要原因是现有 TCP 路径已绑定 TLS 状态、审计、安全写入和测试工具验收。
+PRD 写明 SQLx 和 tokio-modbus。当前 `codex/prd-tech-stack-migration` 分支已把 `DeviceMode::Modbus` 的 RTU 主站从 `serialport` 手写 RTU 帧迁到 `tokio-modbus` + `tokio-serial`，保留 ESP32 串口桥的 `serialport`。数据库迁移已启动：文件数据库打开时同时建立 SQLx SQLite pool，`GET /api/audit/logs` 的 total count 通过 `Db::audit_event_count_sqlx` 由 SQLx 查询；内存测试库和主体持久化逻辑仍使用 `rusqlite`，以避免在未完成迁移前打断现有 schema/migration、审计链和加密任务路径。Modbus TCP server 仍为自实现 MBAP/PDU 处理，主要原因是现有 TCP 路径已绑定 TLS 状态、审计、安全写入和测试工具验收。
 
-该偏离不直接导致功能缺失，但会影响维护方式、静态 SQL 校验和第三方互操作信心。下一步应优先把 `Db` 层迁到 SQLx 或建立 SQLx-backed adapter，再决定 Modbus TCP 是否迁到 `tokio-modbus` server feature；同时补齐外部工具验收、STM32 实机验收、寄存器映射确认和协议错误注入测试。
+该偏离不直接导致功能缺失，但会影响维护方式、静态 SQL 校验和第三方互操作信心。下一步应扩大 SQLx-backed adapter 覆盖面，把审计列表、批次/样本/history、集成任务和 migration 迁到 SQLx，再决定 Modbus TCP 是否迁到 `tokio-modbus` server feature；同时补齐外部工具验收、STM32 实机验收、寄存器映射确认和协议错误注入测试。
 
 ### 3.3 本地 LoRA 与自进化边界
 
@@ -129,4 +129,4 @@ PRD 和团队分工写的是七大页面。当前 HMI 为 9 个 tab，是把部�
 
 > 上位机已经完整满足 PRD v2.2 的所有技术栈和 P0 AI 自进化要求。
 
-原因是本地 LoRA 和自进化仍未真实交付，SQLx 尚未按原文实现，Modbus TCP server 尚未迁到 `tokio-modbus`，Vue 前端栈也仍处于迁移壳和生产替换前状态。
+原因是本地 LoRA 和自进化仍未真实交付，SQLx 只完成首个真实 API 查询路径迁移，Modbus TCP server 尚未迁到 `tokio-modbus`，Vue 前端栈也仍处于迁移壳和生产替换前状态。

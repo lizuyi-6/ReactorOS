@@ -247,6 +247,31 @@ fn audit_chain_status_uses_bounded_window_without_claiming_full_validity() {
     assert_eq!(full.checked_to_event_id, Some(10_001));
 }
 
+#[tokio::test]
+async fn async_file_database_audit_count_uses_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    db.insert_control_event(None, "sqlx_probe", None, "event 1")
+        .unwrap();
+    db.insert_control_event(None, "sqlx_probe", None, "event 2")
+        .unwrap();
+    db.insert_control_event(None, "manual_probe", None, "event 3")
+        .unwrap();
+
+    assert_eq!(db.audit_event_count_sqlx(None).await.unwrap(), 3);
+    assert_eq!(
+        db.audit_event_count_sqlx(Some("sqlx_probe")).await.unwrap(),
+        2
+    );
+    assert_eq!(
+        db.audit_event_count_sqlx(Some("missing_probe"))
+            .await
+            .unwrap(),
+        0
+    );
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
