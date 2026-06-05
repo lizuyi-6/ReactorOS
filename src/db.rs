@@ -35,6 +35,176 @@ const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
 const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
 const DB_ENCRYPTION_AAD: &[u8] = b"xingshu:integration_tasks:json:v1";
 const AUDIT_CHAIN_CHECK_LIMIT: usize = 10_000;
+const SCHEMA_SQL: &str = r#"
+PRAGMA journal_mode=WAL;
+PRAGMA foreign_keys=ON;
+
+CREATE TABLE IF NOT EXISTS batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    process_id INTEGER,
+    name TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    target_temperature_c REAL NOT NULL,
+    target_stirrer_rpm REAL NOT NULL,
+    heating_minutes REAL NOT NULL,
+    stirring_minutes REAL NOT NULL,
+    FOREIGN KEY(process_id) REFERENCES processes(id)
+);
+
+CREATE TABLE IF NOT EXISTS processes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    applied_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS process_steps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    process_id INTEGER NOT NULL,
+    step_index INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    target_temperature_c REAL NOT NULL,
+    ramp_rate_c_min REAL NOT NULL,
+    duration_minutes REAL NOT NULL,
+    target_stirrer_rpm REAL NOT NULL,
+    target_shake_speed_cpm REAL NOT NULL,
+    target_pressure_mpa REAL NOT NULL,
+    cooling_mode TEXT NOT NULL DEFAULT '自然',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(process_id, step_index),
+    FOREIGN KEY(process_id) REFERENCES processes(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS sensor_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER,
+    temperature_c REAL NOT NULL,
+    pressure_mpa REAL NOT NULL DEFAULT 0,
+    stirrer_rpm REAL NOT NULL,
+    shake_speed_cpm REAL NOT NULL DEFAULT 0,
+    tilt_state INTEGER NOT NULL DEFAULT 0,
+    tilt_angle_deg REAL NOT NULL DEFAULT 0,
+    flow_rate_l_min REAL NOT NULL DEFAULT 0,
+    product_concentration_percent REAL NOT NULL DEFAULT 0,
+    ph REAL NOT NULL DEFAULT 7,
+    captured_at TEXT NOT NULL,
+    FOREIGN KEY(batch_id) REFERENCES batches(id)
+);
+
+CREATE TABLE IF NOT EXISTS control_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER,
+    event_type TEXT NOT NULL,
+    target_temperature_c REAL,
+    target_stirrer_rpm REAL,
+    target_shake_speed_cpm REAL,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    previous_hash TEXT,
+    event_hash TEXT,
+    FOREIGN KEY(batch_id) REFERENCES batches(id)
+);
+
+CREATE TABLE IF NOT EXISTS product_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    batch_id INTEGER NOT NULL UNIQUE,
+    yield_percent REAL NOT NULL,
+    product_ratio REAL NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(batch_id) REFERENCES batches(id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    based_on_batch_count INTEGER NOT NULL,
+    target_temperature_c REAL NOT NULL,
+    target_stirrer_rpm REAL NOT NULL,
+    heating_minutes REAL NOT NULL,
+    stirring_minutes REAL NOT NULL,
+    expected_score REAL NOT NULL,
+    rationale TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS demo_alarms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alarm_type TEXT NOT NULL,
+    sensor TEXT NOT NULL,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    current_value REAL,
+    limit_value REAL,
+    suggestion TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS integration_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    external_task_id TEXT,
+    source TEXT NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL,
+    request_json TEXT NOT NULL,
+    response_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"#;
+const INDEX_SQL: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_sensor_samples_captured_id
+    ON sensor_samples(captured_at, id);
+CREATE INDEX IF NOT EXISTS idx_sensor_samples_batch_id_id
+    ON sensor_samples(batch_id, id);
+CREATE INDEX IF NOT EXISTS idx_control_events_batch_id_id
+    ON control_events(batch_id, id);
+CREATE INDEX IF NOT EXISTS idx_control_events_hashed_id
+    ON control_events(id) WHERE event_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_process_steps_process_index
+    ON process_steps(process_id, step_index);
+CREATE INDEX IF NOT EXISTS idx_product_results_batch_id
+    ON product_results(batch_id);
+CREATE INDEX IF NOT EXISTS idx_integration_tasks_source_id
+    ON integration_tasks(source, id);
+CREATE INDEX IF NOT EXISTS idx_integration_tasks_external_task_id
+    ON integration_tasks(source, external_task_id);
+"#;
+const COLUMN_MIGRATIONS: [(&str, &str, &str); 11] = [
+    ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
+    (
+        "sensor_samples",
+        "shake_speed_cpm",
+        "REAL NOT NULL DEFAULT 0",
+    ),
+    (
+        "sensor_samples",
+        "tilt_angle_deg",
+        "REAL NOT NULL DEFAULT 0",
+    ),
+    ("sensor_samples", "tilt_state", "INTEGER NOT NULL DEFAULT 0"),
+    (
+        "sensor_samples",
+        "flow_rate_l_min",
+        "REAL NOT NULL DEFAULT 0",
+    ),
+    (
+        "sensor_samples",
+        "product_concentration_percent",
+        "REAL NOT NULL DEFAULT 0",
+    ),
+    ("sensor_samples", "ph", "REAL NOT NULL DEFAULT 7"),
+    ("control_events", "target_shake_speed_cpm", "REAL"),
+    ("control_events", "previous_hash", "TEXT"),
+    ("control_events", "event_hash", "TEXT"),
+    ("batches", "process_id", "INTEGER REFERENCES processes(id)"),
+];
 
 #[derive(Clone)]
 pub struct Db {
@@ -313,162 +483,10 @@ impl Db {
 
     pub fn migrate(&self) -> Result<()> {
         let conn = self.write_conn()?;
-        conn.execute_batch(
-            r#"
-            PRAGMA journal_mode=WAL;
-            PRAGMA foreign_keys=ON;
-
-            CREATE TABLE IF NOT EXISTS batches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                process_id INTEGER,
-                name TEXT NOT NULL,
-                started_at TEXT NOT NULL,
-                finished_at TEXT,
-                target_temperature_c REAL NOT NULL,
-                target_stirrer_rpm REAL NOT NULL,
-                heating_minutes REAL NOT NULL,
-                stirring_minutes REAL NOT NULL,
-                FOREIGN KEY(process_id) REFERENCES processes(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS processes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'draft',
-                version INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                applied_at TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS process_steps (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                process_id INTEGER NOT NULL,
-                step_index INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                target_temperature_c REAL NOT NULL,
-                ramp_rate_c_min REAL NOT NULL,
-                duration_minutes REAL NOT NULL,
-                target_stirrer_rpm REAL NOT NULL,
-                target_shake_speed_cpm REAL NOT NULL,
-                target_pressure_mpa REAL NOT NULL,
-                cooling_mode TEXT NOT NULL DEFAULT '自然',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(process_id, step_index),
-                FOREIGN KEY(process_id) REFERENCES processes(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS sensor_samples (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                batch_id INTEGER,
-                temperature_c REAL NOT NULL,
-                pressure_mpa REAL NOT NULL DEFAULT 0,
-                stirrer_rpm REAL NOT NULL,
-                shake_speed_cpm REAL NOT NULL DEFAULT 0,
-                tilt_state INTEGER NOT NULL DEFAULT 0,
-                tilt_angle_deg REAL NOT NULL DEFAULT 0,
-                flow_rate_l_min REAL NOT NULL DEFAULT 0,
-                product_concentration_percent REAL NOT NULL DEFAULT 0,
-                ph REAL NOT NULL DEFAULT 7,
-                captured_at TEXT NOT NULL,
-                FOREIGN KEY(batch_id) REFERENCES batches(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS control_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                batch_id INTEGER,
-                event_type TEXT NOT NULL,
-                target_temperature_c REAL,
-                target_stirrer_rpm REAL,
-                target_shake_speed_cpm REAL,
-                reason TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                previous_hash TEXT,
-                event_hash TEXT,
-                FOREIGN KEY(batch_id) REFERENCES batches(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS product_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                batch_id INTEGER NOT NULL UNIQUE,
-                yield_percent REAL NOT NULL,
-                product_ratio REAL NOT NULL,
-                notes TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                FOREIGN KEY(batch_id) REFERENCES batches(id)
-            );
-
-            CREATE TABLE IF NOT EXISTS ai_recommendations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                based_on_batch_count INTEGER NOT NULL,
-                target_temperature_c REAL NOT NULL,
-                target_stirrer_rpm REAL NOT NULL,
-                heating_minutes REAL NOT NULL,
-                stirring_minutes REAL NOT NULL,
-                expected_score REAL NOT NULL,
-                rationale TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS demo_alarms (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                alarm_type TEXT NOT NULL,
-                sensor TEXT NOT NULL,
-                level TEXT NOT NULL,
-                message TEXT NOT NULL,
-                current_value REAL,
-                limit_value REAL,
-                suggestion TEXT NOT NULL DEFAULT '',
-                active INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS integration_tasks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                external_task_id TEXT,
-                source TEXT NOT NULL,
-                action TEXT NOT NULL,
-                status TEXT NOT NULL,
-                request_json TEXT NOT NULL,
-                response_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-            "#,
-        )?;
+        conn.execute_batch(SCHEMA_SQL)?;
         create_indexes(&conn)?;
         let has_legacy_pressure_kpa = column_exists(&conn, "sensor_samples", "pressure_kpa")?;
-        for migration in [
-            ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
-            (
-                "sensor_samples",
-                "shake_speed_cpm",
-                "REAL NOT NULL DEFAULT 0",
-            ),
-            (
-                "sensor_samples",
-                "tilt_angle_deg",
-                "REAL NOT NULL DEFAULT 0",
-            ),
-            ("sensor_samples", "tilt_state", "INTEGER NOT NULL DEFAULT 0"),
-            (
-                "sensor_samples",
-                "flow_rate_l_min",
-                "REAL NOT NULL DEFAULT 0",
-            ),
-            (
-                "sensor_samples",
-                "product_concentration_percent",
-                "REAL NOT NULL DEFAULT 0",
-            ),
-            ("sensor_samples", "ph", "REAL NOT NULL DEFAULT 7"),
-            ("control_events", "target_shake_speed_cpm", "REAL"),
-            ("control_events", "previous_hash", "TEXT"),
-            ("control_events", "event_hash", "TEXT"),
-            ("batches", "process_id", "INTEGER REFERENCES processes(id)"),
-        ] {
+        for migration in COLUMN_MIGRATIONS {
             add_column_if_missing(&conn, migration.0, migration.1, migration.2)?;
         }
         if has_legacy_pressure_kpa {
@@ -2507,26 +2525,7 @@ fn configure_connection(conn: Connection) -> Result<Connection> {
 }
 
 fn create_indexes(conn: &Connection) -> Result<()> {
-    conn.execute_batch(
-        r#"
-        CREATE INDEX IF NOT EXISTS idx_sensor_samples_captured_id
-            ON sensor_samples(captured_at, id);
-        CREATE INDEX IF NOT EXISTS idx_sensor_samples_batch_id_id
-            ON sensor_samples(batch_id, id);
-        CREATE INDEX IF NOT EXISTS idx_control_events_batch_id_id
-            ON control_events(batch_id, id);
-        CREATE INDEX IF NOT EXISTS idx_control_events_hashed_id
-            ON control_events(id) WHERE event_hash IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_process_steps_process_index
-            ON process_steps(process_id, step_index);
-        CREATE INDEX IF NOT EXISTS idx_product_results_batch_id
-            ON product_results(batch_id);
-        CREATE INDEX IF NOT EXISTS idx_integration_tasks_source_id
-            ON integration_tasks(source, id);
-        CREATE INDEX IF NOT EXISTS idx_integration_tasks_external_task_id
-            ON integration_tasks(source, external_task_id);
-        "#,
-    )?;
+    conn.execute_batch(INDEX_SQL)?;
     Ok(())
 }
 
