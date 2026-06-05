@@ -1216,6 +1216,26 @@ impl Db {
         Ok(outcomes)
     }
 
+    pub async fn batch_outcomes_sqlx(&self) -> Result<Vec<BatchOutcome>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.batch_outcomes();
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
+                   b.heating_minutes, b.stirring_minutes,
+                   p.yield_percent, p.product_ratio
+            FROM batches b
+            JOIN product_results p ON p.batch_id = b.id
+            ORDER BY b.id ASC
+            "#,
+        )
+        .fetch_all(pool)
+        .await
+        .context("failed to list batch outcomes with SQLx")?;
+        rows.into_iter().map(batch_outcome_from_sqlx_row).collect()
+    }
+
     pub fn recent_batch_outcomes(&self, limit: usize) -> Result<Vec<BatchOutcome>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(

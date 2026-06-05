@@ -2654,7 +2654,7 @@ fn ensure_fresh_sample(state: &AppState, runtime: &RuntimeState) -> Result<(), A
 }
 
 async fn generate_recommendation(state: &AppState) -> Result<Recommendation, AppError> {
-    let outcomes = state.db.batch_outcomes()?;
+    let outcomes = state.db.batch_outcomes_sqlx().await?;
     if outcomes.is_empty() {
         return Err(AppError::service_unavailable(
             "product result data unavailable; waiting for finished batch outcomes",

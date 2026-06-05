@@ -382,6 +382,54 @@ async fn async_file_database_recent_batches_and_outcomes_use_sqlx_pool() {
     assert_eq!(outcomes[1].yield_percent, 73.0);
 }
 
+#[tokio::test]
+async fn async_file_database_all_batch_outcomes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    for index in 0..3 {
+        let batch = db
+            .create_batch(
+                &format!("sqlx outcome {index}"),
+                55.0 + index as f64,
+                250.0 + index as f64,
+                25.0,
+                50.0,
+            )
+            .unwrap();
+        db.insert_product_result(&ProductResult {
+            batch_id: batch.id,
+            yield_percent: 68.0 + index as f64,
+            product_ratio: 0.75 + (index as f64 * 0.02),
+            notes: format!("outcome {index}"),
+        })
+        .unwrap();
+    }
+
+    let outcomes = db.batch_outcomes_sqlx().await.unwrap();
+    assert_eq!(
+        outcomes
+            .iter()
+            .map(|outcome| outcome.yield_percent)
+            .collect::<Vec<_>>(),
+        vec![68.0, 69.0, 70.0]
+    );
+
+    let rec = recommend(
+        &reactor_edge_daemon::config::OptimizerBounds {
+            min_temperature_c: 35.0,
+            max_temperature_c: 140.0,
+            min_stirrer_rpm: 100.0,
+            max_stirrer_rpm: 1000.0,
+            min_heating_minutes: 15.0,
+            max_heating_minutes: 240.0,
+            min_stirring_minutes: 15.0,
+            max_stirring_minutes: 240.0,
+        },
+        &outcomes,
+    );
+    assert_eq!(rec.based_on_batch_count, 3);
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
