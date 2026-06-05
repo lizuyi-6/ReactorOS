@@ -1247,6 +1247,25 @@ impl Db {
         .map_err(Into::into)
     }
 
+    pub async fn latest_recommendation_sqlx(&self) -> Result<Option<Recommendation>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.latest_recommendation();
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT based_on_batch_count, target_temperature_c, target_stirrer_rpm,
+                   heating_minutes, stirring_minutes, expected_score, rationale
+            FROM ai_recommendations
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(pool)
+        .await
+        .context("failed to load latest AI recommendation with SQLx")?;
+        row.map(recommendation_from_sqlx_row).transpose()
+    }
+
     pub fn batch_outcomes(&self) -> Result<Vec<BatchOutcome>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
@@ -2096,6 +2115,22 @@ fn batch_outcome_from_sqlx_row(row: SqliteRow) -> Result<BatchOutcome> {
         stirring_minutes: row.try_get("stirring_minutes")?,
         yield_percent: row.try_get("yield_percent")?,
         product_ratio: row.try_get("product_ratio")?,
+    })
+}
+
+fn recommendation_from_sqlx_row(row: SqliteRow) -> Result<Recommendation> {
+    let based_on_batch_count: i64 = row.try_get("based_on_batch_count")?;
+    if based_on_batch_count < 0 {
+        anyhow::bail!("invalid based_on_batch_count in database: {based_on_batch_count}");
+    }
+    Ok(Recommendation {
+        based_on_batch_count,
+        target_temperature_c: row.try_get("target_temperature_c")?,
+        target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
+        heating_minutes: row.try_get("heating_minutes")?,
+        stirring_minutes: row.try_get("stirring_minutes")?,
+        expected_score: row.try_get("expected_score")?,
+        rationale: row.try_get("rationale")?,
     })
 }
 

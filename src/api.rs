@@ -638,7 +638,8 @@ async fn live(
     let ai_memory = AiMemorySummary::from(state.ai_memory.as_ref());
     let recommendation = state
         .db
-        .latest_recommendation()?
+        .latest_recommendation_sqlx()
+        .await?
         .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
         .filter(|recommendation| recommendation.based_on_batch_count > 0);
     let ai_provider = local_provider_for(&state);
@@ -670,7 +671,8 @@ async fn demo_context(
             "demo context excludes sensor_samples and never fabricates runtime sensor values",
         latest_recommendation: state
             .db
-            .latest_recommendation()?
+            .latest_recommendation_sqlx()
+            .await?
             .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
             .filter(|recommendation| recommendation.based_on_batch_count > 0),
         ai_provider: local_provider_for(&state),
@@ -1492,7 +1494,8 @@ async fn ai_control(
 
     let recommendation = match state
         .db
-        .latest_recommendation()?
+        .latest_recommendation_sqlx()
+        .await?
         .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
         .filter(|recommendation| recommendation.based_on_batch_count > 0)
     {
@@ -2554,7 +2557,7 @@ async fn reset_emergency_stop(
 async fn latest_recommendation(
     State(state): State<AppState>,
 ) -> Result<Json<Option<AiRecommendationEnvelope>>, AppError> {
-    let recommendation = state.db.latest_recommendation()?;
+    let recommendation = state.db.latest_recommendation_sqlx().await?;
     Ok(Json(match recommendation {
         Some(recommendation) => Some(recommendation_envelope(&state, recommendation).await),
         None => None,

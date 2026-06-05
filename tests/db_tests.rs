@@ -482,6 +482,40 @@ async fn async_file_database_sensor_history_reads_use_sqlx_pool() {
     );
 }
 
+#[tokio::test]
+async fn async_file_database_latest_recommendation_uses_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    assert!(db.latest_recommendation_sqlx().await.unwrap().is_none());
+
+    db.insert_recommendation(&reactor_edge_daemon::optimizer::Recommendation {
+        based_on_batch_count: 1,
+        target_temperature_c: 65.0,
+        target_stirrer_rpm: 350.0,
+        heating_minutes: 30.0,
+        stirring_minutes: 45.0,
+        expected_score: 80.0,
+        rationale: "local first".to_string(),
+    })
+    .unwrap();
+    db.insert_recommendation(&reactor_edge_daemon::optimizer::Recommendation {
+        based_on_batch_count: 2,
+        target_temperature_c: 72.0,
+        target_stirrer_rpm: 420.0,
+        heating_minutes: 35.0,
+        stirring_minutes: 55.0,
+        expected_score: 86.0,
+        rationale: "local latest".to_string(),
+    })
+    .unwrap();
+
+    let recommendation = db.latest_recommendation_sqlx().await.unwrap().unwrap();
+    assert_eq!(recommendation.based_on_batch_count, 2);
+    assert_eq!(recommendation.target_temperature_c, 72.0);
+    assert_eq!(recommendation.rationale, "local latest");
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
