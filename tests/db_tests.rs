@@ -318,6 +318,28 @@ async fn async_file_database_audit_events_use_sqlx_pool() {
     );
 }
 
+#[tokio::test]
+async fn async_file_database_audit_chain_status_uses_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    for index in 0..4 {
+        db.insert_control_event(None, "sqlx_chain_probe", None, &format!("event {index}"))
+            .unwrap();
+    }
+
+    let status = db.audit_chain_status_sqlx().await.unwrap();
+    assert_eq!(status.total_hashed_events, 4);
+    assert_eq!(status.checked_events, 4);
+    assert_eq!(status.chained_events, 4);
+    assert_eq!(status.broken_events, 0);
+    assert!(status.window_valid);
+    assert!(status.valid);
+    assert_eq!(status.checked_from_event_id, Some(1));
+    assert_eq!(status.checked_to_event_id, Some(4));
+    assert!(!status.verification_truncated);
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();

@@ -1586,50 +1586,56 @@ impl Db {
             "#,
         )?;
         let rows = stmt.query_map([AUDIT_CHAIN_CHECK_LIMIT as i64], control_event_from_row)?;
-        let mut checked_events = 0usize;
-        let mut broken_events = 0usize;
-        let mut previous: Option<String> = None;
-        let mut last_event_hash = None;
-        let mut checked_from_event_id = None;
-        let mut checked_to_event_id = None;
-        for row in rows {
-            let event = row?;
-            checked_from_event_id.get_or_insert(event.id);
-            checked_to_event_id = Some(event.id);
-            if checked_events == 0 && verification_truncated {
-                previous = event.previous_hash.clone();
-            }
-            checked_events += 1;
-            let expected = control_event_hash(
-                previous.as_deref(),
-                event.batch_id,
-                &event.event_type,
-                event.target_temperature_c,
-                event.target_stirrer_rpm,
-                event.target_shake_speed_cpm,
-                &event.reason,
-                &event.created_at.to_rfc3339(),
-            )?;
-            if event.previous_hash != previous || event.event_hash.as_deref() != Some(&expected) {
-                broken_events += 1;
-            }
-            previous = event.event_hash.clone();
-            last_event_hash = event.event_hash;
-        }
-        let window_valid = broken_events == 0;
-        Ok(AuditChainStatus {
+        let events = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        audit_chain_status_from_events(
+            events,
             total_hashed_events,
-            checked_events,
-            chained_events: checked_events.saturating_sub(broken_events),
-            broken_events,
-            window_valid,
-            valid: window_valid && !verification_truncated,
-            last_event_hash,
-            checked_from_event_id,
-            checked_to_event_id,
-            verification_limit: AUDIT_CHAIN_CHECK_LIMIT,
+            AUDIT_CHAIN_CHECK_LIMIT,
             verification_truncated,
-        })
+        )
+    }
+
+    pub async fn audit_chain_status_sqlx(&self) -> Result<AuditChainStatus> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.audit_chain_status();
+        };
+        let total_hashed_events: usize = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM control_events WHERE event_hash IS NOT NULL",
+        )
+        .fetch_one(pool)
+        .await
+        .context("failed to count hashed control events with SQLx")?
+            as usize;
+        let verification_truncated = total_hashed_events > AUDIT_CHAIN_CHECK_LIMIT;
+        let rows = sqlx::query(
+            r#"
+            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                WHERE event_hash IS NOT NULL
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(AUDIT_CHAIN_CHECK_LIMIT as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to load audit chain window with SQLx")?;
+        let events = rows
+            .into_iter()
+            .map(control_event_from_sqlx_row)
+            .collect::<Result<Vec<_>>>()?;
+        audit_chain_status_from_events(
+            events,
+            total_hashed_events,
+            AUDIT_CHAIN_CHECK_LIMIT,
+            verification_truncated,
+        )
     }
 
     pub fn full_audit_chain_status_for_diagnostics(&self) -> Result<AuditChainStatus> {
@@ -1890,6 +1896,57 @@ fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
         created_at: parse_dt_anyhow(&created_at)?,
         previous_hash: row.try_get("previous_hash")?,
         event_hash: row.try_get("event_hash")?,
+    })
+}
+
+fn audit_chain_status_from_events(
+    events: Vec<ControlEvent>,
+    total_hashed_events: usize,
+    verification_limit: usize,
+    verification_truncated: bool,
+) -> Result<AuditChainStatus> {
+    let mut checked_events = 0usize;
+    let mut broken_events = 0usize;
+    let mut previous: Option<String> = None;
+    let mut last_event_hash = None;
+    let mut checked_from_event_id = None;
+    let mut checked_to_event_id = None;
+    for event in events {
+        checked_from_event_id.get_or_insert(event.id);
+        checked_to_event_id = Some(event.id);
+        if checked_events == 0 && verification_truncated {
+            previous = event.previous_hash.clone();
+        }
+        checked_events += 1;
+        let expected = control_event_hash(
+            previous.as_deref(),
+            event.batch_id,
+            &event.event_type,
+            event.target_temperature_c,
+            event.target_stirrer_rpm,
+            event.target_shake_speed_cpm,
+            &event.reason,
+            &event.created_at.to_rfc3339(),
+        )?;
+        if event.previous_hash != previous || event.event_hash.as_deref() != Some(&expected) {
+            broken_events += 1;
+        }
+        previous = event.event_hash.clone();
+        last_event_hash = event.event_hash;
+    }
+    let window_valid = broken_events == 0;
+    Ok(AuditChainStatus {
+        total_hashed_events,
+        checked_events,
+        chained_events: checked_events.saturating_sub(broken_events),
+        broken_events,
+        window_valid,
+        valid: window_valid && !verification_truncated,
+        last_event_hash,
+        checked_from_event_id,
+        checked_to_event_id,
+        verification_limit,
+        verification_truncated,
     })
 }
 

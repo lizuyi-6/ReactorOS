@@ -56,7 +56,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `src/api_integrations.rs` | AINAS REST 任务、MQTT 任务复用执行路径和第三方任务持久化回执 |
 | `src/api_response.rs` | 统一 API 成功/错误响应信封、JSON 请求解析拒绝处理和内部错误脱敏 |
 | `src/api_auth.rs` | 本地 bearer session、默认角色登录、RBAC 权限策略和权限 guard |
-| `src/db.rs` | SQLite schema、批次/样本/审计/集成任务持久化、集成任务请求/回执 AES-256-GCM 加密；文件库已接入 SQLx SQLite pool，审计日志 total/list 和 CSV 导出读取已开始走 SQLx，主体写入和多数业务读写仍在迁移中 |
+| `src/db.rs` | SQLite schema、批次/样本/审计/集成任务持久化、集成任务请求/回执 AES-256-GCM 加密；文件库已接入 SQLx SQLite pool，审计日志 total/list/chain 和 CSV 导出读取已开始走 SQLx，主体写入和多数业务读写仍在迁移中 |
 | `src/config.rs` | 设备、寄存器、数据桥和硬件通信配置 |
 | `src/control.rs` | 安全限幅、目标参数更新、控制循环逻辑、安全守护进程 JSON 协议 |
 | `src/device.rs` | ESP32、JSON bridge、Modbus RTU 和管线设备适配；Modbus RTU 主站读写使用 `tokio-modbus` + `tokio-serial` |
@@ -71,7 +71,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `frontend/` | PRD 前端技术栈迁移工程，已接入 Vue 3、Vite、Element Plus、ECharts、Pinia 和 Vue Router；生产替换前仍需 parity 和视觉验收 |
 | `tests/*.rs` | Rust 集成测试，覆盖 API、CLI、DB、配置、控制和协议 |
 
-DB Recent/History 查询约定：实时样本、报警、批次、产物结果和审计事件类 Recent 接口先用 `ORDER BY id DESC LIMIT N` 限定“最新窗口”，再在外层按 `id ASC` 返回给 HMI/报告使用，保证用户看到的是窗口内从旧到新的时间线。PRD SQLx 技术栈迁移采用分段方式推进：当前文件数据库通过 SQLx SQLite pool 支撑 `/api/audit/logs` 的审计 total/list 查询和 `/api/audit/export.csv` 的导出读取，内存测试库和多数持久化路径继续使用 `rusqlite` 作为兼容层，后续逐步扩大 SQLx 覆盖面。
+DB Recent/History 查询约定：实时样本、报警、批次、产物结果和审计事件类 Recent 接口先用 `ORDER BY id DESC LIMIT N` 限定“最新窗口”，再在外层按 `id ASC` 返回给 HMI/报告使用，保证用户看到的是窗口内从旧到新的时间线。PRD SQLx 技术栈迁移采用分段方式推进：当前文件数据库通过 SQLx SQLite pool 支撑 `/api/audit/logs` 的审计 total/list/chain 查询和 `/api/audit/export.csv` 的导出读取，内存测试库和多数持久化路径继续使用 `rusqlite` 作为兼容层，后续逐步扩大 SQLx 覆盖面。
 
 ## 4. 配置文件
 

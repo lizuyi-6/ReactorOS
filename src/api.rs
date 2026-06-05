@@ -701,7 +701,7 @@ async fn audit_logs(
         .db
         .audit_events_sqlx(page_size, (page - 1) * page_size, event_type)
         .await?;
-    let chain = state.db.audit_chain_status()?;
+    let chain = state.db.audit_chain_status_sqlx().await?;
     Ok(Json(success(AuditLogResponse {
         page,
         page_size,
