@@ -562,6 +562,43 @@ fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
         .contains(&"integration_tasks.response_json"));
 }
 
+#[tokio::test]
+async fn async_file_database_integration_task_reads_use_sqlx_pool_with_encryption() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reactor.sqlite3");
+    let db = Db::open_with_encryption_key(&path, [11_u8; 32]).unwrap();
+    let task = db
+        .create_integration_task(
+            "ainas",
+            Some("sqlx-secure-001"),
+            "set_targets",
+            &json!({ "action": "set_targets", "reason": "sqlx encrypted payload" }),
+        )
+        .unwrap();
+    db.update_integration_task(
+        task.id,
+        "executed",
+        &json!({ "code": 0, "message": "sqlx encrypted response" }),
+    )
+    .unwrap();
+
+    let by_id = db.integration_task_sqlx(task.id).await.unwrap().unwrap();
+    assert_eq!(by_id.request["reason"], "sqlx encrypted payload");
+    assert_eq!(by_id.response["message"], "sqlx encrypted response");
+
+    let tasks = db.integration_tasks_sqlx(Some("ainas"), 10).await.unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(
+        tasks[0].external_task_id.as_deref(),
+        Some("sqlx-secure-001")
+    );
+    assert_eq!(tasks[0].request["reason"], "sqlx encrypted payload");
+
+    let raw = raw_task_payloads(&path, task.id);
+    assert!(raw.0.starts_with("xingshu:v1:aes256gcm:"));
+    assert!(!raw.0.contains("sqlx encrypted payload"));
+}
+
 #[test]
 fn integration_task_reader_keeps_plaintext_rows_compatible() {
     let dir = tempfile::tempdir().unwrap();
@@ -589,6 +626,35 @@ fn integration_task_reader_keeps_plaintext_rows_compatible() {
     let legacy = db.integration_tasks(Some("ainas"), 1).unwrap();
     assert_eq!(legacy[0].request["reason"], "legacy plaintext payload");
     assert_eq!(legacy[0].response["message"], "legacy plaintext response");
+}
+
+#[tokio::test]
+async fn async_file_database_integration_task_sqlx_reader_keeps_plaintext_rows_compatible() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reactor.sqlite3");
+    let db = Db::open_with_encryption_key(&path, [13_u8; 32]).unwrap();
+    let now = Utc::now().to_rfc3339();
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            r#"
+            INSERT INTO integration_tasks
+                (external_task_id, source, action, status, request_json, response_json, created_at, updated_at)
+            VALUES (?1, 'ainas', 'set_targets', 'executed', ?2, ?3, ?4, ?4)
+            "#,
+            params![
+                "legacy-sqlx-001",
+                json!({ "action": "set_targets", "reason": "legacy sqlx plaintext" }).to_string(),
+                json!({ "code": 0, "message": "legacy sqlx response" }).to_string(),
+                now
+            ],
+        )
+        .unwrap();
+    }
+
+    let legacy = db.integration_tasks_sqlx(Some("ainas"), 1).await.unwrap();
+    assert_eq!(legacy[0].request["reason"], "legacy sqlx plaintext");
+    assert_eq!(legacy[0].response["message"], "legacy sqlx response");
 }
 
 fn raw_task_payloads(path: &std::path::Path, task_id: i64) -> (String, String) {

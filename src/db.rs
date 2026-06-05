@@ -1132,6 +1132,26 @@ impl Db {
         Ok(self.integration_task_by_id_conn(&conn, id)?)
     }
 
+    pub async fn integration_task_sqlx(&self, id: i64) -> Result<Option<IntegrationTask>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.integration_task(id);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT id, external_task_id, source, action, status, request_json, response_json,
+                   created_at, updated_at
+            FROM integration_tasks
+            WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .context("failed to load integration task with SQLx")?;
+        row.map(|row| self.integration_task_from_sqlx_row(row))
+            .transpose()
+    }
+
     pub fn integration_tasks(
         &self,
         source: Option<&str>,
@@ -1172,6 +1192,50 @@ impl Db {
             }
         }
         Ok(tasks)
+    }
+
+    pub async fn integration_tasks_sqlx(
+        &self,
+        source: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<IntegrationTask>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.integration_tasks(source, limit);
+        };
+        let rows = if let Some(source) = source {
+            sqlx::query(
+                r#"
+                SELECT id, external_task_id, source, action, status, request_json, response_json,
+                       created_at, updated_at
+                FROM integration_tasks
+                WHERE source = ?
+                ORDER BY id DESC
+                LIMIT ?
+                "#,
+            )
+            .bind(source)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+            .context("failed to list filtered integration tasks with SQLx")?
+        } else {
+            sqlx::query(
+                r#"
+                SELECT id, external_task_id, source, action, status, request_json, response_json,
+                       created_at, updated_at
+                FROM integration_tasks
+                ORDER BY id DESC
+                LIMIT ?
+                "#,
+            )
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await
+            .context("failed to list integration tasks with SQLx")?
+        };
+        rows.into_iter()
+            .map(|row| self.integration_task_from_sqlx_row(row))
+            .collect()
     }
 
     pub fn insert_product_result(&self, result: &ProductResult) -> Result<()> {
@@ -1998,6 +2062,20 @@ impl Db {
         parse_json_value(&plaintext)
     }
 
+    fn parse_sensitive_json_anyhow(&self, value: &str) -> Result<Value> {
+        let plaintext = match &self.inner.encryption {
+            Some(encryption) => encryption.decrypt_json_if_needed_anyhow(value)?,
+            None if value.starts_with(ENCRYPTED_JSON_PREFIX) => {
+                anyhow::bail!(
+                    "{DB_ENCRYPTION_KEY_ENV} is required to read encrypted integration task payloads"
+                );
+            }
+            None => value.to_string(),
+        };
+        serde_json::from_str(&plaintext)
+            .with_context(|| "failed to parse integration task JSON payload")
+    }
+
     fn integration_task_by_id_conn(
         &self,
         conn: &Connection,
@@ -2034,6 +2112,24 @@ impl Db {
             response: self.parse_sensitive_json(&response_json)?,
             created_at: parse_dt(&created_at)?,
             updated_at: parse_dt(&updated_at)?,
+        })
+    }
+
+    fn integration_task_from_sqlx_row(&self, row: SqliteRow) -> Result<IntegrationTask> {
+        let request_json: String = row.try_get("request_json")?;
+        let response_json: String = row.try_get("response_json")?;
+        let created_at: String = row.try_get("created_at")?;
+        let updated_at: String = row.try_get("updated_at")?;
+        Ok(IntegrationTask {
+            id: row.try_get("id")?,
+            external_task_id: row.try_get("external_task_id")?,
+            source: row.try_get("source")?,
+            action: row.try_get("action")?,
+            status: row.try_get("status")?,
+            request: self.parse_sensitive_json_anyhow(&request_json)?,
+            response: self.parse_sensitive_json_anyhow(&response_json)?,
+            created_at: parse_dt_anyhow(&created_at)?,
+            updated_at: parse_dt_anyhow(&updated_at)?,
         })
     }
 }
@@ -2400,20 +2496,21 @@ impl DbEncryption {
     }
 
     fn decrypt_json_if_needed(&self, value: &str) -> rusqlite::Result<String> {
+        self.decrypt_json_if_needed_anyhow(value)
+            .map_err(rusqlite_conversion_error)
+    }
+
+    fn decrypt_json_if_needed_anyhow(&self, value: &str) -> Result<String> {
         let Some(envelope) = value.strip_prefix(ENCRYPTED_JSON_PREFIX) else {
             return Ok(value.to_string());
         };
         let Some((nonce, ciphertext)) = envelope.split_once(':') else {
-            return Err(rusqlite_conversion_error(anyhow::anyhow!(
-                "encrypted integration task payload envelope is malformed"
-            )));
+            anyhow::bail!("encrypted integration task payload envelope is malformed");
         };
-        let nonce = decode_base64(nonce)?;
-        let ciphertext = decode_base64(ciphertext)?;
+        let nonce = decode_base64_anyhow(nonce)?;
+        let ciphertext = decode_base64_anyhow(ciphertext)?;
         if nonce.len() != 12 {
-            return Err(rusqlite_conversion_error(anyhow::anyhow!(
-                "encrypted integration task payload nonce must be 12 bytes"
-            )));
+            anyhow::bail!("encrypted integration task payload nonce must be 12 bytes");
         }
         let plaintext = self
             .cipher
@@ -2424,15 +2521,9 @@ impl DbEncryption {
                     aad: DB_ENCRYPTION_AAD,
                 },
             )
-            .map_err(|err| {
-                rusqlite_conversion_error(anyhow::anyhow!(
-                    "failed to decrypt integration task payload: {err}"
-                ))
-            })?;
+            .map_err(|err| anyhow::anyhow!("failed to decrypt integration task payload: {err}"))?;
         String::from_utf8(plaintext).map_err(|err| {
-            rusqlite_conversion_error(anyhow::anyhow!(
-                "decrypted integration task payload was not utf-8: {err}"
-            ))
+            anyhow::anyhow!("decrypted integration task payload was not utf-8: {err}")
         })
     }
 }
@@ -2494,14 +2585,12 @@ fn decode_hex(value: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn decode_base64(value: &str) -> rusqlite::Result<Vec<u8>> {
+fn decode_base64_anyhow(value: &str) -> Result<Vec<u8>> {
     STANDARD_NO_PAD
         .decode(value)
         .or_else(|_| STANDARD.decode(value))
         .map_err(|err| {
-            rusqlite_conversion_error(anyhow::anyhow!(
-                "encrypted integration task payload base64 decode failed: {err}"
-            ))
+            anyhow::anyhow!("encrypted integration task payload base64 decode failed: {err}")
         })
 }
 

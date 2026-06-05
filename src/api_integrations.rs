@@ -45,7 +45,10 @@ pub(super) async fn list_ainas_tasks(
     require_permission(&headers, Permission::ViewAudit)?;
     let limit = query.limit.unwrap_or(50).clamp(1, 200);
     Ok(Json(success(
-        state.db.integration_tasks(Some("ainas"), limit)?,
+        state
+            .db
+            .integration_tasks_sqlx(Some("ainas"), limit)
+            .await?,
     )))
 }
 
@@ -55,7 +58,7 @@ pub(super) async fn get_ainas_task(
     headers: HeaderMap,
 ) -> Result<Json<V1Envelope<IntegrationTask>>, AppError> {
     require_permission(&headers, Permission::ViewAudit)?;
-    let Some(task) = state.db.integration_task(id)? else {
+    let Some(task) = state.db.integration_task_sqlx(id).await? else {
         return Err(AppError::not_found("AINAS task not found"));
     };
     if task.source != "ainas" {
