@@ -618,7 +618,7 @@ async fn live(
     let sample_limit = query.sample_limit.unwrap_or(480).clamp(1, 480);
     let recent_samples = state.db.recent_sample_records_sqlx(sample_limit).await?;
     let processes = if query.include_processes.unwrap_or(true) {
-        state.db.list_processes()?
+        state.db.list_processes_sqlx().await?
     } else {
         Vec::new()
     };
@@ -676,7 +676,7 @@ async fn demo_context(
             .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
             .filter(|recommendation| recommendation.based_on_batch_count > 0),
         ai_provider: local_provider_for(&state),
-        processes: state.db.list_processes()?,
+        processes: state.db.list_processes_sqlx().await?,
         recent_batches: state.db.recent_batches_sqlx(20).await?,
         recent_outcomes: state.db.recent_batch_outcomes_sqlx(20).await?,
         recent_events: state.db.recent_control_events(100)?,
@@ -822,7 +822,7 @@ async fn modbus_register_write(
 async fn list_processes(
     State(state): State<AppState>,
 ) -> Result<Json<V1Envelope<Vec<ProcessDefinition>>>, AppError> {
-    Ok(Json(success(state.db.list_processes()?)))
+    Ok(Json(success(state.db.list_processes_sqlx().await?)))
 }
 
 async fn create_process(
@@ -833,7 +833,7 @@ async fn create_process(
     require_permission(&headers, Permission::EditProcess)?;
     let name = clean_label(payload.name, "未命名工艺", 80);
     let description = clean_label(payload.description, "", 240);
-    let process = state.db.create_process(&name, &description)?;
+    let process = state.db.create_process_sqlx(&name, &description).await?;
     state
         .db
         .insert_control_event_sqlx(None, "process_created", None, "operator created process")
@@ -845,7 +845,7 @@ async fn get_process(
     State(state): State<AppState>,
     Path(process_id): Path<i64>,
 ) -> Result<Json<V1Envelope<ProcessDetail>>, AppError> {
-    let Some(process) = state.db.process_detail(process_id)? else {
+    let Some(process) = state.db.process_detail_sqlx(process_id).await? else {
         return Err(AppError::not_found("process not found"));
     };
     Ok(Json(success(process)))
@@ -858,7 +858,7 @@ async fn update_process(
     ApiJson(payload): ApiJson<UpdateProcessRequest>,
 ) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
     require_permission(&headers, Permission::EditProcess)?;
-    let Some(current) = state.db.process_detail(process_id)? else {
+    let Some(current) = state.db.process_detail_sqlx(process_id).await? else {
         return Err(AppError::not_found("process not found"));
     };
     let name = clean_label(payload.name, &current.process.name, 80);
@@ -866,7 +866,8 @@ async fn update_process(
     let status = clean_status(payload.status.as_deref().unwrap_or(&current.process.status))?;
     let Some(process) = state
         .db
-        .update_process(process_id, &name, &description, status)?
+        .update_process_sqlx(process_id, &name, &description, status)
+        .await?
     else {
         return Err(AppError::not_found("process not found"));
     };
@@ -885,7 +886,7 @@ async fn add_process_step(
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
     require_permission(&headers, Permission::EditProcess)?;
     let step = validate_process_step(&state.safety, payload)?;
-    let Some(step) = state.db.add_process_step(process_id, &step)? else {
+    let Some(step) = state.db.add_process_step_sqlx(process_id, &step).await? else {
         return Err(AppError::not_found("process not found"));
     };
     state
@@ -908,7 +909,11 @@ async fn update_process_step(
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
     require_permission(&headers, Permission::EditProcess)?;
     let step = validate_process_step(&state.safety, payload)?;
-    let Some(step) = state.db.update_process_step(process_id, step_id, &step)? else {
+    let Some(step) = state
+        .db
+        .update_process_step_sqlx(process_id, step_id, &step)
+        .await?
+    else {
         return Err(AppError::not_found("process step not found"));
     };
     state
@@ -971,7 +976,7 @@ async fn start_process_lifecycle(
         let runtime = state.runtime.read().await;
         ensure_process_can_start(state, &runtime)?;
     }
-    let Some(detail) = state.db.process_detail(process_id)? else {
+    let Some(detail) = state.db.process_detail_sqlx(process_id).await? else {
         return Err(AppError::not_found("process not found"));
     };
     if detail.steps.is_empty() {
@@ -1054,7 +1059,7 @@ async fn start_process_lifecycle(
         rollback_failed_activation(state, batch.id).await;
         return Err(err.into());
     }
-    let process = match state.db.mark_process_applied(process_id) {
+    let process = match state.db.mark_process_applied_sqlx(process_id).await {
         Ok(Some(process)) => process,
         Ok(None) => {
             rollback_failed_activation(state, batch.id).await;
@@ -1573,7 +1578,7 @@ async fn ai_control(
         });
     }
 
-    let selected_process = select_ai_process(&state, payload.preferred_process_id)?;
+    let selected_process = select_ai_process(&state, payload.preferred_process_id).await?;
     if runtime.active_batch_id.is_none() && allow_process_start && !process_start_blocked_by_alarm {
         if let Some(process) = selected_process {
             decision = if decision == "adjust_targets" {
@@ -1964,12 +1969,12 @@ async fn apply_ai_targets(
     Ok(())
 }
 
-fn select_ai_process(
+async fn select_ai_process(
     state: &AppState,
     preferred_process_id: Option<i64>,
 ) -> Result<Option<ProcessDefinition>, AppError> {
     if let Some(process_id) = preferred_process_id {
-        let Some(detail) = state.db.process_detail(process_id)? else {
+        let Some(detail) = state.db.process_detail_sqlx(process_id).await? else {
             return Err(AppError::not_found("preferred process not found"));
         };
         if detail.steps.is_empty() {
@@ -1979,7 +1984,7 @@ fn select_ai_process(
         }
         return Ok(Some(detail.process));
     }
-    let processes = state.db.list_processes()?;
+    let processes = state.db.list_processes_sqlx().await?;
     if let Some(process) = processes
         .iter()
         .find(|process| process.step_count > 0 && process.status == "applied")

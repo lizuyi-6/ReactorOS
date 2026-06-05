@@ -1,6 +1,6 @@
 use chrono::Utc;
 use reactor_edge_daemon::{
-    db::{Db, ProductResult},
+    db::{Db, NewProcessStep, ProductResult},
     optimizer::recommend,
     state::SensorSnapshot,
 };
@@ -434,6 +434,126 @@ async fn async_file_database_batch_lifecycle_writes_use_sqlx_pool() {
     assert_eq!(batches[0].process_id, Some(process.id));
     assert_eq!(batches[0].target_temperature_c, 82.5);
     assert!(batches[0].finished_at.is_some());
+}
+
+#[tokio::test]
+async fn async_file_database_process_configuration_uses_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    let process = db
+        .create_process_sqlx("sqlx process", "created through SQLx")
+        .await
+        .unwrap();
+    assert_eq!(process.step_count, 0);
+    assert_eq!(process.status, "draft");
+
+    let first_step = NewProcessStep {
+        name: "Heat".to_string(),
+        target_temperature_c: 72.0,
+        ramp_rate_c_min: 2.5,
+        duration_minutes: 12.0,
+        target_stirrer_rpm: 320.0,
+        target_shake_speed_cpm: 18.0,
+        target_pressure_mpa: 0.4,
+        cooling_mode: "natural".to_string(),
+    };
+    let step = db
+        .add_process_step_sqlx(process.id, &first_step)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(step.step_index, 1);
+    assert_eq!(step.name, "Heat");
+
+    let updated_step = NewProcessStep {
+        name: "Hold".to_string(),
+        target_temperature_c: 74.0,
+        ramp_rate_c_min: 1.5,
+        duration_minutes: 20.0,
+        target_stirrer_rpm: 360.0,
+        target_shake_speed_cpm: 22.0,
+        target_pressure_mpa: 0.5,
+        cooling_mode: "forced".to_string(),
+    };
+    let step = db
+        .update_process_step_sqlx(process.id, step.id, &updated_step)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(step.name, "Hold");
+    assert_eq!(step.target_temperature_c, 74.0);
+
+    let process = db
+        .update_process_sqlx(process.id, "sqlx process v2", "updated", "ready")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(process.name, "sqlx process v2");
+    assert_eq!(process.status, "ready");
+    assert_eq!(process.version, 2);
+    assert_eq!(process.step_count, 1);
+
+    let applied = db
+        .mark_process_applied_sqlx(process.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(applied.status, "applied");
+    assert!(applied.applied_at.is_some());
+
+    let detail = db.process_detail_sqlx(process.id).await.unwrap().unwrap();
+    assert_eq!(detail.process.step_count, 1);
+    assert_eq!(detail.steps.len(), 1);
+    assert_eq!(detail.steps[0].name, "Hold");
+
+    let processes = db.list_processes_sqlx().await.unwrap();
+    assert_eq!(processes.len(), 1);
+    assert_eq!(processes[0].id, process.id);
+    assert_eq!(processes[0].status, "applied");
+}
+
+#[tokio::test]
+async fn concurrent_sqlx_process_step_inserts_keep_ordered_indexes() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Arc::new(Db::open(dir.path().join("reactor.sqlite3")).unwrap());
+    let process = db
+        .create_process_sqlx("concurrent sqlx process", "step ordering")
+        .await
+        .unwrap();
+
+    let mut tasks = Vec::new();
+    for index in 0..12 {
+        let db = Arc::clone(&db);
+        tasks.push(tokio::spawn(async move {
+            db.add_process_step_sqlx(
+                process.id,
+                &NewProcessStep {
+                    name: format!("Step {index}"),
+                    target_temperature_c: 60.0 + index as f64,
+                    ramp_rate_c_min: 1.0,
+                    duration_minutes: 5.0,
+                    target_stirrer_rpm: 200.0,
+                    target_shake_speed_cpm: 10.0,
+                    target_pressure_mpa: 0.2,
+                    cooling_mode: "natural".to_string(),
+                },
+            )
+            .await
+        }));
+    }
+    for task in tasks {
+        task.await.unwrap().unwrap().unwrap();
+    }
+
+    let detail = db.process_detail_sqlx(process.id).await.unwrap().unwrap();
+    let indexes = detail
+        .steps
+        .iter()
+        .map(|step| step.step_index)
+        .collect::<Vec<_>>();
+    assert_eq!(indexes, (1..=12).collect::<Vec<_>>());
+    assert_eq!(detail.process.step_count, 12);
 }
 
 #[tokio::test]

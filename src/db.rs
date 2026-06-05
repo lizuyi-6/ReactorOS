@@ -225,6 +225,7 @@ struct DbInner {
     encryption: Option<DbEncryption>,
     sqlx_pool: Option<sqlx::SqlitePool>,
     audit_write_lock: AsyncMutex<()>,
+    process_write_lock: AsyncMutex<()>,
 }
 
 enum DbConnectionGuard<'a> {
@@ -480,6 +481,7 @@ impl Db {
                 encryption,
                 sqlx_pool,
                 audit_write_lock: AsyncMutex::new(()),
+                process_write_lock: AsyncMutex::new(()),
             }),
         }
     }
@@ -644,6 +646,41 @@ impl Db {
         })
     }
 
+    pub async fn create_process_sqlx(
+        &self,
+        name: &str,
+        description: &str,
+    ) -> Result<ProcessDefinition> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.create_process(name, description);
+        };
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO processes (name, description, status, version, created_at, updated_at)
+            VALUES (?, ?, 'draft', 1, ?, ?)
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(pool)
+        .await
+        .context("failed to create process with SQLx")?;
+        Ok(ProcessDefinition {
+            id: result.last_insert_rowid(),
+            name: name.to_string(),
+            description: description.to_string(),
+            status: "draft".to_string(),
+            version: 1,
+            step_count: 0,
+            created_at: now,
+            updated_at: now,
+            applied_at: None,
+        })
+    }
+
     pub fn update_process(
         &self,
         process_id: i64,
@@ -667,6 +704,52 @@ impl Db {
         process_summary_by_id(&conn, process_id).map_err(Into::into)
     }
 
+    pub async fn update_process_sqlx(
+        &self,
+        process_id: i64,
+        name: &str,
+        description: &str,
+        status: &str,
+    ) -> Result<Option<ProcessDefinition>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.update_process(process_id, name, description, status);
+        };
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process update transaction with SQLx")?;
+        let result = sqlx::query(
+            r#"
+            UPDATE processes
+            SET name = ?, description = ?, status = ?, version = version + 1, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(status)
+        .bind(now.to_rfc3339())
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .context("failed to update process with SQLx")?;
+        if result.rows_affected() == 0 {
+            tx.commit()
+                .await
+                .context("failed to commit empty process update transaction with SQLx")?;
+            return Ok(None);
+        }
+        let process = self
+            .process_summary_by_id_sqlx_tx(&mut tx, process_id)
+            .await?;
+        tx.commit()
+            .await
+            .context("failed to commit process update transaction with SQLx")?;
+        Ok(process)
+    }
+
     pub fn list_processes(&self) -> Result<Vec<ProcessDefinition>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
@@ -688,12 +771,48 @@ impl Db {
         Ok(processes)
     }
 
+    pub async fn list_processes_sqlx(&self) -> Result<Vec<ProcessDefinition>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.list_processes();
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT p.id, p.name, p.description, p.status, p.version,
+                   COUNT(s.id) AS step_count, p.created_at, p.updated_at, p.applied_at
+            FROM processes p
+            LEFT JOIN process_steps s ON s.process_id = p.id
+            GROUP BY p.id
+            ORDER BY p.updated_at DESC, p.id DESC
+            "#,
+        )
+        .fetch_all(pool)
+        .await
+        .context("failed to list processes with SQLx")?;
+        rows.into_iter()
+            .map(process_definition_from_sqlx_row)
+            .collect()
+    }
+
     pub fn process_detail(&self, process_id: i64) -> Result<Option<ProcessDetail>> {
         let conn = self.read_conn()?;
         let Some(process) = process_summary_by_id(&conn, process_id)? else {
             return Ok(None);
         };
         let steps = process_steps_for_conn(&conn, process_id)?;
+        Ok(Some(ProcessDetail { process, steps }))
+    }
+
+    pub async fn process_detail_sqlx(&self, process_id: i64) -> Result<Option<ProcessDetail>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.process_detail(process_id);
+        };
+        let Some(process) = self
+            .process_summary_by_id_sqlx_pool(pool, process_id)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let steps = process_steps_for_pool_sqlx(pool, process_id).await?;
         Ok(Some(ProcessDetail { process, steps }))
     }
 
@@ -736,6 +855,69 @@ impl Db {
         )?;
         touch_process(&conn, process_id)?;
         process_step_by_id(&conn, conn.last_insert_rowid()).map_err(Into::into)
+    }
+
+    pub async fn add_process_step_sqlx(
+        &self,
+        process_id: i64,
+        step: &NewProcessStep,
+    ) -> Result<Option<ProcessStep>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.add_process_step(process_id, step);
+        };
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process step insert transaction with SQLx")?;
+        if self
+            .process_summary_by_id_sqlx_tx(&mut tx, process_id)
+            .await?
+            .is_none()
+        {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step insert transaction with SQLx")?;
+            return Ok(None);
+        }
+        let next_index: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(step_index), 0) + 1 FROM process_steps WHERE process_id = ?",
+        )
+        .bind(process_id)
+        .fetch_one(&mut *tx)
+        .await
+        .context("failed to allocate process step index with SQLx")?;
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO process_steps
+                (process_id, step_index, name, target_temperature_c, ramp_rate_c_min,
+                 duration_minutes, target_stirrer_rpm, target_shake_speed_cpm,
+                 target_pressure_mpa, cooling_mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(process_id)
+        .bind(next_index)
+        .bind(&step.name)
+        .bind(step.target_temperature_c)
+        .bind(step.ramp_rate_c_min)
+        .bind(step.duration_minutes)
+        .bind(step.target_stirrer_rpm)
+        .bind(step.target_shake_speed_cpm)
+        .bind(step.target_pressure_mpa)
+        .bind(&step.cooling_mode)
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .execute(&mut *tx)
+        .await
+        .context("failed to insert process step with SQLx")?;
+        touch_process_sqlx(&mut tx, process_id).await?;
+        let step = process_step_by_id_sqlx_tx(&mut tx, result.last_insert_rowid()).await?;
+        tx.commit()
+            .await
+            .context("failed to commit process step insert transaction with SQLx")?;
+        Ok(step)
     }
 
     pub fn update_process_step(
@@ -781,6 +963,64 @@ impl Db {
         process_step_by_id(&conn, step_id).map_err(Into::into)
     }
 
+    pub async fn update_process_step_sqlx(
+        &self,
+        process_id: i64,
+        step_id: i64,
+        step: &NewProcessStep,
+    ) -> Result<Option<ProcessStep>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.update_process_step(process_id, step_id, step);
+        };
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process step update transaction with SQLx")?;
+        let result = sqlx::query(
+            r#"
+            UPDATE process_steps
+            SET name = ?,
+                target_temperature_c = ?,
+                ramp_rate_c_min = ?,
+                duration_minutes = ?,
+                target_stirrer_rpm = ?,
+                target_shake_speed_cpm = ?,
+                target_pressure_mpa = ?,
+                cooling_mode = ?,
+                updated_at = ?
+            WHERE id = ? AND process_id = ?
+            "#,
+        )
+        .bind(&step.name)
+        .bind(step.target_temperature_c)
+        .bind(step.ramp_rate_c_min)
+        .bind(step.duration_minutes)
+        .bind(step.target_stirrer_rpm)
+        .bind(step.target_shake_speed_cpm)
+        .bind(step.target_pressure_mpa)
+        .bind(&step.cooling_mode)
+        .bind(now.to_rfc3339())
+        .bind(step_id)
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .context("failed to update process step with SQLx")?;
+        if result.rows_affected() == 0 {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        }
+        touch_process_sqlx(&mut tx, process_id).await?;
+        let step = process_step_by_id_sqlx_tx(&mut tx, step_id).await?;
+        tx.commit()
+            .await
+            .context("failed to commit process step update transaction with SQLx")?;
+        Ok(step)
+    }
+
     pub fn mark_process_applied(&self, process_id: i64) -> Result<Option<ProcessDefinition>> {
         let now = Utc::now();
         let conn = self.write_conn()?;
@@ -796,6 +1036,47 @@ impl Db {
             return Ok(None);
         }
         process_summary_by_id(&conn, process_id).map_err(Into::into)
+    }
+
+    pub async fn mark_process_applied_sqlx(
+        &self,
+        process_id: i64,
+    ) -> Result<Option<ProcessDefinition>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.mark_process_applied(process_id);
+        };
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process applied transaction with SQLx")?;
+        let result = sqlx::query(
+            r#"
+            UPDATE processes
+            SET status = 'applied', applied_at = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(now.to_rfc3339())
+        .bind(now.to_rfc3339())
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .context("failed to mark process applied with SQLx")?;
+        if result.rows_affected() == 0 {
+            tx.commit()
+                .await
+                .context("failed to commit empty process applied transaction with SQLx")?;
+            return Ok(None);
+        }
+        let process = self
+            .process_summary_by_id_sqlx_tx(&mut tx, process_id)
+            .await?;
+        tx.commit()
+            .await
+            .context("failed to commit process applied transaction with SQLx")?;
+        Ok(process)
     }
 
     pub fn finish_batch(&self, batch_id: i64) -> Result<()> {
@@ -2431,6 +2712,22 @@ impl Db {
             updated_at: parse_dt_anyhow(&updated_at)?,
         })
     }
+
+    async fn process_summary_by_id_sqlx_pool(
+        &self,
+        pool: &sqlx::SqlitePool,
+        process_id: i64,
+    ) -> Result<Option<ProcessDefinition>> {
+        process_summary_by_id_sqlx_executor(pool, process_id).await
+    }
+
+    async fn process_summary_by_id_sqlx_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        process_id: i64,
+    ) -> Result<Option<ProcessDefinition>> {
+        process_summary_by_id_sqlx_executor(&mut **tx, process_id).await
+    }
 }
 
 fn process_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessDefinition> {
@@ -2451,6 +2748,47 @@ fn process_definition_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Proc
             None => None,
         },
     })
+}
+
+fn process_definition_from_sqlx_row(row: SqliteRow) -> Result<ProcessDefinition> {
+    let created_at: String = row.try_get("created_at")?;
+    let updated_at: String = row.try_get("updated_at")?;
+    let applied_at: Option<String> = row.try_get("applied_at")?;
+    Ok(ProcessDefinition {
+        id: row.try_get("id")?,
+        name: row.try_get("name")?,
+        description: row.try_get("description")?,
+        status: row.try_get("status")?,
+        version: row.try_get("version")?,
+        step_count: row.try_get("step_count")?,
+        created_at: parse_dt_anyhow(&created_at)?,
+        updated_at: parse_dt_anyhow(&updated_at)?,
+        applied_at: applied_at.as_deref().map(parse_dt_anyhow).transpose()?,
+    })
+}
+
+async fn process_summary_by_id_sqlx_executor<'e, E>(
+    executor: E,
+    process_id: i64,
+) -> Result<Option<ProcessDefinition>>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let row = sqlx::query(
+        r#"
+        SELECT p.id, p.name, p.description, p.status, p.version,
+               COUNT(s.id) AS step_count, p.created_at, p.updated_at, p.applied_at
+        FROM processes p
+        LEFT JOIN process_steps s ON s.process_id = p.id
+        WHERE p.id = ?
+        GROUP BY p.id
+        "#,
+    )
+    .bind(process_id)
+    .fetch_optional(executor)
+    .await
+    .context("failed to read process summary with SQLx")?;
+    row.map(process_definition_from_sqlx_row).transpose()
 }
 
 fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEvent> {
@@ -2667,6 +3005,27 @@ fn process_steps_for_conn(
     Ok(steps)
 }
 
+async fn process_steps_for_pool_sqlx(
+    pool: &sqlx::SqlitePool,
+    process_id: i64,
+) -> Result<Vec<ProcessStep>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, process_id, step_index, name, target_temperature_c, ramp_rate_c_min,
+               duration_minutes, target_stirrer_rpm, target_shake_speed_cpm,
+               target_pressure_mpa, cooling_mode, created_at, updated_at
+        FROM process_steps
+        WHERE process_id = ?
+        ORDER BY step_index ASC, id ASC
+        "#,
+    )
+    .bind(process_id)
+    .fetch_all(pool)
+    .await
+    .context("failed to read process steps with SQLx")?;
+    rows.into_iter().map(process_step_from_sqlx_row).collect()
+}
+
 fn process_step_by_id(conn: &Connection, step_id: i64) -> rusqlite::Result<Option<ProcessStep>> {
     conn.query_row(
         r#"
@@ -2680,6 +3039,26 @@ fn process_step_by_id(conn: &Connection, step_id: i64) -> rusqlite::Result<Optio
         process_step_from_row,
     )
     .optional()
+}
+
+async fn process_step_by_id_sqlx_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    step_id: i64,
+) -> Result<Option<ProcessStep>> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, process_id, step_index, name, target_temperature_c, ramp_rate_c_min,
+               duration_minutes, target_stirrer_rpm, target_shake_speed_cpm,
+               target_pressure_mpa, cooling_mode, created_at, updated_at
+        FROM process_steps
+        WHERE id = ?
+        "#,
+    )
+    .bind(step_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("failed to read process step with SQLx")?;
+    row.map(process_step_from_sqlx_row).transpose()
 }
 
 fn process_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessStep> {
@@ -2702,11 +3081,44 @@ fn process_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessSte
     })
 }
 
+fn process_step_from_sqlx_row(row: SqliteRow) -> Result<ProcessStep> {
+    let created_at: String = row.try_get("created_at")?;
+    let updated_at: String = row.try_get("updated_at")?;
+    Ok(ProcessStep {
+        id: row.try_get("id")?,
+        process_id: row.try_get("process_id")?,
+        step_index: row.try_get("step_index")?,
+        name: row.try_get("name")?,
+        target_temperature_c: row.try_get("target_temperature_c")?,
+        ramp_rate_c_min: row.try_get("ramp_rate_c_min")?,
+        duration_minutes: row.try_get("duration_minutes")?,
+        target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
+        target_shake_speed_cpm: row.try_get("target_shake_speed_cpm")?,
+        target_pressure_mpa: row.try_get("target_pressure_mpa")?,
+        cooling_mode: row.try_get("cooling_mode")?,
+        created_at: parse_dt_anyhow(&created_at)?,
+        updated_at: parse_dt_anyhow(&updated_at)?,
+    })
+}
+
 fn touch_process(conn: &Connection, process_id: i64) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE processes SET updated_at = ?1 WHERE id = ?2",
         params![Utc::now().to_rfc3339(), process_id],
     )?;
+    Ok(())
+}
+
+async fn touch_process_sqlx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    process_id: i64,
+) -> Result<()> {
+    sqlx::query("UPDATE processes SET updated_at = ? WHERE id = ?")
+        .bind(Utc::now().to_rfc3339())
+        .bind(process_id)
+        .execute(&mut **tx)
+        .await
+        .context("failed to touch process with SQLx")?;
     Ok(())
 }
 
