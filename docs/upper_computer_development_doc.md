@@ -68,7 +68,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `src/bin/xingshu.rs` | 上位机 CLI，复用 REST API 和 `src/api_auth.rs` 签发的 bearer token |
 | `src/bin/reactor-safety-guard.rs` | 独立安全判定进程，stdin/stdout JSON 协议 |
 | `static/index.html` | 单页 Web HMI、七大页面、中英切换、浏览器端交互 |
-| `frontend/` | PRD 前端技术栈迁移工程，已接入 Vue 3、Vite、Element Plus、ECharts、Pinia 和 Vue Router；七页面、Pinia 持久化中英切换和 Playwright/Chromium DOM/截图验证已完成；生产替换前仍需写操作 parity 和完整交互验收 |
+| `frontend/` | PRD 前端技术栈迁移工程，已接入 Vue 3、Vite、Element Plus、ECharts、Pinia 和 Vue Router；七页面、Pinia 持久化中英切换、控制目标写入、自动控制、人工锁定、急停/复位和 Playwright/Chromium DOM/截图验证已完成；生产替换前仍需工艺管理、审计导出、Modbus 写入和完整交互验收 |
 | `tests/*.rs` | Rust 集成测试，覆盖 API、CLI、DB、配置、控制和协议 |
 
 DB Recent/History 查询约定：实时样本、报警、批次、产物结果和审计事件类 Recent 接口先用 `ORDER BY id DESC LIMIT N` 限定“最新窗口”，再在外层按 `id ASC` 返回给 HMI/报告使用，保证用户看到的是窗口内从旧到新的时间线。PRD SQLx 技术栈迁移采用分段方式推进：当前文件数据库通过 SQLx SQLite pool 支撑 `/api/audit/logs` 的审计 total/list/chain 查询、`/api/audit/export.csv` 的导出读取，真实 API、AINAS/MQTT、Modbus debug 和 daemon 控制循环审计事件写入，工艺流程/步骤读写与应用标记，批次创建/结束，批次详情/单批次报告事件/recent 审计事件/demo alarm 读取，`live`、demo context、批次列表、批次 CSV/XLSX 导出和 AI 实验计划中的 Recent 批次/产物结果读取，AI 推荐输入的全量 batch outcomes、推荐缓存读取和推荐落库，产物结果落库，`live` 实时曲线、v1 history、批次详情和批次 Markdown 报告的样本读取，daemon 实时采集循环和外部 pipeline 样本写入，以及 AINAS/MQTT 集成任务列表/详情/创建/更新；审计写入通过异步写锁串行化 previous/event hash 计算以保护审计链，工艺步骤写入通过异步写锁保持 step_index 顺序；内存测试库、schema migration 和部分兼容路径继续使用 `rusqlite`，后续逐步收缩该兼容层。
@@ -96,7 +96,7 @@ DB Recent/History 查询约定：实时样本、报警、批次、产物结果�
 
 ## 5. Web HMI 功能
 
-当前生产 Web HMI 由 `static/index.html` 提供，支持中英切换。动态字块已经覆盖 Modbus/MQTT/集成状态等接口返回字段。`codex/prd-tech-stack-migration` 分支已启动 PRD 前端技术栈切换，`frontend/` 可构建 Vue 3 / Element Plus / ECharts / Pinia 七页面迁移版，包含持久化中英切换、PRD 七路由导航、ECharts 实时曲线和基础后端数据绑定；已用 Playwright/Chromium 验证七个 hash 路由的中文/英文关键字块，并归档 `output/playwright/vue-i18n-verification.json`。该 Vue 版本尚未替换生产静态资源，控制写入、审计导出、Modbus 写入和完整 parity 仍需继续迁移。
+当前生产 Web HMI 由 `static/index.html` 提供，支持中英切换。动态字块已经覆盖 Modbus/MQTT/集成状态等接口返回字段。`codex/prd-tech-stack-migration` 分支已启动 PRD 前端技术栈切换，`frontend/` 可构建 Vue 3 / Element Plus / ECharts / Pinia 七页面迁移版，包含持久化中英切换、PRD 七路由导航、ECharts 实时曲线、基础后端数据绑定、控制目标安全写入、自动控制、人工锁定、急停和复位；已用 Playwright/Chromium 验证七个 hash 路由的中文/英文关键字块，并归档 `output/playwright/vue-i18n-verification.json`，控制写入验证归档 `output/playwright/vue-control-write-verification.json`。该 Vue 版本尚未替换生产静态资源，工艺管理、审计导出、Modbus 写入和完整 parity 仍需继续迁移。
 
 | 页面 | 当前能力 |
 | --- | --- |

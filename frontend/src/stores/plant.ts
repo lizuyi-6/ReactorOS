@@ -6,6 +6,12 @@ export type UiLanguage = "zh" | "en";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
+export interface TargetUpdatePayload {
+  temperature_c: number;
+  stirrer_rpm: number;
+  shake_speed_cpm?: number;
+}
+
 interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -73,6 +79,7 @@ export const usePlantStore = defineStore("plant", () => {
   const audit = ref<ApiRecord | null>(null);
   const modbus = ref<ApiRecord | null>(null);
   const recommendation = ref<ApiRecord | null>(null);
+  const runtimeFallback = ref<ApiRecord | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const lastUpdated = ref<string | null>(null);
@@ -92,6 +99,18 @@ export const usePlantStore = defineStore("plant", () => {
 
   function tr(zh: string, en: string): string {
     return language.value === "zh" ? zh : en;
+  }
+
+  function mergeRuntimeFallback(patch: ApiRecord): void {
+    runtimeFallback.value = {
+      ...(runtimeFallback.value ?? {}),
+      ...patch
+    };
+  }
+
+  function runtimeFromLive(payload: ApiRecord | null): ApiRecord | null {
+    const runtime = payload?.runtime;
+    return runtime && typeof runtime === "object" ? (runtime as ApiRecord) : null;
   }
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -137,6 +156,7 @@ export const usePlantStore = defineStore("plant", () => {
     audit.value = null;
     modbus.value = null;
     recommendation.value = null;
+    runtimeFallback.value = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   }
@@ -146,10 +166,13 @@ export const usePlantStore = defineStore("plant", () => {
   }
 
   async function refreshLive(): Promise<void> {
-    live.value = await request<ApiRecord>("/api/live?sample_limit=36&include_processes=true&include_batches=true&include_events=false", {
+    const nextLive = await request<ApiRecord>("/api/live?sample_limit=36&include_processes=true&include_batches=true&include_events=false", {
       auth: false,
       allowFailure: true
     });
+    live.value = nextLive;
+    const runtime = runtimeFromLive(nextLive);
+    if (runtime) runtimeFallback.value = runtime;
   }
 
   async function refreshProtected(): Promise<void> {
@@ -180,6 +203,47 @@ export const usePlantStore = defineStore("plant", () => {
     }
   }
 
+  async function updateTargets(payload: TargetUpdatePayload): Promise<ApiRecord> {
+    const targets = await request<ApiRecord>("/api/control/targets", {
+      method: "POST",
+      body: payload
+    });
+    mergeRuntimeFallback({ targets });
+    await refreshLive();
+    await refreshProtected();
+    return targets;
+  }
+
+  async function setAutoEnabled(enabled: boolean): Promise<void> {
+    await request<void>("/api/control/auto", {
+      method: "POST",
+      body: { enabled }
+    });
+    mergeRuntimeFallback({ auto_enabled: enabled });
+    await refreshLive();
+  }
+
+  async function setManualLocked(locked: boolean): Promise<void> {
+    await request<void>("/api/control/manual-lock", {
+      method: "POST",
+      body: { locked }
+    });
+    mergeRuntimeFallback({ manual_lock: locked });
+    await refreshLive();
+  }
+
+  async function triggerEmergencyStop(): Promise<void> {
+    await request<void>("/api/control/emergency-stop", { method: "POST" });
+    mergeRuntimeFallback({ emergency_stop: true, auto_enabled: false });
+    await refreshLive();
+  }
+
+  async function resetEmergencyStop(): Promise<void> {
+    await request<void>("/api/control/emergency-stop/reset", { method: "POST" });
+    mergeRuntimeFallback({ emergency_stop: false });
+    await refreshLive();
+  }
+
   return {
     token,
     user,
@@ -193,6 +257,7 @@ export const usePlantStore = defineStore("plant", () => {
     audit,
     modbus,
     recommendation,
+    runtimeFallback,
     loading,
     error,
     lastUpdated,
@@ -204,6 +269,11 @@ export const usePlantStore = defineStore("plant", () => {
     refreshAll,
     refreshPublic,
     refreshLive,
-    refreshProtected
+    refreshProtected,
+    updateTargets,
+    setAutoEnabled,
+    setManualLocked,
+    triggerEmergencyStop,
+    resetEmergencyStop
   };
 });

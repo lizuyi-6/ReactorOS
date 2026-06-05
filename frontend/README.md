@@ -28,10 +28,16 @@ new HMI has parity with `static/index.html`.
 - `src/stores/plant.ts` centralizes backend access through Pinia. It reads
   `/health`, `/api/config/summary`, `/api/audit/logs`,
   `/api/modbus/registers`, and `/api/recommendations/latest`; it also persists
-  the zh/en UI language in local storage.
+  the zh/en UI language in local storage and exposes safety-gated control write
+  actions for targets, auto mode, manual lock, emergency stop, and reset.
 - `src/views/MonitorView.vue` uses ECharts for the first migrated live trend
   panel. Live samples are loaded on demand so a fresh dev environment without
   pipeline data still opens cleanly.
+- `src/views/ControlView.vue` now writes target temperature, stirrer speed, and
+  shake speed through `/api/control/targets`, controls auto/manual-lock state,
+  and exposes emergency stop/reset. When `/api/live` is unavailable because the
+  pipeline sample is stale, the page still shows the last successful control
+  response so operators can see the clamped target acknowledgement.
 - All seven PRD route views now render their primary visible UI blocks through
   the shared language state. Chromium verification checks both zh and en text
   for `/#/monitor`, `/#/control`, `/#/ai`, `/#/history`, `/#/audit`,
@@ -39,7 +45,9 @@ new HMI has parity with `static/index.html`.
 - Visual smoke evidence is archived at
   `output/playwright/prd-vue-stack-monitor-20260606.png`; current i18n evidence
   is archived as `output/playwright/vue-i18n-verification.json` and
-  `output/playwright/vue-i18n-*.png`.
+  `output/playwright/vue-i18n-*.png`. Control-write evidence is archived as
+  `output/playwright/vue-control-write-verification.json` and
+  `output/playwright/vue-control-write-en.png`.
 
 ## Migration Rules
 
