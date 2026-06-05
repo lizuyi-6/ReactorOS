@@ -59,11 +59,11 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `src/db.rs` | SQLite schema、批次/样本/审计/集成任务持久化、集成任务请求/回执 AES-256-GCM 加密 |
 | `src/config.rs` | 设备、寄存器、数据桥和硬件通信配置 |
 | `src/control.rs` | 安全限幅、目标参数更新、控制循环逻辑、安全守护进程 JSON 协议 |
-| `src/device.rs` | ESP32、JSON bridge、Modbus RTU 和管线设备适配 |
+| `src/device.rs` | ESP32、JSON bridge、Modbus RTU 和管线设备适配；Modbus RTU 主站读写使用 `tokio-modbus` + `tokio-serial` |
 | `src/modbus_registers.rs` | Modbus 调试寄存器 map、HTTP 读写 payload、admin-only 调试写入审计和安全校验复用 |
 | `src/reports.rs` | 审计/批次 CSV、批次 XLSX 包和单批次 Markdown 实验报告生成；XLSX 包装使用 `zip` crate，不再维护手写 ZIP central directory / CRC32 |
 | `src/mqtt.rs` | MQTT 3.1.1 bridge、任务订阅、receipt 发布、状态摘要 |
-| `src/modbus_tcp.rs` | Modbus TCP MBAP/PDU 处理、`01/02/03/06` 功能码、安全写入复用 |
+| `src/modbus_tcp.rs` | 自实现 Modbus TCP MBAP/PDU 处理、`01/02/03/06` 功能码、安全写入复用；是否切到 `tokio-modbus` server feature 仍待评估 |
 | `src/optimizer.rs` | 本地 `local-ga-sa-pid` 参数寻优，结合 GA 交叉/变异、SA 接受/降温搜索和精英趋势校正 |
 | `src/bin/xingshu.rs` | 上位机 CLI，复用 REST API 和 `src/api_auth.rs` 签发的 bearer token |
 | `src/bin/reactor-safety-guard.rs` | 独立安全判定进程，stdin/stdout JSON 协议 |

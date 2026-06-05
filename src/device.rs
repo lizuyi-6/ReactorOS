@@ -15,6 +15,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
+use tokio::sync::Mutex as AsyncMutex;
+use tokio_modbus::{
+    client::{rtu, Reader, Writer},
+    Slave,
+};
+use tokio_serial::{
+    DataBits as TokioDataBits, Parity as TokioParity, SerialPortBuilderExt,
+    StopBits as TokioStopBits,
+};
 
 use crate::{
     config::{
@@ -118,7 +127,7 @@ impl ReactorDevice for PipelineDevice {
 
 struct ModbusRtuDevice {
     config: DeviceConfig,
-    port: Arc<StdMutex<Box<dyn SerialPort>>>,
+    client: Arc<AsyncMutex<tokio_modbus::client::Context>>,
 }
 
 struct Esp32SerialDevice {
@@ -145,11 +154,12 @@ impl Esp32SerialDevice {
 
 impl ModbusRtuDevice {
     fn new(config: DeviceConfig) -> Result<Self> {
-        let port = open_serial_port(&config)?;
+        let serial = open_tokio_serial_port(&config)?;
+        let client = rtu::attach_slave(serial, Slave(config.modbus.slave_id));
 
         Ok(Self {
             config,
-            port: Arc::new(StdMutex::new(port)),
+            client: Arc::new(AsyncMutex::new(client)),
         })
     }
 }
@@ -169,70 +179,51 @@ impl JsonBridgeDevice {
 impl ReactorDevice for ModbusRtuDevice {
     async fn read_sample(&self) -> Result<SensorSnapshot> {
         let config = self.config.clone();
-        let port = Arc::clone(&self.port);
-        tokio::task::spawn_blocking(move || {
-            let mut port = port
-                .lock()
-                .map_err(|_| anyhow!("serial port lock poisoned"))?;
-            let temperature_raw = read_holding_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.temperature_c.address,
-            )?;
-            let stirrer_raw = read_holding_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.stirrer_rpm.address,
-            )?;
-            let temperature_c =
-                decode_read_register(temperature_raw, &config.modbus.registers.temperature_c)?;
-            let stirrer_rpm =
-                decode_read_register(stirrer_raw, &config.modbus.registers.stirrer_rpm)?;
-            Ok(SensorSnapshot {
-                temperature_c,
-                pressure_mpa: 0.0,
-                stirrer_rpm,
-                shake_speed_cpm: 0.0,
-                tilt_state: 0,
-                tilt_angle_deg: 0.0,
-                flow_rate_l_min: 0.0,
-                product_concentration_percent: 0.0,
-                ph: 7.0,
-                captured_at: Utc::now(),
-            })
+        let mut client = self.client.lock().await;
+        let temperature_raw =
+            read_holding_register(&mut client, config.modbus.registers.temperature_c.address)
+                .await?;
+        let stirrer_raw =
+            read_holding_register(&mut client, config.modbus.registers.stirrer_rpm.address).await?;
+        let temperature_c =
+            decode_read_register(temperature_raw, &config.modbus.registers.temperature_c)?;
+        let stirrer_rpm = decode_read_register(stirrer_raw, &config.modbus.registers.stirrer_rpm)?;
+        Ok(SensorSnapshot {
+            temperature_c,
+            pressure_mpa: 0.0,
+            stirrer_rpm,
+            shake_speed_cpm: 0.0,
+            tilt_state: 0,
+            tilt_angle_deg: 0.0,
+            flow_rate_l_min: 0.0,
+            product_concentration_percent: 0.0,
+            ph: 7.0,
+            captured_at: Utc::now(),
         })
-        .await?
     }
 
     async fn write_targets(&self, command: &SafeCommand) -> Result<()> {
         let config = self.config.clone();
-        let port = Arc::clone(&self.port);
-        let command = command.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut port = port
-                .lock()
-                .map_err(|_| anyhow!("serial port lock poisoned"))?;
-            write_single_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.target_temperature_c.address,
-                encode_write_register(
-                    command.target_temperature_c,
-                    &config.modbus.registers.target_temperature_c,
-                )?,
-            )?;
-            write_single_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.target_stirrer_rpm.address,
-                encode_write_register(
-                    command.target_stirrer_rpm,
-                    &config.modbus.registers.target_stirrer_rpm,
-                )?,
-            )?;
-            Ok(())
-        })
-        .await?
+        let mut client = self.client.lock().await;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+            encode_write_register(
+                command.target_temperature_c,
+                &config.modbus.registers.target_temperature_c,
+            )?,
+        )
+        .await?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+            encode_write_register(
+                command.target_stirrer_rpm,
+                &config.modbus.registers.target_stirrer_rpm,
+            )?,
+        )
+        .await?;
+        Ok(())
     }
 
     fn control_capabilities(&self) -> Vec<DeviceComponentCapability> {
@@ -956,32 +947,82 @@ pub fn write_json_bridge_control(path: &Path, control: &JsonBridgeControl) -> Re
 }
 
 fn open_serial_port(config: &DeviceConfig) -> Result<Box<dyn SerialPort>> {
-    let parity = match config.serial.parity.as_str() {
-        "N" | "n" => Parity::None,
-        "E" | "e" => Parity::Even,
-        "O" | "o" => Parity::Odd,
-        other => return Err(anyhow!("unsupported serial parity {other}")),
-    };
-    let stop_bits = match config.serial.stopbits {
-        1 => StopBits::One,
-        2 => StopBits::Two,
-        other => return Err(anyhow!("unsupported serial stopbits {other}")),
-    };
-    let data_bits = match config.serial.bytesize {
-        5 => DataBits::Five,
-        6 => DataBits::Six,
-        7 => DataBits::Seven,
-        8 => DataBits::Eight,
-        other => return Err(anyhow!("unsupported serial bytesize {other}")),
-    };
-
     serialport::new(&config.serial.port, config.serial.baudrate)
         .timeout(Duration::from_millis(config.serial.timeout_ms))
-        .parity(parity)
-        .stop_bits(stop_bits)
-        .data_bits(data_bits)
+        .parity(serial_parity(&config.serial.parity)?)
+        .stop_bits(serial_stop_bits(config.serial.stopbits)?)
+        .data_bits(serial_data_bits(config.serial.bytesize)?)
         .open()
         .map_err(|err| anyhow!("failed to open serial port {}: {err}", config.serial.port))
+}
+
+fn open_tokio_serial_port(config: &DeviceConfig) -> Result<tokio_serial::SerialStream> {
+    tokio_serial::new(&config.serial.port, config.serial.baudrate)
+        .timeout(Duration::from_millis(config.serial.timeout_ms))
+        .parity(tokio_serial_parity(&config.serial.parity)?)
+        .stop_bits(tokio_serial_stop_bits(config.serial.stopbits)?)
+        .data_bits(tokio_serial_data_bits(config.serial.bytesize)?)
+        .open_native_async()
+        .map_err(|err| {
+            anyhow!(
+                "failed to open async Modbus RTU serial port {}: {err}",
+                config.serial.port
+            )
+        })
+}
+
+fn serial_parity(value: &str) -> Result<Parity> {
+    match value {
+        "N" | "n" => Ok(Parity::None),
+        "E" | "e" => Ok(Parity::Even),
+        "O" | "o" => Ok(Parity::Odd),
+        other => Err(anyhow!("unsupported serial parity {other}")),
+    }
+}
+
+fn serial_stop_bits(value: u8) -> Result<StopBits> {
+    match value {
+        1 => Ok(StopBits::One),
+        2 => Ok(StopBits::Two),
+        other => Err(anyhow!("unsupported serial stopbits {other}")),
+    }
+}
+
+fn serial_data_bits(value: u8) -> Result<DataBits> {
+    match value {
+        5 => Ok(DataBits::Five),
+        6 => Ok(DataBits::Six),
+        7 => Ok(DataBits::Seven),
+        8 => Ok(DataBits::Eight),
+        other => Err(anyhow!("unsupported serial bytesize {other}")),
+    }
+}
+
+fn tokio_serial_parity(value: &str) -> Result<TokioParity> {
+    match value {
+        "N" | "n" => Ok(TokioParity::None),
+        "E" | "e" => Ok(TokioParity::Even),
+        "O" | "o" => Ok(TokioParity::Odd),
+        other => Err(anyhow!("unsupported serial parity {other}")),
+    }
+}
+
+fn tokio_serial_stop_bits(value: u8) -> Result<TokioStopBits> {
+    match value {
+        1 => Ok(TokioStopBits::One),
+        2 => Ok(TokioStopBits::Two),
+        other => Err(anyhow!("unsupported serial stopbits {other}")),
+    }
+}
+
+fn tokio_serial_data_bits(value: u8) -> Result<TokioDataBits> {
+    match value {
+        5 => Ok(TokioDataBits::Five),
+        6 => Ok(TokioDataBits::Six),
+        7 => Ok(TokioDataBits::Seven),
+        8 => Ok(TokioDataBits::Eight),
+        other => Err(anyhow!("unsupported serial bytesize {other}")),
+    }
 }
 
 fn read_json_bridge_state(path: &Path) -> Result<JsonBridgeState> {
@@ -1423,98 +1464,51 @@ fn encode_write_register(value: f64, register: &WriteRegister) -> Result<u16> {
     Ok(raw as u16)
 }
 
-fn read_holding_register(port: &mut dyn SerialPort, slave_id: u8, address: u16) -> Result<u16> {
-    let mut frame = vec![slave_id, 0x03, high(address), low(address), 0x00, 0x01];
-    append_crc(&mut frame);
-    port.write_all(&frame)?;
-    port.flush()?;
-
-    let mut response = [0_u8; 7];
-    port.read_exact(&mut response)?;
-    validate_crc(&response)?;
-    if response[0] != slave_id {
-        return Err(anyhow!("unexpected slave id {}", response[0]));
-    }
-    if response[1] & 0x80 != 0 {
-        return Err(anyhow!("modbus exception code {}", response[2]));
-    }
-    if response[1] != 0x03 || response[2] != 0x02 {
-        return Err(anyhow!("invalid read response"));
-    }
-    Ok(u16::from_be_bytes([response[3], response[4]]))
+async fn read_holding_register(
+    client: &mut tokio_modbus::client::Context,
+    address: u16,
+) -> Result<u16> {
+    let words = client
+        .read_holding_registers(address, 1)
+        .await
+        .map_err(|err| anyhow!("modbus RTU read register {address} failed: {err}"))?
+        .map_err(|code| anyhow!("modbus RTU read register {address} exception: {code:?}"))?;
+    words
+        .first()
+        .copied()
+        .ok_or_else(|| anyhow!("modbus RTU read register {address} returned no data"))
 }
 
-fn write_single_register(
-    port: &mut dyn SerialPort,
-    slave_id: u8,
+async fn write_single_register(
+    client: &mut tokio_modbus::client::Context,
     address: u16,
     value: u16,
 ) -> Result<()> {
-    let [value_hi, value_lo] = value.to_be_bytes();
-    let mut frame = vec![
-        slave_id,
-        0x06,
-        high(address),
-        low(address),
-        value_hi,
-        value_lo,
-    ];
-    append_crc(&mut frame);
-    port.write_all(&frame)?;
-    port.flush()?;
-
-    let mut response = [0_u8; 8];
-    port.read_exact(&mut response)?;
-    validate_crc(&response)?;
-    if response[0] != slave_id {
-        return Err(anyhow!("unexpected slave id {}", response[0]));
-    }
-    if response[1] & 0x80 != 0 {
-        return Err(anyhow!("modbus exception code {}", response[2]));
-    }
-    if response[..6] != frame[..6] {
-        return Err(anyhow!("write response does not echo request"));
-    }
-    Ok(())
+    client
+        .write_single_register(address, value)
+        .await
+        .map_err(|err| anyhow!("modbus RTU write register {address} failed: {err}"))?
+        .map_err(|code| anyhow!("modbus RTU write register {address} exception: {code:?}"))
 }
 
-fn append_crc(frame: &mut Vec<u8>) {
-    let crc = crc16_modbus(frame);
-    frame.push((crc & 0x00ff) as u8);
-    frame.push((crc >> 8) as u8);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn validate_crc(frame: &[u8]) -> Result<()> {
-    if frame.len() < 3 {
-        return Err(anyhow!("modbus frame too short"));
+    #[test]
+    fn tokio_modbus_serial_config_maps_standard_rtu_settings() {
+        assert_eq!(tokio_serial_parity("N").unwrap(), TokioParity::None);
+        assert_eq!(tokio_serial_parity("E").unwrap(), TokioParity::Even);
+        assert_eq!(tokio_serial_parity("O").unwrap(), TokioParity::Odd);
+        assert_eq!(tokio_serial_stop_bits(1).unwrap(), TokioStopBits::One);
+        assert_eq!(tokio_serial_stop_bits(2).unwrap(), TokioStopBits::Two);
+        assert_eq!(tokio_serial_data_bits(8).unwrap(), TokioDataBits::Eight);
     }
-    let expected = crc16_modbus(&frame[..frame.len() - 2]);
-    let actual = u16::from_le_bytes([frame[frame.len() - 2], frame[frame.len() - 1]]);
-    if expected != actual {
-        return Err(anyhow!("invalid modbus crc"));
+
+    #[test]
+    fn tokio_modbus_serial_config_rejects_unsupported_rtu_settings() {
+        assert!(tokio_serial_parity("M").is_err());
+        assert!(tokio_serial_stop_bits(3).is_err());
+        assert!(tokio_serial_data_bits(9).is_err());
     }
-    Ok(())
-}
-
-fn crc16_modbus(bytes: &[u8]) -> u16 {
-    let mut crc = 0xffff_u16;
-    for byte in bytes {
-        crc ^= *byte as u16;
-        for _ in 0..8 {
-            if crc & 1 == 1 {
-                crc = (crc >> 1) ^ 0xa001;
-            } else {
-                crc >>= 1;
-            }
-        }
-    }
-    crc
-}
-
-fn high(value: u16) -> u8 {
-    (value >> 8) as u8
-}
-
-fn low(value: u16) -> u8 {
-    (value & 0xff) as u8
 }
