@@ -780,6 +780,39 @@ impl Db {
         Ok(())
     }
 
+    pub async fn insert_sample_sqlx(
+        &self,
+        batch_id: Option<i64>,
+        sample: &SensorSnapshot,
+    ) -> Result<()> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_sample(batch_id, sample);
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO sensor_samples
+                (batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                 shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(batch_id)
+        .bind(sample.temperature_c)
+        .bind(sample.pressure_mpa)
+        .bind(sample.stirrer_rpm)
+        .bind(sample.shake_speed_cpm)
+        .bind(i64::from(sample.tilt_state))
+        .bind(sample.tilt_angle_deg)
+        .bind(sample.flow_rate_l_min)
+        .bind(sample.product_concentration_percent)
+        .bind(sample.ph)
+        .bind(sample.captured_at.to_rfc3339())
+        .execute(pool)
+        .await
+        .context("failed to insert sensor sample with SQLx")?;
+        Ok(())
+    }
+
     pub fn recent_samples(&self, limit: usize) -> Result<Vec<SensorSnapshot>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(

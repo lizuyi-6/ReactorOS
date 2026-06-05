@@ -144,7 +144,7 @@ async fn control_loop(
                         state.device_status = status;
                         state.active_batch_id
                     };
-                    if let Err(err) = db.insert_sample(active_batch_id, &sample) {
+                    if let Err(err) = db.insert_sample_sqlx(active_batch_id, &sample).await {
                         tracing::warn!("failed to persist sensor sample: {err}");
                     }
                 }

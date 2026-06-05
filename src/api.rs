@@ -2614,7 +2614,10 @@ async fn accept_pipeline_sample(
         runtime.last_control_error = None;
         runtime.active_batch_id
     };
-    state.db.insert_sample(active_batch_id, &sample)?;
+    state
+        .db
+        .insert_sample_sqlx(active_batch_id, &sample)
+        .await?;
     Ok(sample)
 }
 

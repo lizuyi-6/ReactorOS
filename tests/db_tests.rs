@@ -483,6 +483,30 @@ async fn async_file_database_sensor_history_reads_use_sqlx_pool() {
 }
 
 #[tokio::test]
+async fn async_file_database_sensor_sample_writes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let batch = db
+        .create_batch("sqlx sample write", 72.0, 410.0, 42.0, 63.0)
+        .unwrap();
+    let mut written = sample(9);
+    written.temperature_c = 181.25;
+    written.pressure_mpa = 0.33;
+    written.tilt_state = 1;
+
+    db.insert_sample_sqlx(Some(batch.id), &written)
+        .await
+        .unwrap();
+
+    let samples = db.recent_sample_records_sqlx(1).await.unwrap();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].batch_id, Some(batch.id));
+    assert_eq!(samples[0].sample.temperature_c, 181.25);
+    assert_eq!(samples[0].sample.pressure_mpa, 0.33);
+    assert_eq!(samples[0].sample.tilt_state, 1);
+}
+
+#[tokio::test]
 async fn async_file_database_latest_recommendation_uses_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
