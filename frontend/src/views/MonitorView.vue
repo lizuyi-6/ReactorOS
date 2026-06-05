@@ -45,14 +45,14 @@ function drawChart(): void {
     },
     series: [
       {
-        name: "Temperature C",
+        name: store.tr("温度 C", "Temperature C"),
         type: "line",
         smooth: true,
         data: rows.map((row) => numberAt(row, "temperature_c")),
         connectNulls: true
       },
       {
-        name: "Pressure kPa",
+        name: store.tr("压力 kPa", "Pressure kPa"),
         type: "line",
         smooth: true,
         data: rows.map((row) => numberAt(row, "pressure_kpa")),
@@ -63,6 +63,7 @@ function drawChart(): void {
 }
 
 watch(samples, () => void nextTick(drawChart), { deep: true });
+watch(() => store.language, () => void nextTick(drawChart));
 
 onMounted(() => {
   drawChart();
@@ -80,27 +81,29 @@ onBeforeUnmount(() => {
     <div class="view-heading">
       <div>
         <p class="eyebrow">Vue + ECharts</p>
-        <h1>Realtime Monitor</h1>
-        <span>实时传感器、报警和样本曲线</span>
+        <h1>{{ store.tr("实时监控", "Realtime Monitor") }}</h1>
+        <span>{{ store.tr("实时传感器、报警和样本曲线", "Live sensors, alarms, and sample trends") }}</span>
       </div>
       <div class="heading-actions">
-        <el-tag :type="sample ? 'success' : 'warning'">{{ sample ? "Pipeline online" : "Waiting for samples" }}</el-tag>
-        <el-button size="small" @click="store.refreshLive()">Load live data</el-button>
+        <el-tag :type="sample ? 'success' : 'warning'">
+          {{ sample ? store.tr("采集链路在线", "Pipeline online") : store.tr("等待样本", "Waiting for samples") }}
+        </el-tag>
+        <el-button size="small" @click="store.refreshLive()">{{ store.tr("加载实时数据", "Load live data") }}</el-button>
       </div>
     </div>
 
     <div class="metric-grid">
       <article v-for="metric in metrics" :key="metric.label" class="metric">
-        <span>{{ metric.zh }}</span>
+        <span>{{ store.tr(metric.zh, metric.label) }}</span>
         <strong>{{ metric.value }}</strong>
-        <small>{{ metric.label }}</small>
+        <small>{{ store.tr("当前读数", "Current reading") }}</small>
       </article>
     </div>
 
     <section class="panel">
       <div class="panel-title">
-        <h2>Live Trend</h2>
-        <span>{{ samples.length }} samples</span>
+        <h2>{{ store.tr("实时趋势", "Live Trend") }}</h2>
+        <span>{{ store.tr(`${samples.length} 条样本`, `${samples.length} samples`) }}</span>
       </div>
       <div ref="chartEl" class="chart"></div>
     </section>

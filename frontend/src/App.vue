@@ -13,6 +13,11 @@ const healthStatus = computed(() => String(store.health?.status ?? store.health?
 const activePath = computed(() => route.path);
 const lastUpdatedText = computed(() => store.lastUpdated ?? "--");
 
+function routeText(item: (typeof navItems)[number], zhKey: "zh" | "subZh", enKey: "en" | "subEn"): string {
+  const meta = item.meta as Record<string, unknown> | undefined;
+  return store.tr(String(meta?.[zhKey] ?? meta?.label ?? item.path), String(meta?.[enKey] ?? meta?.label ?? item.path));
+}
+
 async function login(role: string): Promise<void> {
   try {
     await store.login(role);
@@ -52,8 +57,8 @@ onBeforeUnmount(() => {
           class="nav-link"
           :class="{ active: activePath === item.path }"
         >
-          <span>{{ store.tr(String(item.meta?.zh ?? item.meta?.label), String(item.meta?.en ?? item.meta?.label)) }}</span>
-          <small>{{ store.tr(String(item.meta?.en ?? item.meta?.label), String(item.meta?.zh ?? item.meta?.label)) }}</small>
+          <span>{{ routeText(item, "zh", "en") }}</span>
+          <small>{{ routeText(item, "subZh", "subEn") }}</small>
         </RouterLink>
       </nav>
 

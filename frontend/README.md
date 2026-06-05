@@ -27,12 +27,19 @@ new HMI has parity with `static/index.html`.
   AI decision, history data, audit log, Modbus debug, and system settings.
 - `src/stores/plant.ts` centralizes backend access through Pinia. It reads
   `/health`, `/api/config/summary`, `/api/audit/logs`,
-  `/api/modbus/registers`, and `/api/recommendations/latest`.
+  `/api/modbus/registers`, and `/api/recommendations/latest`; it also persists
+  the zh/en UI language in local storage.
 - `src/views/MonitorView.vue` uses ECharts for the first migrated live trend
   panel. Live samples are loaded on demand so a fresh dev environment without
   pipeline data still opens cleanly.
+- All seven PRD route views now render their primary visible UI blocks through
+  the shared language state. Chromium verification checks both zh and en text
+  for `/#/monitor`, `/#/control`, `/#/ai`, `/#/history`, `/#/audit`,
+  `/#/modbus`, and `/#/settings`.
 - Visual smoke evidence is archived at
-  `output/playwright/prd-vue-stack-monitor-20260606.png`.
+  `output/playwright/prd-vue-stack-monitor-20260606.png`; current i18n evidence
+  is archived as `output/playwright/vue-i18n-verification.json` and
+  `output/playwright/vue-i18n-*.png`.
 
 ## Migration Rules
 
