@@ -631,7 +631,7 @@ async fn live(
         (Vec::new(), Vec::new())
     };
     let recent_events = if query.include_events.unwrap_or(true) {
-        state.db.recent_control_events(100)?
+        state.db.recent_control_events_sqlx(100).await?
     } else {
         Vec::new()
     };
@@ -679,8 +679,8 @@ async fn demo_context(
         processes: state.db.list_processes_sqlx().await?,
         recent_batches: state.db.recent_batches_sqlx(20).await?,
         recent_outcomes: state.db.recent_batch_outcomes_sqlx(20).await?,
-        recent_events: state.db.recent_control_events(100)?,
-        demo_alarms: state.db.recent_demo_alarms(20)?,
+        recent_events: state.db.recent_control_events_sqlx(100).await?,
+        demo_alarms: state.db.recent_demo_alarms_sqlx(20).await?,
         ai_memory: AiMemorySummary::from(state.ai_memory.as_ref()),
     })))
 }
@@ -1111,7 +1111,7 @@ async fn stop_process_lifecycle(
         (batch_id, runtime.targets.clone())
     };
 
-    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+    let Some(batch) = state.db.batch_by_id_sqlx(batch_id).await? else {
         return Err(AppError::not_found("active batch not found"));
     };
     if let Some(process_id) = expected_process_id {
@@ -1126,7 +1126,7 @@ async fn stop_process_lifecycle(
     let stopped_targets = process_stop_targets(state, &targets);
     stop_process_on_device(state, &stopped_targets).await?;
     state.db.finish_batch_sqlx(batch_id).await?;
-    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+    let Some(batch) = state.db.batch_by_id_sqlx(batch_id).await? else {
         return Err(AppError::not_found("stopped batch not found"));
     };
     {
@@ -1249,16 +1249,19 @@ async fn get_batch_detail(
     State(state): State<AppState>,
     Path(batch_id): Path<i64>,
 ) -> Result<Json<V1Envelope<BatchDetailResponse>>, AppError> {
-    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+    let Some(batch) = state.db.batch_by_id_sqlx(batch_id).await? else {
         return Err(AppError::not_found("batch not found"));
     };
     Ok(Json(success(BatchDetailResponse {
-        outcome: state.db.batch_outcome_by_id(batch_id)?,
+        outcome: state.db.batch_outcome_by_id_sqlx(batch_id).await?,
         samples: state
             .db
             .sample_records_for_batch_sqlx(batch_id, 480)
             .await?,
-        events: state.db.control_events_for_batch(batch_id, 100)?,
+        events: state
+            .db
+            .control_events_for_batch_sqlx(batch_id, 100)
+            .await?,
         batch,
     })))
 }
@@ -1312,15 +1315,18 @@ async fn batch_report_markdown(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&headers, Permission::ExportReports)?;
-    let Some(batch) = state.db.batch_by_id(batch_id)? else {
+    let Some(batch) = state.db.batch_by_id_sqlx(batch_id).await? else {
         return Err(AppError::not_found("batch not found"));
     };
-    let outcome = state.db.batch_outcome_by_id(batch_id)?;
+    let outcome = state.db.batch_outcome_by_id_sqlx(batch_id).await?;
     let samples = state
         .db
         .sample_records_for_batch_sqlx(batch_id, 10_000)
         .await?;
-    let events = state.db.control_events_for_batch(batch_id, 500)?;
+    let events = state
+        .db
+        .control_events_for_batch_sqlx(batch_id, 500)
+        .await?;
     let report = build_batch_report_markdown(&batch, outcome.as_ref(), &samples, &events);
     Ok((
         [

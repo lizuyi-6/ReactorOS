@@ -437,6 +437,96 @@ async fn async_file_database_batch_lifecycle_writes_use_sqlx_pool() {
 }
 
 #[tokio::test]
+async fn async_file_database_batch_detail_reads_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    let batch = db
+        .create_batch_for_process_sqlx(None, "sqlx detail", 88.5, 460.0, 32.0, 64.0)
+        .await
+        .unwrap();
+    db.insert_product_result_sqlx(&ProductResult {
+        batch_id: batch.id,
+        yield_percent: 76.5,
+        product_ratio: 0.84,
+        notes: "detail outcome".to_string(),
+    })
+    .await
+    .unwrap();
+    for index in 0..4 {
+        db.insert_control_event_sqlx(
+            Some(batch.id),
+            "sqlx_batch_detail_probe",
+            None,
+            &format!("batch event {index}"),
+        )
+        .await
+        .unwrap();
+    }
+
+    let loaded_batch = db.batch_by_id_sqlx(batch.id).await.unwrap().unwrap();
+    assert_eq!(loaded_batch.id, batch.id);
+    assert_eq!(loaded_batch.name, "sqlx detail");
+    assert_eq!(loaded_batch.target_temperature_c, 88.5);
+
+    let outcome = db
+        .batch_outcome_by_id_sqlx(batch.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(outcome.batch_id, batch.id);
+    assert_eq!(outcome.yield_percent, 76.5);
+    assert_eq!(outcome.product_ratio, 0.84);
+
+    let recent_events = db.recent_control_events_sqlx(2).await.unwrap();
+    assert_eq!(
+        recent_events
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["batch event 2", "batch event 3"]
+    );
+
+    let batch_events = db.control_events_for_batch_sqlx(batch.id, 3).await.unwrap();
+    assert_eq!(
+        batch_events
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["batch event 1", "batch event 2", "batch event 3"]
+    );
+}
+
+#[tokio::test]
+async fn async_file_database_demo_alarm_reads_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    for index in 0..3 {
+        db.insert_demo_alarm(
+            "threshold",
+            "temperature",
+            "warning",
+            &format!("demo alarm {index}"),
+            Some(80.0 + index as f64),
+            Some(90.0),
+            "inspect reactor",
+        )
+        .unwrap();
+    }
+
+    let alarms = db.recent_demo_alarms_sqlx(2).await.unwrap();
+    assert_eq!(
+        alarms
+            .iter()
+            .map(|alarm| alarm.message.as_str())
+            .collect::<Vec<_>>(),
+        vec!["demo alarm 1", "demo alarm 2"]
+    );
+    assert!(alarms.iter().all(|alarm| alarm.active));
+}
+
+#[tokio::test]
 async fn async_file_database_process_configuration_uses_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();

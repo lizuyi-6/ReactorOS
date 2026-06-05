@@ -1549,6 +1549,31 @@ impl Db {
         Ok(alarms)
     }
 
+    pub async fn recent_demo_alarms_sqlx(&self, limit: usize) -> Result<Vec<DemoAlarm>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.recent_demo_alarms(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, alarm_type, sensor, level, message, current_value, limit_value,
+                   suggestion, active, created_at
+            FROM (
+                SELECT id, alarm_type, sensor, level, message, current_value, limit_value,
+                       suggestion, active, created_at
+                FROM demo_alarms
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list demo alarms with SQLx")?;
+        rows.into_iter().map(demo_alarm_from_sqlx_row).collect()
+    }
+
     pub fn create_integration_task(
         &self,
         source: &str,
@@ -2135,6 +2160,25 @@ impl Db {
         .map_err(Into::into)
     }
 
+    pub async fn batch_by_id_sqlx(&self, batch_id: i64) -> Result<Option<Batch>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.batch_by_id(batch_id);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM batches
+            WHERE id = ?
+            "#,
+        )
+        .bind(batch_id)
+        .fetch_optional(pool)
+        .await
+        .context("failed to read batch by id with SQLx")?;
+        row.map(batch_from_sqlx_row).transpose()
+    }
+
     pub fn batch_outcome_by_id(&self, batch_id: i64) -> Result<Option<BatchOutcome>> {
         let conn = self.read_conn()?;
         conn.query_row(
@@ -2161,6 +2205,27 @@ impl Db {
         )
         .optional()
         .map_err(Into::into)
+    }
+
+    pub async fn batch_outcome_by_id_sqlx(&self, batch_id: i64) -> Result<Option<BatchOutcome>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.batch_outcome_by_id(batch_id);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
+                   b.heating_minutes, b.stirring_minutes,
+                   p.yield_percent, p.product_ratio
+            FROM batches b
+            JOIN product_results p ON p.batch_id = b.id
+            WHERE b.id = ?
+            "#,
+        )
+        .bind(batch_id)
+        .fetch_optional(pool)
+        .await
+        .context("failed to read batch outcome by id with SQLx")?;
+        row.map(batch_outcome_from_sqlx_row).transpose()
     }
 
     pub fn sample_records_for_batch(
@@ -2266,6 +2331,31 @@ impl Db {
             events.push(row?);
         }
         Ok(events)
+    }
+
+    pub async fn recent_control_events_sqlx(&self, limit: usize) -> Result<Vec<ControlEvent>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.recent_control_events(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list recent control events with SQLx")?;
+        rows.into_iter().map(control_event_from_sqlx_row).collect()
     }
 
     pub fn audit_events(
@@ -2558,6 +2648,37 @@ impl Db {
         Ok(events)
     }
 
+    pub async fn control_events_for_batch_sqlx(
+        &self,
+        batch_id: i64,
+        limit: usize,
+    ) -> Result<Vec<ControlEvent>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.control_events_for_batch(batch_id, limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                WHERE batch_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(batch_id)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list batch control events with SQLx")?;
+        rows.into_iter().map(control_event_from_sqlx_row).collect()
+    }
+
     pub fn clear_runtime_data_for_tests(&self) -> Result<()> {
         let conn = self.write_conn()?;
         conn.execute_batch(
@@ -2820,6 +2941,23 @@ fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
         created_at: parse_dt_anyhow(&created_at)?,
         previous_hash: row.try_get("previous_hash")?,
         event_hash: row.try_get("event_hash")?,
+    })
+}
+
+fn demo_alarm_from_sqlx_row(row: SqliteRow) -> Result<DemoAlarm> {
+    let created_at: String = row.try_get("created_at")?;
+    let active: i64 = row.try_get("active")?;
+    Ok(DemoAlarm {
+        id: row.try_get("id")?,
+        alarm_type: row.try_get("alarm_type")?,
+        sensor: row.try_get("sensor")?,
+        level: row.try_get("level")?,
+        message: row.try_get("message")?,
+        current_value: row.try_get("current_value")?,
+        limit_value: row.try_get("limit_value")?,
+        suggestion: row.try_get("suggestion")?,
+        active: active != 0,
+        created_at: parse_dt_anyhow(&created_at)?,
     })
 }
 
