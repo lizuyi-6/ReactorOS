@@ -1258,6 +1258,38 @@ impl Db {
         Ok(outcomes)
     }
 
+    pub async fn recent_batch_outcomes_sqlx(&self, limit: usize) -> Result<Vec<BatchOutcome>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.recent_batch_outcomes(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
+                   b.heating_minutes, b.stirring_minutes,
+                   p.yield_percent, p.product_ratio
+            FROM (
+                SELECT id, target_temperature_c, target_stirrer_rpm,
+                       heating_minutes, stirring_minutes
+                FROM batches
+                WHERE id IN (
+                    SELECT b.id
+                    FROM batches b
+                    JOIN product_results p ON p.batch_id = b.id
+                    ORDER BY b.id DESC
+                    LIMIT ?
+                )
+            ) b
+            JOIN product_results p ON p.batch_id = b.id
+            ORDER BY b.id ASC
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list recent batch outcomes with SQLx")?;
+        rows.into_iter().map(batch_outcome_from_sqlx_row).collect()
+    }
+
     pub fn recent_batches(&self, limit: usize) -> Result<Vec<Batch>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
@@ -1298,6 +1330,31 @@ impl Db {
             batches.push(row?);
         }
         Ok(batches)
+    }
+
+    pub async fn recent_batches_sqlx(&self, limit: usize) -> Result<Vec<Batch>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.recent_batches(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM (
+                SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                       target_stirrer_rpm, heating_minutes, stirring_minutes
+                FROM batches
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list recent batches with SQLx")?;
+        rows.into_iter().map(batch_from_sqlx_row).collect()
     }
 
     pub fn batch_by_id(&self, batch_id: i64) -> Result<Option<Batch>> {
@@ -1896,6 +1953,34 @@ fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
         created_at: parse_dt_anyhow(&created_at)?,
         previous_hash: row.try_get("previous_hash")?,
         event_hash: row.try_get("event_hash")?,
+    })
+}
+
+fn batch_from_sqlx_row(row: SqliteRow) -> Result<Batch> {
+    let started_at: String = row.try_get("started_at")?;
+    let finished_at: Option<String> = row.try_get("finished_at")?;
+    Ok(Batch {
+        id: row.try_get("id")?,
+        process_id: row.try_get("process_id")?,
+        name: row.try_get("name")?,
+        started_at: parse_dt_anyhow(&started_at)?,
+        finished_at: finished_at.as_deref().map(parse_dt_anyhow).transpose()?,
+        target_temperature_c: row.try_get("target_temperature_c")?,
+        target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
+        heating_minutes: row.try_get("heating_minutes")?,
+        stirring_minutes: row.try_get("stirring_minutes")?,
+    })
+}
+
+fn batch_outcome_from_sqlx_row(row: SqliteRow) -> Result<BatchOutcome> {
+    Ok(BatchOutcome {
+        batch_id: row.try_get("id")?,
+        target_temperature_c: row.try_get("target_temperature_c")?,
+        target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
+        heating_minutes: row.try_get("heating_minutes")?,
+        stirring_minutes: row.try_get("stirring_minutes")?,
+        yield_percent: row.try_get("yield_percent")?,
+        product_ratio: row.try_get("product_ratio")?,
     })
 }
 

@@ -340,6 +340,48 @@ async fn async_file_database_audit_chain_status_uses_sqlx_pool() {
     assert!(!status.verification_truncated);
 }
 
+#[tokio::test]
+async fn async_file_database_recent_batches_and_outcomes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let mut batch_ids = Vec::new();
+    for index in 0..4 {
+        let batch = db
+            .create_batch(
+                &format!("sqlx batch {index}"),
+                60.0 + index as f64,
+                300.0 + index as f64,
+                30.0,
+                60.0,
+            )
+            .unwrap();
+        db.insert_product_result(&ProductResult {
+            batch_id: batch.id,
+            yield_percent: 70.0 + index as f64,
+            product_ratio: 0.8 + (index as f64 * 0.01),
+            notes: format!("outcome {index}"),
+        })
+        .unwrap();
+        batch_ids.push(batch.id);
+    }
+
+    let batches = db.recent_batches_sqlx(2).await.unwrap();
+    assert_eq!(
+        batches.iter().map(|batch| batch.id).collect::<Vec<_>>(),
+        vec![batch_ids[2], batch_ids[3]]
+    );
+
+    let outcomes = db.recent_batch_outcomes_sqlx(2).await.unwrap();
+    assert_eq!(
+        outcomes
+            .iter()
+            .map(|outcome| outcome.batch_id)
+            .collect::<Vec<_>>(),
+        vec![batch_ids[2], batch_ids[3]]
+    );
+    assert_eq!(outcomes[1].yield_percent, 73.0);
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();

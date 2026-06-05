@@ -624,8 +624,8 @@ async fn live(
     };
     let (recent_batches, recent_outcomes) = if query.include_batches.unwrap_or(true) {
         (
-            state.db.recent_batches(20)?,
-            state.db.recent_batch_outcomes(20)?,
+            state.db.recent_batches_sqlx(20).await?,
+            state.db.recent_batch_outcomes_sqlx(20).await?,
         )
     } else {
         (Vec::new(), Vec::new())
@@ -675,8 +675,8 @@ async fn demo_context(
             .filter(|recommendation| recommendation.based_on_batch_count > 0),
         ai_provider: local_provider_for(&state),
         processes: state.db.list_processes()?,
-        recent_batches: state.db.recent_batches(20)?,
-        recent_outcomes: state.db.recent_batch_outcomes(20)?,
+        recent_batches: state.db.recent_batches_sqlx(20).await?,
+        recent_outcomes: state.db.recent_batch_outcomes_sqlx(20).await?,
         recent_events: state.db.recent_control_events(100)?,
         demo_alarms: state.db.recent_demo_alarms(20)?,
         ai_memory: AiMemorySummary::from(state.ai_memory.as_ref()),
@@ -1211,8 +1211,8 @@ async fn list_batches(
     State(state): State<AppState>,
 ) -> Result<Json<V1Envelope<BatchListResponse>>, AppError> {
     Ok(Json(success(BatchListResponse {
-        batches: state.db.recent_batches(100)?,
-        outcomes: state.db.recent_batch_outcomes(100)?,
+        batches: state.db.recent_batches_sqlx(100).await?,
+        outcomes: state.db.recent_batch_outcomes_sqlx(100).await?,
     })))
 }
 
@@ -1236,8 +1236,8 @@ async fn batches_export_csv(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&headers, Permission::ExportReports)?;
-    let batches = state.db.recent_batches(10_000)?;
-    let outcomes = state.db.recent_batch_outcomes(10_000)?;
+    let batches = state.db.recent_batches_sqlx(10_000).await?;
+    let outcomes = state.db.recent_batch_outcomes_sqlx(10_000).await?;
     let csv = build_batches_csv(&batches, &outcomes);
     Ok((
         [
@@ -1256,8 +1256,8 @@ async fn batches_export_xlsx(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&headers, Permission::ExportReports)?;
-    let batches = state.db.recent_batches(10_000)?;
-    let outcomes = state.db.recent_batch_outcomes(10_000)?;
+    let batches = state.db.recent_batches_sqlx(10_000).await?;
+    let outcomes = state.db.recent_batch_outcomes_sqlx(10_000).await?;
     let workbook = build_batches_xlsx(&batches, &outcomes)?;
     Ok((
         [
@@ -1725,7 +1725,7 @@ async fn build_experiment_plan(
     let runtime = state.runtime.read().await.clone();
     let targets = ai_targets_from_recommendation(state, &runtime, &recommendation);
     let local_ai = LocalAiStatus::from_env();
-    let recent_outcomes = state.db.recent_batch_outcomes(5)?;
+    let recent_outcomes = state.db.recent_batch_outcomes_sqlx(5).await?;
     let best_outcome = recent_outcomes.iter().max_by(|a, b| {
         ((a.yield_percent * 0.8) + (a.product_ratio * 100.0 * 0.2))
             .total_cmp(&((b.yield_percent * 0.8) + (b.product_ratio * 100.0 * 0.2)))
