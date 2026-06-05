@@ -972,14 +972,17 @@ async fn start_process_lifecycle(
         ));
     }
     let targets = targets_from_process_steps(&state.safety, &detail.steps)?;
-    let batch = state.db.create_batch_for_process(
-        Some(process_id),
-        &detail.process.name,
-        targets.temperature_c,
-        targets.stirrer_rpm,
-        seconds_to_minutes(Some(targets.heat_time_s)),
-        seconds_to_minutes(Some(targets.hold_time_s)),
-    )?;
+    let batch = state
+        .db
+        .create_batch_for_process_sqlx(
+            Some(process_id),
+            &detail.process.name,
+            targets.temperature_c,
+            targets.stirrer_rpm,
+            seconds_to_minutes(Some(targets.heat_time_s)),
+            seconds_to_minutes(Some(targets.hold_time_s)),
+        )
+        .await?;
     let start_reason = if event_type == "process_applied" {
         "process applied from persisted process definition"
     } else if event_type == "ainas_process_started" {
@@ -1006,7 +1009,7 @@ async fn start_process_lifecycle(
         ) {
             tracing::warn!("failed to persist process_start_failed audit event: {audit_err}");
         }
-        if let Err(finish_err) = state.db.finish_batch(batch.id) {
+        if let Err(finish_err) = state.db.finish_batch_sqlx(batch.id).await {
             tracing::warn!("failed to mark failed process start batch finished: {finish_err}");
         }
         return Err(err);
@@ -1062,7 +1065,7 @@ async fn rollback_failed_activation(state: &AppState, batch_id: i64) {
             runtime.auto_enabled = false;
         }
     }
-    if let Err(err) = state.db.finish_batch(batch_id) {
+    if let Err(err) = state.db.finish_batch_sqlx(batch_id).await {
         tracing::warn!("failed to mark failed activation batch finished: {err}");
     }
 }
@@ -1101,7 +1104,7 @@ async fn stop_process_lifecycle(
 
     let stopped_targets = process_stop_targets(state, &targets);
     stop_process_on_device(state, &stopped_targets).await?;
-    state.db.finish_batch(batch_id)?;
+    state.db.finish_batch_sqlx(batch_id).await?;
     let Some(batch) = state.db.batch_by_id(batch_id)? else {
         return Err(AppError::not_found("stopped batch not found"));
     };
@@ -2336,14 +2339,17 @@ async fn start_batch(
     let heating_minutes = round2(payload.heating_minutes.unwrap_or(60.0));
     let stirring_minutes = round2(payload.stirring_minutes.unwrap_or(60.0));
     let name = payload.name.unwrap_or_else(|| "batch".to_string());
-    let batch = state.db.create_batch_for_process(
-        payload.process_id,
-        &name,
-        target_temperature_c,
-        target_stirrer_rpm,
-        heating_minutes,
-        stirring_minutes,
-    )?;
+    let batch = state
+        .db
+        .create_batch_for_process_sqlx(
+            payload.process_id,
+            &name,
+            target_temperature_c,
+            target_stirrer_rpm,
+            heating_minutes,
+            stirring_minutes,
+        )
+        .await?;
     {
         let mut runtime = state.runtime.write().await;
         runtime.active_batch_id = Some(batch.id);
@@ -2384,7 +2390,7 @@ async fn finish_batch(
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
     require_permission(&headers, Permission::StartStopProcess)?;
-    state.db.finish_batch(batch_id)?;
+    state.db.finish_batch_sqlx(batch_id).await?;
     {
         let mut runtime = state.runtime.write().await;
         if runtime.active_batch_id == Some(batch_id) {

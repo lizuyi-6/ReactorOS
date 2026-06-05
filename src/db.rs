@@ -567,6 +567,56 @@ impl Db {
         })
     }
 
+    pub async fn create_batch_for_process_sqlx(
+        &self,
+        process_id: Option<i64>,
+        name: &str,
+        target_temperature_c: f64,
+        target_stirrer_rpm: f64,
+        heating_minutes: f64,
+        stirring_minutes: f64,
+    ) -> Result<Batch> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.create_batch_for_process(
+                process_id,
+                name,
+                target_temperature_c,
+                target_stirrer_rpm,
+                heating_minutes,
+                stirring_minutes,
+            );
+        };
+        let now = Utc::now();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO batches
+                (process_id, name, started_at, target_temperature_c, target_stirrer_rpm, heating_minutes, stirring_minutes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(process_id)
+        .bind(name)
+        .bind(now.to_rfc3339())
+        .bind(target_temperature_c)
+        .bind(target_stirrer_rpm)
+        .bind(heating_minutes)
+        .bind(stirring_minutes)
+        .execute(pool)
+        .await
+        .context("failed to create batch with SQLx")?;
+        Ok(Batch {
+            id: result.last_insert_rowid(),
+            process_id,
+            name: name.to_string(),
+            started_at: now,
+            finished_at: None,
+            target_temperature_c,
+            target_stirrer_rpm,
+            heating_minutes,
+            stirring_minutes,
+        })
+    }
+
     pub fn create_process(&self, name: &str, description: &str) -> Result<ProcessDefinition> {
         let now = Utc::now();
         let conn = self.write_conn()?;
@@ -751,6 +801,19 @@ impl Db {
             "UPDATE batches SET finished_at = ?1 WHERE id = ?2 AND finished_at IS NULL",
             params![Utc::now().to_rfc3339(), batch_id],
         )?;
+        Ok(())
+    }
+
+    pub async fn finish_batch_sqlx(&self, batch_id: i64) -> Result<()> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.finish_batch(batch_id);
+        };
+        sqlx::query("UPDATE batches SET finished_at = ? WHERE id = ? AND finished_at IS NULL")
+            .bind(Utc::now().to_rfc3339())
+            .bind(batch_id)
+            .execute(pool)
+            .await
+            .context("failed to finish batch with SQLx")?;
         Ok(())
     }
 

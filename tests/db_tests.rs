@@ -383,6 +383,31 @@ async fn async_file_database_recent_batches_and_outcomes_use_sqlx_pool() {
 }
 
 #[tokio::test]
+async fn async_file_database_batch_lifecycle_writes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let process = db
+        .create_process("sqlx lifecycle process", "batch lifecycle parent")
+        .unwrap();
+
+    let batch = db
+        .create_batch_for_process_sqlx(Some(process.id), "sqlx lifecycle", 82.5, 440.0, 36.0, 58.0)
+        .await
+        .unwrap();
+    assert_eq!(batch.process_id, Some(process.id));
+    assert!(batch.finished_at.is_none());
+
+    db.finish_batch_sqlx(batch.id).await.unwrap();
+
+    let batches = db.recent_batches_sqlx(1).await.unwrap();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].id, batch.id);
+    assert_eq!(batches[0].process_id, Some(process.id));
+    assert_eq!(batches[0].target_temperature_c, 82.5);
+    assert!(batches[0].finished_at.is_some());
+}
+
+#[tokio::test]
 async fn async_file_database_all_batch_outcomes_use_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
