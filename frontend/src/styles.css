@@ -31,6 +31,11 @@ select {
     #0b1117;
 }
 
+.app-shell > .el-container,
+.content {
+  min-width: 0;
+}
+
 .sidebar {
   border-right: 1px solid #223142;
   background: #101821;
@@ -156,6 +161,8 @@ select {
 .view-stack {
   display: grid;
   gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
 }
 
 .view-heading {
@@ -178,7 +185,7 @@ select {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -193,12 +200,14 @@ select {
 .metric {
   display: grid;
   gap: 6px;
+  min-width: 0;
   padding: 18px;
 }
 
 .metric span,
 .metric small {
   color: #94a3b8;
+  overflow-wrap: anywhere;
 }
 
 .metric strong {
@@ -263,21 +272,25 @@ select {
 }
 
 .control-form,
-.modbus-form {
+.modbus-form,
+.audit-filter-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .control-form .el-form-item,
-.modbus-form .el-form-item {
+.modbus-form .el-form-item,
+.audit-filter-form .el-form-item {
   margin-bottom: 0;
 }
 
 .control-form .el-input-number,
 .modbus-form .el-input-number,
 .modbus-form .el-select,
-.modbus-form .el-input {
+.modbus-form .el-input,
+.audit-filter-form .el-input-number,
+.audit-filter-form .el-select {
   width: 100%;
 }
 
@@ -343,6 +356,51 @@ select {
   font-size: 22px;
 }
 
+.audit-toolbar {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(280px, .8fr);
+  gap: 18px;
+  align-items: end;
+}
+
+.audit-window-note {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #223142;
+  border-radius: 8px;
+  background: #0d141c;
+}
+
+.audit-window-note strong {
+  color: #f8fafc;
+}
+
+.audit-window-note span,
+.audit-window-note small {
+  min-width: 0;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+}
+
+.hash-cell {
+  display: inline-block;
+  max-width: 128px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.table-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
 .data-table {
   width: 100%;
   overflow: hidden;
@@ -375,6 +433,7 @@ select {
   .view-heading,
   .control-panel,
   .modbus-debug-panel,
+  .audit-toolbar,
   .two-col {
     display: block;
   }
@@ -399,6 +458,7 @@ select {
 
   .control-form,
   .modbus-form,
+  .audit-filter-form,
   .switch-grid {
     grid-template-columns: 1fr;
   }

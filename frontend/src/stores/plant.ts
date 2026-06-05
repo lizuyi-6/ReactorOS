@@ -24,6 +24,12 @@ interface RequestOptions {
   allowFailure?: boolean;
 }
 
+interface AuditQueryOptions {
+  page?: number;
+  pageSize?: number;
+  eventType?: string;
+}
+
 interface LoginResponse {
   token: string;
   user: {
@@ -141,6 +147,40 @@ export const usePlantStore = defineStore("plant", () => {
     return unwrapData<T>(payload);
   }
 
+  async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
+    const headers = new Headers();
+    headers.set("Accept", "text/csv");
+    if (options.body !== undefined) headers.set("Content-Type", "application/json");
+    if (options.auth !== false && token.value) headers.set("Authorization", `Bearer ${token.value}`);
+
+    const response = await fetch(path, {
+      method: options.method ?? (options.body === undefined ? "GET" : "POST"),
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let payload: unknown = text;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = { message: text };
+      }
+      throw new Error(errorMessage(payload, `${response.status} ${response.statusText}`));
+    }
+    return response.blob();
+  }
+
+  function auditQueryPath(basePath: string, options: AuditQueryOptions = {}): string {
+    const params = new URLSearchParams();
+    if (options.page !== undefined) params.set("page", String(options.page));
+    if (options.pageSize !== undefined) params.set("page_size", String(options.pageSize));
+    if (options.eventType?.trim()) params.set("event_type", options.eventType.trim());
+    const query = params.toString();
+    return query ? `${basePath}?${query}` : basePath;
+  }
+
   async function login(nextRole = "operator", password = rolePasswords[nextRole] ?? ""): Promise<void> {
     const payload = await request<LoginResponse>("/api/auth/login", {
       method: "POST",
@@ -184,7 +224,7 @@ export const usePlantStore = defineStore("plant", () => {
     if (!token.value) return;
     const [configPayload, auditPayload, modbusPayload, recommendationPayload] = await Promise.all([
       request<ApiRecord>("/api/config/summary"),
-      request<ApiRecord>("/api/audit/logs?limit=8"),
+      request<ApiRecord>("/api/audit/logs?page=1&page_size=8"),
       request<ApiRecord>("/api/modbus/registers"),
       request<ApiRecord>("/api/recommendations/latest")
     ]);
@@ -264,6 +304,16 @@ export const usePlantStore = defineStore("plant", () => {
     return response;
   }
 
+  async function loadAudit(options: AuditQueryOptions = {}): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(auditQueryPath("/api/audit/logs", options));
+    audit.value = response;
+    return response;
+  }
+
+  async function exportAuditCsv(eventType = ""): Promise<Blob> {
+    return requestBlob(auditQueryPath("/api/audit/export.csv", { eventType }));
+  }
+
   return {
     token,
     user,
@@ -296,6 +346,8 @@ export const usePlantStore = defineStore("plant", () => {
     triggerEmergencyStop,
     resetEmergencyStop,
     readModbusRegister,
-    writeModbusRegister
+    writeModbusRegister,
+    loadAudit,
+    exportAuditCsv
   };
 });
