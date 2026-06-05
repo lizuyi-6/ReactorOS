@@ -145,21 +145,24 @@ pub(crate) async fn apply_modbus_register_write(
         let mut runtime = state.runtime.write().await;
         runtime.targets = targets.clone();
     }
-    state.db.insert_control_event(
-        None,
-        "modbus_register_write",
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: reason.clone(),
-        }),
-        &reason,
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "modbus_register_write",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: reason.clone(),
+            }),
+            &reason,
+        )
+        .await?;
     Ok(json!({
         "register": register,
         "address": address,

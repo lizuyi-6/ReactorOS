@@ -240,21 +240,24 @@ async fn apply_ainas_targets(
         "AINAS task changed desired targets",
         240,
     );
-    state.db.insert_control_event(
-        None,
-        "ainas_targets_updated",
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: reason.clone(),
-        }),
-        &reason,
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "ainas_targets_updated",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: reason.clone(),
+            }),
+            &reason,
+        )
+        .await?;
     Ok(targets)
 }
 

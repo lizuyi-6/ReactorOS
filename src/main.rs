@@ -179,12 +179,15 @@ async fn control_loop(
                     Ok(()) => {
                         last_written_command = Some(fingerprint);
                         retry_after = None;
-                        if let Err(err) = db.insert_control_event(
-                            active_batch_id,
-                            "device_write",
-                            Some(&command),
-                            &command.reason,
-                        ) {
+                        if let Err(err) = db
+                            .insert_control_event_sqlx(
+                                active_batch_id,
+                                "device_write",
+                                Some(&command),
+                                &command.reason,
+                            )
+                            .await
+                        {
                             tracing::warn!("failed to persist control event: {err}");
                         }
                     }

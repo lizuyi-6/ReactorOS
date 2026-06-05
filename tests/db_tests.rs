@@ -341,6 +341,35 @@ async fn async_file_database_audit_chain_status_uses_sqlx_pool() {
 }
 
 #[tokio::test]
+async fn async_file_database_audit_writes_use_sqlx_pool_without_breaking_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Arc::new(Db::open(dir.path().join("reactor.sqlite3")).unwrap());
+    let mut tasks = Vec::new();
+    for index in 0..20 {
+        let db = Arc::clone(&db);
+        tasks.push(tokio::spawn(async move {
+            db.insert_control_event_sqlx(
+                None,
+                "sqlx_audit_write_probe",
+                None,
+                &format!("event {index}"),
+            )
+            .await
+        }));
+    }
+    for task in tasks {
+        task.await.unwrap().unwrap();
+    }
+
+    let status = db.audit_chain_status_sqlx().await.unwrap();
+    assert_eq!(status.total_hashed_events, 20);
+    assert_eq!(status.checked_events, 20);
+    assert_eq!(status.chained_events, 20);
+    assert_eq!(status.broken_events, 0);
+    assert!(status.valid);
+}
+
+#[tokio::test]
 async fn async_file_database_recent_batches_and_outcomes_use_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();

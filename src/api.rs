@@ -836,7 +836,8 @@ async fn create_process(
     let process = state.db.create_process(&name, &description)?;
     state
         .db
-        .insert_control_event(None, "process_created", None, "operator created process")?;
+        .insert_control_event_sqlx(None, "process_created", None, "operator created process")
+        .await?;
     Ok(Json(success(process)))
 }
 
@@ -871,7 +872,8 @@ async fn update_process(
     };
     state
         .db
-        .insert_control_event(None, "process_updated", None, "operator updated process")?;
+        .insert_control_event_sqlx(None, "process_updated", None, "operator updated process")
+        .await?;
     Ok(Json(success(process)))
 }
 
@@ -886,12 +888,15 @@ async fn add_process_step(
     let Some(step) = state.db.add_process_step(process_id, &step)? else {
         return Err(AppError::not_found("process not found"));
     };
-    state.db.insert_control_event(
-        None,
-        "process_step_added",
-        None,
-        "operator added process step",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "process_step_added",
+            None,
+            "operator added process step",
+        )
+        .await?;
     Ok(Json(success(step)))
 }
 
@@ -906,12 +911,15 @@ async fn update_process_step(
     let Some(step) = state.db.update_process_step(process_id, step_id, &step)? else {
         return Err(AppError::not_found("process step not found"));
     };
-    state.db.insert_control_event(
-        None,
-        "process_step_updated",
-        None,
-        "operator updated process step",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "process_step_updated",
+            None,
+            "operator updated process step",
+        )
+        .await?;
     Ok(Json(success(step)))
 }
 
@@ -992,21 +1000,25 @@ async fn start_process_lifecycle(
     };
     if let Err(err) = start_process_on_device(state, &targets).await {
         let error_message = err.message().to_string();
-        if let Err(audit_err) = state.db.insert_control_event(
-            Some(batch.id),
-            "process_start_failed",
-            Some(&SafeCommand {
-                target_temperature_c: targets.temperature_c,
-                heat_time_s: targets.heat_time_s,
-                hold_time_s: targets.hold_time_s,
-                cool_time_s: targets.cool_time_s,
-                target_stirrer_rpm: targets.stirrer_rpm,
-                target_shake_speed_cpm: targets.shake_speed_cpm,
-                target_pressure_mpa: targets.target_pressure_mpa,
-                reason: format!("process start failed before activation: {error_message}"),
-            }),
-            "process start failed before activation",
-        ) {
+        if let Err(audit_err) = state
+            .db
+            .insert_control_event_sqlx(
+                Some(batch.id),
+                "process_start_failed",
+                Some(&SafeCommand {
+                    target_temperature_c: targets.temperature_c,
+                    heat_time_s: targets.heat_time_s,
+                    hold_time_s: targets.hold_time_s,
+                    cool_time_s: targets.cool_time_s,
+                    target_stirrer_rpm: targets.stirrer_rpm,
+                    target_shake_speed_cpm: targets.shake_speed_cpm,
+                    target_pressure_mpa: targets.target_pressure_mpa,
+                    reason: format!("process start failed before activation: {error_message}"),
+                }),
+                "process start failed before activation",
+            )
+            .await
+        {
             tracing::warn!("failed to persist process_start_failed audit event: {audit_err}");
         }
         if let Err(finish_err) = state.db.finish_batch_sqlx(batch.id).await {
@@ -1020,21 +1032,25 @@ async fn start_process_lifecycle(
         runtime.active_batch_id = Some(batch.id);
         runtime.auto_enabled = true;
     }
-    if let Err(err) = state.db.insert_control_event(
-        Some(batch.id),
-        event_type,
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: start_reason.to_string(),
-        }),
-        start_reason,
-    ) {
+    if let Err(err) = state
+        .db
+        .insert_control_event_sqlx(
+            Some(batch.id),
+            event_type,
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: start_reason.to_string(),
+            }),
+            start_reason,
+        )
+        .await
+    {
         rollback_failed_activation(state, batch.id).await;
         return Err(err.into());
     }
@@ -1115,21 +1131,24 @@ async fn stop_process_lifecycle(
         }
         runtime.auto_enabled = false;
     }
-    state.db.insert_control_event(
-        Some(batch_id),
-        event_type,
-        Some(&SafeCommand {
-            target_temperature_c: stopped_targets.temperature_c,
-            heat_time_s: stopped_targets.heat_time_s,
-            hold_time_s: stopped_targets.hold_time_s,
-            cool_time_s: stopped_targets.cool_time_s,
-            target_stirrer_rpm: stopped_targets.stirrer_rpm,
-            target_shake_speed_cpm: stopped_targets.shake_speed_cpm,
-            target_pressure_mpa: stopped_targets.target_pressure_mpa,
-            reason: stop_process_reason(event_type).to_string(),
-        }),
-        stop_process_reason(event_type),
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            Some(batch_id),
+            event_type,
+            Some(&SafeCommand {
+                target_temperature_c: stopped_targets.temperature_c,
+                heat_time_s: stopped_targets.heat_time_s,
+                hold_time_s: stopped_targets.hold_time_s,
+                cool_time_s: stopped_targets.cool_time_s,
+                target_stirrer_rpm: stopped_targets.stirrer_rpm,
+                target_shake_speed_cpm: stopped_targets.shake_speed_cpm,
+                target_pressure_mpa: stopped_targets.target_pressure_mpa,
+                reason: stop_process_reason(event_type).to_string(),
+            }),
+            stop_process_reason(event_type),
+        )
+        .await?;
     Ok(ProcessStopResponse {
         stopped_batch_id: batch_id,
         process_id: batch.process_id,
@@ -1442,12 +1461,15 @@ async fn execute_component_control(
         .as_ref()
         .and_then(|outcome| outcome.targets.clone())
         .unwrap_or_else(|| safe_command_from_runtime_targets(&runtime.targets, &audit_reason));
-    state.db.insert_control_event(
-        runtime.active_batch_id,
-        event_type,
-        Some(&audit_command),
-        &audit_reason,
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            runtime.active_batch_id,
+            event_type,
+            Some(&audit_command),
+            &audit_reason,
+        )
+        .await?;
 
     Ok(ComponentControlResponse {
         device_id: device_id.to_string(),
@@ -1680,12 +1702,16 @@ async fn ai_control(
             .as_ref()
             .map(|targets| safe_command_from_runtime_targets(targets, "AI master decision"));
         let audit_reason = ai_control_audit_reason(&decision, &rationale, &actions)?;
-        state.db.insert_control_event(
-            state.runtime.read().await.active_batch_id,
-            "ai_master_decision",
-            audit_command.as_ref(),
-            &audit_reason,
-        )?;
+        let active_batch_id = state.runtime.read().await.active_batch_id;
+        state
+            .db
+            .insert_control_event_sqlx(
+                active_batch_id,
+                "ai_master_decision",
+                audit_command.as_ref(),
+                &audit_reason,
+            )
+            .await?;
     }
 
     Ok(Json(success(AiControlResponse {
@@ -1933,7 +1959,8 @@ async fn apply_ai_targets(
     }
     state
         .db
-        .insert_control_event(None, "ai_targets_updated", Some(&command), reason)?;
+        .insert_control_event_sqlx(None, "ai_targets_updated", Some(&command), reason)
+        .await?;
     Ok(())
 }
 
@@ -2060,21 +2087,25 @@ async fn v1_control(
         }
     }
 
-    if let Err(err) = state.db.insert_control_event(
-        batch_id,
-        "v1_control_accepted",
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: "v1 control request accepted after document range validation".to_string(),
-        }),
-        "v1 control request accepted after document range validation",
-    ) {
+    if let Err(err) = state
+        .db
+        .insert_control_event_sqlx(
+            batch_id,
+            "v1_control_accepted",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: "v1 control request accepted after document range validation".to_string(),
+            }),
+            "v1 control request accepted after document range validation",
+        )
+        .await
+    {
         rollback_v1_auto_start_activation(&state, batch_id).await;
         return Err(err.into());
     }
@@ -2283,21 +2314,24 @@ async fn v1_process(
         let mut runtime = state.runtime.write().await;
         runtime.targets = targets.clone();
     }
-    state.db.insert_control_event(
-        None,
-        "v1_process_loaded",
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: "v1 process accepted after document range validation".to_string(),
-        }),
-        "v1 process accepted after document range validation",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "v1_process_loaded",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: "v1 process accepted after document range validation".to_string(),
+            }),
+            "v1 process accepted after document range validation",
+        )
+        .await?;
 
     Ok(Json(success(json!({
         "process_id": payload.process_id,
@@ -2366,21 +2400,24 @@ async fn start_batch(
             },
         );
     }
-    state.db.insert_control_event(
-        Some(batch.id),
-        "batch_started",
-        Some(&SafeCommand {
-            target_temperature_c: batch.target_temperature_c,
-            heat_time_s: batch.heating_minutes * 60.0,
-            hold_time_s: batch.stirring_minutes * 60.0,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: batch.target_stirrer_rpm,
-            target_shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: "batch started and runtime targets updated".to_string(),
-        }),
-        "batch started and runtime targets updated",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            Some(batch.id),
+            "batch_started",
+            Some(&SafeCommand {
+                target_temperature_c: batch.target_temperature_c,
+                heat_time_s: batch.heating_minutes * 60.0,
+                hold_time_s: batch.stirring_minutes * 60.0,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: batch.target_stirrer_rpm,
+                target_shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: "batch started and runtime targets updated".to_string(),
+            }),
+            "batch started and runtime targets updated",
+        )
+        .await?;
     Ok(Json(batch))
 }
 
@@ -2399,7 +2436,8 @@ async fn finish_batch(
     }
     state
         .db
-        .insert_control_event(Some(batch_id), "batch_finished", None, "batch finished")?;
+        .insert_control_event_sqlx(Some(batch_id), "batch_finished", None, "batch finished")
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2428,12 +2466,15 @@ async fn product_results(
             notes: payload.notes.unwrap_or_default(),
         })
         .await?;
-    state.db.insert_control_event(
-        Some(payload.batch_id),
-        "product_result_recorded",
-        None,
-        "product result saved; recommendation regeneration queued",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            Some(payload.batch_id),
+            "product_result_recorded",
+            None,
+            "product result saved; recommendation regeneration queued",
+        )
+        .await?;
     let recommendation = generate_recommendation(&state).await?;
     state.db.insert_recommendation_sqlx(&recommendation).await?;
     Ok(Json(recommendation_envelope(&state, recommendation).await))
@@ -2449,16 +2490,19 @@ async fn set_auto(
         let mut runtime = state.runtime.write().await;
         runtime.auto_enabled = payload.enabled;
     }
-    state.db.insert_control_event(
-        None,
-        if payload.enabled {
-            "auto_enabled"
-        } else {
-            "auto_disabled"
-        },
-        None,
-        "operator changed automatic control state",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            if payload.enabled {
+                "auto_enabled"
+            } else {
+                "auto_disabled"
+            },
+            None,
+            "operator changed automatic control state",
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2472,16 +2516,19 @@ async fn set_manual_lock(
         let mut runtime = state.runtime.write().await;
         runtime.manual_lock = payload.locked;
     }
-    state.db.insert_control_event(
-        None,
-        if payload.locked {
-            "manual_lock_on"
-        } else {
-            "manual_lock_off"
-        },
-        None,
-        "operator changed manual lock state",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            if payload.locked {
+                "manual_lock_on"
+            } else {
+                "manual_lock_off"
+            },
+            None,
+            "operator changed manual lock state",
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2508,21 +2555,24 @@ async fn set_targets(
         let mut runtime = state.runtime.write().await;
         runtime.targets = targets.clone();
     }
-    state.db.insert_control_event(
-        None,
-        "operator_targets_updated",
-        Some(&SafeCommand {
-            target_temperature_c: targets.temperature_c,
-            heat_time_s: targets.heat_time_s,
-            hold_time_s: targets.hold_time_s,
-            cool_time_s: targets.cool_time_s,
-            target_stirrer_rpm: targets.stirrer_rpm,
-            target_shake_speed_cpm: targets.shake_speed_cpm,
-            target_pressure_mpa: targets.target_pressure_mpa,
-            reason: "operator target request after safety clamp".to_string(),
-        }),
-        "operator changed desired targets; values clamped to configured safety limits",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "operator_targets_updated",
+            Some(&SafeCommand {
+                target_temperature_c: targets.temperature_c,
+                heat_time_s: targets.heat_time_s,
+                hold_time_s: targets.hold_time_s,
+                cool_time_s: targets.cool_time_s,
+                target_stirrer_rpm: targets.stirrer_rpm,
+                target_shake_speed_cpm: targets.shake_speed_cpm,
+                target_pressure_mpa: targets.target_pressure_mpa,
+                reason: "operator target request after safety clamp".to_string(),
+            }),
+            "operator changed desired targets; values clamped to configured safety limits",
+        )
+        .await?;
     Ok(Json(targets))
 }
 
@@ -2536,12 +2586,15 @@ async fn emergency_stop(
         runtime.emergency_stop = true;
         runtime.auto_enabled = false;
     }
-    state.db.insert_control_event(
-        None,
-        "emergency_stop",
-        None,
-        "operator triggered emergency stop; automatic control disabled",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "emergency_stop",
+            None,
+            "operator triggered emergency stop; automatic control disabled",
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -2554,12 +2607,15 @@ async fn reset_emergency_stop(
         let mut runtime = state.runtime.write().await;
         runtime.emergency_stop = false;
     }
-    state.db.insert_control_event(
-        None,
-        "emergency_stop_reset",
-        None,
-        "operator reset emergency stop flag",
-    )?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "emergency_stop_reset",
+            None,
+            "operator reset emergency stop flag",
+        )
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -26,6 +26,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow},
     Row,
 };
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
 
@@ -223,6 +224,7 @@ struct DbInner {
     next_read: AtomicUsize,
     encryption: Option<DbEncryption>,
     sqlx_pool: Option<sqlx::SqlitePool>,
+    audit_write_lock: AsyncMutex<()>,
 }
 
 enum DbConnectionGuard<'a> {
@@ -477,6 +479,7 @@ impl Db {
                 next_read: AtomicUsize::new(0),
                 encryption,
                 sqlx_pool,
+                audit_write_lock: AsyncMutex::new(()),
             }),
         }
     }
@@ -1125,6 +1128,73 @@ impl Db {
                 event_hash
             ],
         )?;
+        Ok(())
+    }
+
+    pub async fn insert_control_event_sqlx(
+        &self,
+        batch_id: Option<i64>,
+        event_type: &str,
+        command: Option<&SafeCommand>,
+        reason: &str,
+    ) -> Result<()> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_control_event(batch_id, event_type, command, reason);
+        };
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let created_at = Utc::now().to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin audit insert transaction with SQLx")?;
+        let previous_hash: Option<String> = sqlx::query_scalar(
+            r#"
+            SELECT event_hash
+            FROM control_events
+            WHERE event_hash IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .context("failed to read previous audit hash with SQLx")?;
+        let target_temperature_c = command.map(|cmd| cmd.target_temperature_c);
+        let target_stirrer_rpm = command.map(|cmd| cmd.target_stirrer_rpm);
+        let target_shake_speed_cpm = command.map(|cmd| cmd.target_shake_speed_cpm);
+        let event_hash = control_event_hash(
+            previous_hash.as_deref(),
+            batch_id,
+            event_type,
+            target_temperature_c,
+            target_stirrer_rpm,
+            target_shake_speed_cpm,
+            reason,
+            &created_at,
+        )?;
+        sqlx::query(
+            r#"
+            INSERT INTO control_events
+                (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
+                 reason, created_at, previous_hash, event_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(batch_id)
+        .bind(event_type)
+        .bind(target_temperature_c)
+        .bind(target_stirrer_rpm)
+        .bind(target_shake_speed_cpm)
+        .bind(reason)
+        .bind(created_at)
+        .bind(previous_hash)
+        .bind(event_hash)
+        .execute(&mut *tx)
+        .await
+        .context("failed to insert audit event with SQLx")?;
+        tx.commit()
+            .await
+            .context("failed to commit audit insert transaction with SQLx")?;
         Ok(())
     }
 
