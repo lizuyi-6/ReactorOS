@@ -1,9 +1,16 @@
 use std::{
     env,
+    io::Read,
     path::{Path, PathBuf},
+    process::{Command, Stdio},
+    thread,
+    time::Duration,
 };
 
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use wait_timeout::ChildExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalAiStatus {
@@ -41,10 +48,42 @@ struct LocalAiConfig {
     rk_report: Option<PathBuf>,
 }
 
+pub struct LocalAiInferenceRequest {
+    pub prompt: String,
+    pub max_tokens: u32,
+    pub timeout: Duration,
+}
+
+pub struct LocalAiTrainingRequest {
+    pub dataset: Option<PathBuf>,
+    pub output_dir: Option<PathBuf>,
+    pub dry_run: bool,
+    pub timeout: Duration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalAiCommandReport {
+    pub status: LocalAiStatus,
+    pub program: String,
+    pub args: Vec<String>,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub parsed_stdout: Option<Value>,
+}
+
 impl LocalAiStatus {
     pub fn from_env() -> Self {
         LocalAiConfig::from_env().status()
     }
+}
+
+pub fn run_inference_from_env(request: LocalAiInferenceRequest) -> Result<LocalAiCommandReport> {
+    LocalAiConfig::from_env().run_inference(request)
+}
+
+pub fn run_training_from_env(request: LocalAiTrainingRequest) -> Result<LocalAiCommandReport> {
+    LocalAiConfig::from_env().run_training(request)
 }
 
 impl LocalAiConfig {
@@ -123,6 +162,192 @@ impl LocalAiConfig {
             missing,
         }
     }
+
+    fn run_inference(&self, request: LocalAiInferenceRequest) -> Result<LocalAiCommandReport> {
+        let program = self.required_path("XINGSHU_LOCAL_AI_BIN", &self.inference_bin)?;
+        let model = self.required_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)?;
+        self.ensure_enabled("local AI inference")?;
+        if request.prompt.trim().is_empty() {
+            return Err(anyhow!("local AI inference prompt must not be empty"));
+        }
+        let mut args = vec![
+            "-m".to_string(),
+            model.display().to_string(),
+            "-p".to_string(),
+            request.prompt,
+            "-n".to_string(),
+            request.max_tokens.max(1).to_string(),
+        ];
+        if let Some(lora) = self.lora_adapter.as_ref().filter(|path| path.is_file()) {
+            args.push("--lora".to_string());
+            args.push(lora.display().to_string());
+        }
+        self.run_command(program, args, request.timeout)
+    }
+
+    fn run_training(&self, request: LocalAiTrainingRequest) -> Result<LocalAiCommandReport> {
+        self.ensure_enabled("local LoRA training")?;
+        let program = self.required_path("XINGSHU_LOCAL_AI_TRAIN_SCRIPT", &self.training_script)?;
+        let model = self.required_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)?;
+        let conversion =
+            self.required_path("XINGSHU_LOCAL_AI_CONVERT_SCRIPT", &self.conversion_script)?;
+        let mut args = vec![
+            "--model".to_string(),
+            model.display().to_string(),
+            "--convert-script".to_string(),
+            conversion.display().to_string(),
+        ];
+        if let Some(lora) = self.lora_adapter.as_ref().filter(|path| path.is_file()) {
+            args.push("--lora".to_string());
+            args.push(lora.display().to_string());
+        }
+        if let Some(dataset) = request.dataset {
+            args.push("--dataset".to_string());
+            args.push(dataset.display().to_string());
+        }
+        if let Some(output_dir) = request.output_dir {
+            args.push("--output-dir".to_string());
+            args.push(output_dir.display().to_string());
+        }
+        if request.dry_run {
+            args.push("--dry-run".to_string());
+        }
+        self.run_command(program, args, request.timeout)
+    }
+
+    fn run_command(
+        &self,
+        program: PathBuf,
+        args: Vec<String>,
+        timeout: Duration,
+    ) -> Result<LocalAiCommandReport> {
+        let mut command = Command::new(&program);
+        command
+            .args(&args)
+            .env("XINGSHU_LOCAL_AI_RUNTIME", &self.runtime)
+            .env("XINGSHU_LOCAL_AI_MODEL_FAMILY", &self.model_family)
+            .env_path("XINGSHU_LOCAL_AI_BIN", &self.inference_bin)
+            .env_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)
+            .env_path("XINGSHU_LOCAL_AI_LORA", &self.lora_adapter)
+            .env_path("XINGSHU_LOCAL_AI_TRAIN_SCRIPT", &self.training_script)
+            .env_path("XINGSHU_LOCAL_AI_CONVERT_SCRIPT", &self.conversion_script)
+            .env_path("XINGSHU_LOCAL_AI_RK_REPORT", &self.rk_report)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command
+            .spawn()
+            .with_context(|| format!("failed to start local AI command {}", program.display()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .map(read_pipe_on_thread)
+            .ok_or_else(|| anyhow!("local AI command stdout was not captured"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .map(read_pipe_on_thread)
+            .ok_or_else(|| anyhow!("local AI command stderr was not captured"))?;
+        let status = match child.wait_timeout(timeout)? {
+            Some(status) => status,
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let stdout = join_reader(stdout)?;
+                let stderr = join_reader(stderr)?;
+                return Err(anyhow!(
+                    "local AI command exceeded timeout of {}ms: {}\nstdout: {}\nstderr: {}",
+                    timeout.as_millis(),
+                    program.display(),
+                    truncate(&stdout),
+                    truncate(&stderr)
+                ));
+            }
+        };
+        let stdout = join_reader(stdout)?;
+        let stderr = join_reader(stderr)?;
+        let parsed_stdout = serde_json::from_str(stdout.trim()).ok();
+        let report = LocalAiCommandReport {
+            status: self.status(),
+            program: program.display().to_string(),
+            args,
+            exit_code: status.code(),
+            stdout,
+            stderr,
+            parsed_stdout,
+        };
+        if !status.success() {
+            return Err(anyhow!(
+                "local AI command exited with {status}: {}\nstdout: {}\nstderr: {}",
+                report.program,
+                truncate(&report.stdout),
+                truncate(&report.stderr)
+            ));
+        }
+        Ok(report)
+    }
+
+    fn required_path(&self, name: &'static str, path: &Option<PathBuf>) -> Result<PathBuf> {
+        match path {
+            Some(path) if path.is_file() => Ok(path.clone()),
+            Some(path) => Err(anyhow!(
+                "{name} is configured but is not a readable file: {}",
+                path.display()
+            )),
+            None => Err(anyhow!(
+                "local AI assets are not ready; missing local AI asset: {name}"
+            )),
+        }
+    }
+
+    fn ensure_enabled(&self, action: &str) -> Result<()> {
+        if self.enabled {
+            Ok(())
+        } else {
+            Err(anyhow!(
+                "{action} is disabled; set XINGSHU_LOCAL_AI_ENABLED=true"
+            ))
+        }
+    }
+}
+
+trait CommandEnvPathExt {
+    fn env_path(&mut self, name: &str, path: &Option<PathBuf>) -> &mut Self;
+}
+
+impl CommandEnvPathExt for Command {
+    fn env_path(&mut self, name: &str, path: &Option<PathBuf>) -> &mut Self {
+        if let Some(path) = path {
+            self.env(name, path);
+        }
+        self
+    }
+}
+
+fn read_pipe_on_thread<T>(mut pipe: T) -> thread::JoinHandle<std::io::Result<String>>
+where
+    T: Read + Send + 'static,
+{
+    thread::spawn(move || {
+        let mut output = String::new();
+        pipe.read_to_string(&mut output)?;
+        Ok(output)
+    })
+}
+
+fn join_reader(handle: thread::JoinHandle<std::io::Result<String>>) -> Result<String> {
+    handle
+        .join()
+        .map_err(|_| anyhow!("local AI command output reader panicked"))?
+        .map_err(Into::into)
+}
+
+fn truncate(value: &str) -> String {
+    const LIMIT: usize = 2000;
+    if value.len() <= LIMIT {
+        return value.to_string();
+    }
+    format!("{}...<truncated>", &value[..LIMIT])
 }
 
 fn merge_inference_status(

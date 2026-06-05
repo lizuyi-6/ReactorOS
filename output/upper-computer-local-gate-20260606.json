@@ -1,0 +1,291 @@
+{
+  "generated_at": "2026-06-05T16:59:32.110Z",
+  "generated_at_local": "2026/06/06 00:59:32",
+  "time_zone": "Asia/Shanghai",
+  "baseUrl": "http://127.0.0.1:8000/",
+  "reportPath": "X:\\tianhks\\output\\upper-computer-local-gate-20260606.json",
+  "summary": {
+    "passed": 7,
+    "failed": 0,
+    "status": "passed"
+  },
+  "checks": [
+    {
+      "name": "health endpoint",
+      "status": "passed",
+      "elapsed_ms": 27,
+      "detail": {
+        "ok": true,
+        "service": "reactor-edge-daemon"
+      }
+    },
+    {
+      "name": "web hmi shell and i18n controls",
+      "status": "passed",
+      "elapsed_ms": 10,
+      "detail": {
+        "bytes": 385076,
+        "markers": [
+          "langToggleBtn",
+          "monitor",
+          "modbus",
+          "reactoros.lang",
+          "uiText"
+        ]
+      }
+    },
+    {
+      "name": "local bearer login and role permissions",
+      "status": "passed",
+      "elapsed_ms": 11,
+      "detail": {
+        "operator": {
+          "role": "operator",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "export_reports",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop"
+          ]
+        },
+        "engineer": {
+          "role": "engineer",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "view_audit",
+            "export_reports",
+            "edit_process",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop",
+            "modbus_debug"
+          ]
+        },
+        "admin": {
+          "role": "admin",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "view_audit",
+            "export_reports",
+            "edit_process",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop",
+            "modbus_debug",
+            "edit_system_config",
+            "delete_data",
+            "manage_users"
+          ]
+        }
+      }
+    },
+    {
+      "name": "config summary delivery surface",
+      "status": "passed",
+      "elapsed_ms": 3,
+      "detail": {
+        "device_mode": "pipeline",
+        "storage_encryption": {
+          "algorithm": "AES-256-GCM",
+          "enabled": true,
+          "encrypted_fields": [
+            "integration_tasks.request_json",
+            "integration_tasks.response_json"
+          ],
+          "key_source": "XINGSHU_DB_ENCRYPTION_KEY"
+        },
+        "integrations": {
+          "ainas_ready": true,
+          "ainas_task_api": true,
+          "cli": true,
+          "json_bridge": false,
+          "modbus_rtu": false,
+          "modbus_tcp": false,
+          "modbus_tcp_status": {
+            "bind": "0.0.0.0:502",
+            "enabled": false,
+            "last_error": null,
+            "listening": false,
+            "require_tls": true,
+            "tls_status": "configured",
+            "unit_id": 1,
+            "updated_at": "2026-06-05T16:14:17.545842500Z"
+          },
+          "mqtt": false,
+          "mqtt_status": {
+            "alert_interval_s": 5,
+            "alert_topic": "xingshu/reactor_001/alerts",
+            "broker": "127.0.0.1:8883",
+            "ca_cert_configured": true,
+            "client_cert_configured": true,
+            "client_id": "xingshu-reactor-001",
+            "connected": false,
+            "enabled": false,
+            "last_alert_active_count": 0,
+            "last_alert_at": null,
+            "last_error": null,
+            "last_task_id": null,
+            "receipt_topic": "xingshu/reactor_001/task_receipts",
+            "status_topic": "xingshu/reactor_001/status",
+            "task_topic": "xingshu/reactor_001/tasks",
+            "updated_at": "2026-06-05T16:14:17.545568300Z",
+            "use_tls": true
+          },
+          "rest_api": true
+        },
+        "local_ai": {
+          "conversion": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_CONVERT_SCRIPT to the GGUF conversion entrypoint",
+            "path": null
+          },
+          "enabled": false,
+          "inference": {
+            "available": false,
+            "configured": false,
+            "detail": "inference binary and GGUF model are missing",
+            "path": null
+          },
+          "lora_adapter": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_LORA to the LoRA adapter file",
+            "path": null
+          },
+          "missing": [
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT"
+          ],
+          "model_family": "Qwen3.5-2B",
+          "ready_for_inference": false,
+          "ready_for_training": false,
+          "rk_validation": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_RK_REPORT to the RK latency validation report",
+            "path": null
+          },
+          "runtime": "llama.cpp",
+          "training": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_TRAIN_SCRIPT to the PEFT/LoRA training entrypoint",
+            "path": null
+          }
+        }
+      }
+    },
+    {
+      "name": "modbus map read/write shape",
+      "status": "passed",
+      "elapsed_ms": 4,
+      "detail": {
+        "read_registers": 8,
+        "write_registers": 7,
+        "coils": 4,
+        "discrete_inputs": 5
+      }
+    },
+    {
+      "name": "visual i18n audit evidence",
+      "status": "passed",
+      "elapsed_ms": 2,
+      "detail": {
+        "report": "output\\visual-i18n\\upper-computer-i18n-audit-20260605.json",
+        "pageCount": 18,
+        "expectedDataPipeline503Count": 13
+      }
+    },
+    {
+      "name": "required upper-computer delivery documents",
+      "status": "passed",
+      "elapsed_ms": 1,
+      "detail": {
+        "count": 17,
+        "files": [
+          {
+            "file": "docs/upper_computer_development_doc.md",
+            "bytes": 17529
+          },
+          {
+            "file": "docs/upper_computer_user_manual.md",
+            "bytes": 9221
+          },
+          {
+            "file": "docs/upper_computer_test_report.md",
+            "bytes": 18625
+          },
+          {
+            "file": "docs/upper_computer_gap_status.md",
+            "bytes": 10958
+          },
+          {
+            "file": "docs/upper_computer_requirement_gap_matrix.md",
+            "bytes": 19002
+          },
+          {
+            "file": "docs/upper_computer_api_acceptance_manual.md",
+            "bytes": 10578
+          },
+          {
+            "file": "docs/upper_computer_cli_reference.md",
+            "bytes": 5986
+          },
+          {
+            "file": "docs/upper_computer_maintenance_manual.md",
+            "bytes": 6204
+          },
+          {
+            "file": "docs/upper_computer_modbus_register_map.md",
+            "bytes": 4988
+          },
+          {
+            "file": "docs/upper_computer_rk_deployment_acceptance_guide.md",
+            "bytes": 5891
+          },
+          {
+            "file": "docs/upper_computer_security_key_lifecycle.md",
+            "bytes": 6025
+          },
+          {
+            "file": "docs/upper_computer_external_acceptance_checklist.md",
+            "bytes": 9465
+          },
+          {
+            "file": "docs/upper_computer_visual_evidence_index.md",
+            "bytes": 8011
+          },
+          {
+            "file": "docs/upper_computer_delivery_readiness_index.md",
+            "bytes": 6679
+          },
+          {
+            "file": "docs/upper_computer_training_material_plan.md",
+            "bytes": 6115
+          },
+          {
+            "file": "docs/architecture-deviations.md",
+            "bytes": 10529
+          },
+          {
+            "file": "docs/third_party_interface_acceptance_report.md",
+            "bytes": 7788
+          }
+        ]
+      }
+    }
+  ]
+}

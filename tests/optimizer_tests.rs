@@ -52,7 +52,7 @@ fn recommendation_stays_inside_configured_bounds() {
             rec.expected_score,
         ]);
         assert_eq!(rec.based_on_batch_count, 4);
-        assert!(rec.rationale.contains("GA/SA/PID"));
+        assert!(rec.rationale.contains("GA/SA/trend-correction"));
     }
 }
 

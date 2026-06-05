@@ -13,7 +13,7 @@
 | Base URL | `http://127.0.0.1:8000`，生产可改为 HTTPS |
 | 健康检查 | `GET /health` |
 | 数据格式 | JSON；导出类接口返回 CSV/XLSX/Markdown |
-| 认证 | 写入、审计、权限、集成和控制类接口使用 bearer session |
+| 认证 | 写入、审计、权限、集成、控制类接口以及 v1 实时数据/实时 WebSocket 使用 bearer session |
 | 登录入口 | `POST /api/auth/login` |
 | Token 使用 | `Authorization: Bearer <token>` |
 | 默认角色 | `operator`、`engineer`、`admin` |
@@ -53,9 +53,9 @@
 | `GET` | `/api/devices/capabilities` | 设备能力摘要 | 本地通过 |
 | `GET` | `/api/v1/devices/capabilities` | 文档版设备能力接口 | 本地通过 |
 | `POST` | `/api/v1/reactor/:device_id/samples` | 外部管线上行传感器样本 | 本地通过；`xingshu data sample` 复用该入口 |
-| `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据 | 本地通过 |
+| `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据，需 `Authorization: Bearer <token>` 且具备监控权限 | 本地通过 |
 | `GET` | `/api/v1/reactor/:device_id/history` | 文档版历史数据 | 本地通过 |
-| `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket | 本地具备；需浏览器/第三方验收 |
+| `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket，需 `Authorization: Bearer <token>` 且具备监控权限 | 本地具备；需浏览器/第三方验收 |
 
 ## 4. 控制和工艺流程
 
@@ -107,7 +107,8 @@
 
 | 方法 | 路径 | 用途 | 当前状态 |
 | --- | --- | --- | --- |
-| `GET` | `/api/recommendations/latest` | 获取最新 AI/优化器建议 | 本地通过 |
+| `GET` | `/api/recommendations/latest` | 读取最新已缓存 AI/优化器建议，不触发模型调用或写库 | 本地通过 |
+| `POST` | `/api/recommendations/latest` | 生成并持久化最新 AI/优化器建议 | 本地通过 |
 | `GET` | `/api/ai/experiment-plan` | 只读实验 SOP 草案 | 本地通过 |
 | `GET` | `/api/v1/ai/experiment-plan` | 文档版只读实验 SOP 草案 | 本地通过 |
 | `GET` | `/api/config/summary` | 返回 `local_ai.ready_for_inference` 和 `ready_for_training` | 本地通过 |
@@ -145,7 +146,7 @@
 | --- | --- | --- | --- |
 | `GET` | `/api/modbus/registers` | 返回读/写寄存器、coils、discrete inputs、TCP 状态 | 本地通过 |
 | `GET` | `/api/modbus/registers/:name/read` | 读取一个映射点位 | 本地通过 |
-| `POST` | `/api/modbus/registers/:name/write` | 写一个可写点位 | 本地通过；写入走安全链路 |
+| `POST` | `/api/modbus/registers/:name/write` | 写一个可写点位 | 本地通过；HTTP 调试写入口仅允许 admin bearer session，且请求体必须提供非空 `reason`，写入走安全链路和审计 |
 
 寄存器详细表见 `docs/upper_computer_modbus_register_map.md`。外部 Modbus Poll/Slave 验收仍需补齐。
 

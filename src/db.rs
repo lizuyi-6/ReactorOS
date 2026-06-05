@@ -30,6 +30,7 @@ const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
 const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
 const DB_ENCRYPTION_AAD: &[u8] = b"xingshu:integration_tasks:json:v1";
+const AUDIT_CHAIN_CHECK_LIMIT: usize = 10_000;
 
 #[derive(Clone)]
 pub struct Db {
@@ -120,11 +121,17 @@ pub struct ControlEvent {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AuditChainStatus {
+    pub total_hashed_events: usize,
     pub checked_events: usize,
     pub chained_events: usize,
     pub broken_events: usize,
+    pub window_valid: bool,
     pub valid: bool,
     pub last_event_hash: Option<String>,
+    pub checked_from_event_id: Option<i64>,
+    pub checked_to_event_id: Option<i64>,
+    pub verification_limit: usize,
+    pub verification_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -423,52 +430,37 @@ impl Db {
         )?;
         create_indexes(&conn)?;
         let has_legacy_pressure_kpa = column_exists(&conn, "sensor_samples", "pressure_kpa")?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "pressure_mpa",
-            "REAL NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "shake_speed_cpm",
-            "REAL NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "tilt_angle_deg",
-            "REAL NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "tilt_state",
-            "INTEGER NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "flow_rate_l_min",
-            "REAL NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(
-            &conn,
-            "sensor_samples",
-            "product_concentration_percent",
-            "REAL NOT NULL DEFAULT 0",
-        )?;
-        add_column_if_missing(&conn, "sensor_samples", "ph", "REAL NOT NULL DEFAULT 7")?;
-        add_column_if_missing(&conn, "control_events", "target_shake_speed_cpm", "REAL")?;
-        add_column_if_missing(&conn, "control_events", "previous_hash", "TEXT")?;
-        add_column_if_missing(&conn, "control_events", "event_hash", "TEXT")?;
-        add_column_if_missing(
-            &conn,
-            "batches",
-            "process_id",
-            "INTEGER REFERENCES processes(id)",
-        )?;
+        for migration in [
+            ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
+            (
+                "sensor_samples",
+                "shake_speed_cpm",
+                "REAL NOT NULL DEFAULT 0",
+            ),
+            (
+                "sensor_samples",
+                "tilt_angle_deg",
+                "REAL NOT NULL DEFAULT 0",
+            ),
+            ("sensor_samples", "tilt_state", "INTEGER NOT NULL DEFAULT 0"),
+            (
+                "sensor_samples",
+                "flow_rate_l_min",
+                "REAL NOT NULL DEFAULT 0",
+            ),
+            (
+                "sensor_samples",
+                "product_concentration_percent",
+                "REAL NOT NULL DEFAULT 0",
+            ),
+            ("sensor_samples", "ph", "REAL NOT NULL DEFAULT 7"),
+            ("control_events", "target_shake_speed_cpm", "REAL"),
+            ("control_events", "previous_hash", "TEXT"),
+            ("control_events", "event_hash", "TEXT"),
+            ("batches", "process_id", "INTEGER REFERENCES processes(id)"),
+        ] {
+            add_column_if_missing(&conn, migration.0, migration.1, migration.2)?;
+        }
         if has_legacy_pressure_kpa {
             conn.execute(
                 "UPDATE sensor_samples SET pressure_mpa = pressure_kpa / 1000.0 WHERE pressure_mpa = 0 AND pressure_kpa > 0",
@@ -764,25 +756,30 @@ impl Db {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT temperature_c, pressure_mpa, stirrer_rpm,
+            SELECT id, temperature_c, pressure_mpa, stirrer_rpm,
                    shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
-            FROM sensor_samples
-            ORDER BY id DESC
-            LIMIT ?1
+            FROM (
+                SELECT id, temperature_c, pressure_mpa, stirrer_rpm,
+                       shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                FROM sensor_samples
+                ORDER BY id DESC
+                LIMIT ?1
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
-            let captured_at: String = row.get(9)?;
+            let captured_at: String = row.get(10)?;
             Ok(SensorSnapshot {
-                temperature_c: row.get(0)?,
-                pressure_mpa: row.get(1)?,
-                stirrer_rpm: row.get(2)?,
-                shake_speed_cpm: row.get(3)?,
-                tilt_state: row.get(4)?,
-                tilt_angle_deg: row.get(5)?,
-                flow_rate_l_min: row.get(6)?,
-                product_concentration_percent: row.get(7)?,
-                ph: row.get(8)?,
+                temperature_c: row.get(1)?,
+                pressure_mpa: row.get(2)?,
+                stirrer_rpm: row.get(3)?,
+                shake_speed_cpm: row.get(4)?,
+                tilt_state: row.get(5)?,
+                tilt_angle_deg: row.get(6)?,
+                flow_rate_l_min: row.get(7)?,
+                product_concentration_percent: row.get(8)?,
+                ph: row.get(9)?,
                 captured_at: parse_dt(&captured_at)?,
             })
         })?;
@@ -791,7 +788,6 @@ impl Db {
         for row in rows {
             samples.push(row?);
         }
-        samples.reverse();
         Ok(samples)
     }
 
@@ -799,27 +795,32 @@ impl Db {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+            SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
                    shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
-            FROM sensor_samples
-            ORDER BY id DESC
-            LIMIT ?1
+            FROM (
+                SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                       shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                FROM sensor_samples
+                ORDER BY id DESC
+                LIMIT ?1
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
-            let captured_at: String = row.get(10)?;
+            let captured_at: String = row.get(11)?;
             Ok(SensorSampleRecord {
-                batch_id: row.get(0)?,
+                batch_id: row.get(1)?,
                 sample: SensorSnapshot {
-                    temperature_c: row.get(1)?,
-                    pressure_mpa: row.get(2)?,
-                    stirrer_rpm: row.get(3)?,
-                    shake_speed_cpm: row.get(4)?,
-                    tilt_state: row.get(5)?,
-                    tilt_angle_deg: row.get(6)?,
-                    flow_rate_l_min: row.get(7)?,
-                    product_concentration_percent: row.get(8)?,
-                    ph: row.get(9)?,
+                    temperature_c: row.get(2)?,
+                    pressure_mpa: row.get(3)?,
+                    stirrer_rpm: row.get(4)?,
+                    shake_speed_cpm: row.get(5)?,
+                    tilt_state: row.get(6)?,
+                    tilt_angle_deg: row.get(7)?,
+                    flow_rate_l_min: row.get(8)?,
+                    product_concentration_percent: row.get(9)?,
+                    ph: row.get(10)?,
                     captured_at: parse_dt(&captured_at)?,
                 },
             })
@@ -829,7 +830,6 @@ impl Db {
         for row in rows {
             samples.push(row?);
         }
-        samples.reverse();
         Ok(samples)
     }
 
@@ -979,9 +979,14 @@ impl Db {
             r#"
             SELECT id, alarm_type, sensor, level, message, current_value, limit_value,
                    suggestion, active, created_at
-            FROM demo_alarms
-            ORDER BY id DESC
-            LIMIT ?1
+            FROM (
+                SELECT id, alarm_type, sensor, level, message, current_value, limit_value,
+                       suggestion, active, created_at
+                FROM demo_alarms
+                ORDER BY id DESC
+                LIMIT ?1
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
@@ -1004,7 +1009,6 @@ impl Db {
         for row in rows {
             alarms.push(row?);
         }
-        alarms.reverse();
         Ok(alarms)
     }
 
@@ -1209,10 +1213,20 @@ impl Db {
             SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
                    b.heating_minutes, b.stirring_minutes,
                    p.yield_percent, p.product_ratio
-            FROM batches b
+            FROM (
+                SELECT id, target_temperature_c, target_stirrer_rpm,
+                       heating_minutes, stirring_minutes
+                FROM batches
+                WHERE id IN (
+                    SELECT b.id
+                    FROM batches b
+                    JOIN product_results p ON p.batch_id = b.id
+                    ORDER BY b.id DESC
+                    LIMIT ?1
+                )
+            ) b
             JOIN product_results p ON p.batch_id = b.id
-            ORDER BY b.id DESC
-            LIMIT ?1
+            ORDER BY b.id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
@@ -1240,9 +1254,14 @@ impl Db {
             r#"
             SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
                    target_stirrer_rpm, heating_minutes, stirring_minutes
-            FROM batches
-            ORDER BY id DESC
-            LIMIT ?1
+            FROM (
+                SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                       target_stirrer_rpm, heating_minutes, stirring_minutes
+                FROM batches
+                ORDER BY id DESC
+                LIMIT ?1
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
@@ -1340,28 +1359,33 @@ impl Db {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
             r#"
-            SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+            SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
                    shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
-            FROM sensor_samples
-            WHERE batch_id = ?1
-            ORDER BY id DESC
-            LIMIT ?2
+            FROM (
+                SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                       shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                FROM sensor_samples
+                WHERE batch_id = ?1
+                ORDER BY id DESC
+                LIMIT ?2
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map(params![batch_id, limit as i64], |row| {
-            let captured_at: String = row.get(10)?;
+            let captured_at: String = row.get(11)?;
             Ok(SensorSampleRecord {
-                batch_id: row.get(0)?,
+                batch_id: row.get(1)?,
                 sample: SensorSnapshot {
-                    temperature_c: row.get(1)?,
-                    pressure_mpa: row.get(2)?,
-                    stirrer_rpm: row.get(3)?,
-                    shake_speed_cpm: row.get(4)?,
-                    tilt_state: row.get(5)?,
-                    tilt_angle_deg: row.get(6)?,
-                    flow_rate_l_min: row.get(7)?,
-                    product_concentration_percent: row.get(8)?,
-                    ph: row.get(9)?,
+                    temperature_c: row.get(2)?,
+                    pressure_mpa: row.get(3)?,
+                    stirrer_rpm: row.get(4)?,
+                    shake_speed_cpm: row.get(5)?,
+                    tilt_state: row.get(6)?,
+                    tilt_angle_deg: row.get(7)?,
+                    flow_rate_l_min: row.get(8)?,
+                    product_concentration_percent: row.get(9)?,
+                    ph: row.get(10)?,
                     captured_at: parse_dt(&captured_at)?,
                 },
             })
@@ -1371,7 +1395,6 @@ impl Db {
         for row in rows {
             samples.push(row?);
         }
-        samples.reverse();
         Ok(samples)
     }
 
@@ -1381,9 +1404,14 @@ impl Db {
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
                    target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
-            FROM control_events
-            ORDER BY id DESC
-            LIMIT ?1
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                ORDER BY id DESC
+                LIMIT ?1
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], control_event_from_row)?;
@@ -1461,22 +1489,41 @@ impl Db {
 
     pub fn audit_chain_status(&self) -> Result<AuditChainStatus> {
         let conn = self.read_conn()?;
+        let total_hashed_events: usize = conn.query_row(
+            "SELECT COUNT(*) FROM control_events WHERE event_hash IS NOT NULL",
+            [],
+            |row| row.get::<_, i64>(0),
+        )? as usize;
+        let verification_truncated = total_hashed_events > AUDIT_CHAIN_CHECK_LIMIT;
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
                    target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
-            FROM control_events
-            WHERE event_hash IS NOT NULL
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                WHERE event_hash IS NOT NULL
+                ORDER BY id DESC
+                LIMIT ?1
+            )
             ORDER BY id ASC
             "#,
         )?;
-        let rows = stmt.query_map([], control_event_from_row)?;
+        let rows = stmt.query_map([AUDIT_CHAIN_CHECK_LIMIT as i64], control_event_from_row)?;
         let mut checked_events = 0usize;
         let mut broken_events = 0usize;
         let mut previous: Option<String> = None;
         let mut last_event_hash = None;
+        let mut checked_from_event_id = None;
+        let mut checked_to_event_id = None;
         for row in rows {
             let event = row?;
+            checked_from_event_id.get_or_insert(event.id);
+            checked_to_event_id = Some(event.id);
+            if checked_events == 0 && verification_truncated {
+                previous = event.previous_hash.clone();
+            }
             checked_events += 1;
             let expected = control_event_hash(
                 previous.as_deref(),
@@ -1494,12 +1541,74 @@ impl Db {
             previous = event.event_hash.clone();
             last_event_hash = event.event_hash;
         }
+        let window_valid = broken_events == 0;
         Ok(AuditChainStatus {
+            total_hashed_events,
             checked_events,
             chained_events: checked_events.saturating_sub(broken_events),
             broken_events,
-            valid: broken_events == 0,
+            window_valid,
+            valid: window_valid && !verification_truncated,
             last_event_hash,
+            checked_from_event_id,
+            checked_to_event_id,
+            verification_limit: AUDIT_CHAIN_CHECK_LIMIT,
+            verification_truncated,
+        })
+    }
+
+    pub fn full_audit_chain_status_for_diagnostics(&self) -> Result<AuditChainStatus> {
+        let conn = self.read_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+            FROM control_events
+            WHERE event_hash IS NOT NULL
+            ORDER BY id ASC
+            "#,
+        )?;
+        let rows = stmt.query_map([], control_event_from_row)?;
+        let mut checked_events = 0usize;
+        let mut broken_events = 0usize;
+        let mut previous: Option<String> = None;
+        let mut last_event_hash = None;
+        let mut checked_from_event_id = None;
+        let mut checked_to_event_id = None;
+        for row in rows {
+            let event = row?;
+            checked_from_event_id.get_or_insert(event.id);
+            checked_to_event_id = Some(event.id);
+            checked_events += 1;
+            let expected = control_event_hash(
+                previous.as_deref(),
+                event.batch_id,
+                &event.event_type,
+                event.target_temperature_c,
+                event.target_stirrer_rpm,
+                event.target_shake_speed_cpm,
+                &event.reason,
+                &event.created_at.to_rfc3339(),
+            )?;
+            if event.previous_hash != previous || event.event_hash.as_deref() != Some(&expected) {
+                broken_events += 1;
+            }
+            previous = event.event_hash.clone();
+            last_event_hash = event.event_hash;
+        }
+        let window_valid = broken_events == 0;
+        Ok(AuditChainStatus {
+            total_hashed_events: checked_events,
+            checked_events,
+            chained_events: checked_events.saturating_sub(broken_events),
+            broken_events,
+            window_valid,
+            valid: window_valid,
+            last_event_hash,
+            checked_from_event_id,
+            checked_to_event_id,
+            verification_limit: checked_events,
+            verification_truncated: false,
         })
     }
 
@@ -1513,10 +1622,15 @@ impl Db {
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
                    target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
-            FROM control_events
-            WHERE batch_id = ?1
-            ORDER BY id DESC
-            LIMIT ?2
+            FROM (
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                WHERE batch_id = ?1
+                ORDER BY id DESC
+                LIMIT ?2
+            )
+            ORDER BY id ASC
             "#,
         )?;
         let rows = stmt.query_map(params![batch_id, limit as i64], control_event_from_row)?;
@@ -1582,6 +1696,13 @@ impl Db {
             .lock()
             .map(DbConnectionGuard::Read)
             .map_err(|_| anyhow::anyhow!("database read lock poisoned"))
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn break_control_events_for_tests(&self) -> Result<()> {
+        let conn = self.write_conn()?;
+        conn.execute("DROP TABLE control_events", [])?;
+        Ok(())
     }
 
     fn serialize_sensitive_json(&self, value: &Value) -> Result<String> {
@@ -1814,6 +1935,8 @@ fn create_indexes(conn: &Connection) -> Result<()> {
             ON sensor_samples(batch_id, id);
         CREATE INDEX IF NOT EXISTS idx_control_events_batch_id_id
             ON control_events(batch_id, id);
+        CREATE INDEX IF NOT EXISTS idx_control_events_hashed_id
+            ON control_events(id) WHERE event_hash IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_process_steps_process_index
             ON process_steps(process_id, step_index);
         CREATE INDEX IF NOT EXISTS idx_product_results_batch_id

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::SafetyConfig,
+    number::round2,
     state::{ControlTargets, SensorSnapshot},
 };
 
@@ -184,8 +185,4 @@ fn clamp_step(current: f64, desired: f64, min: f64, max: f64, max_step: f64) -> 
     let bounded = desired.clamp(min, max);
     let delta = (bounded - current).clamp(-max_step, max_step);
     (current + delta).clamp(min, max)
-}
-
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
 }

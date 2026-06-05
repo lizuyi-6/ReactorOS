@@ -1,4 +1,13 @@
-use std::process::Command;
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+    time::{Duration, Instant},
+};
+
+use reactor_edge_daemon::{
+    config::load_safety_config, control::SafetyGuardRequest, safety_guard::evaluate_with_process,
+    state::ControlTargets,
+};
 
 fn xingshu() -> Command {
     Command::new(env!("CARGO_BIN_EXE_xingshu"))
@@ -10,6 +19,25 @@ fn daemon() -> Command {
 
 fn safety_guard() -> Command {
     Command::new(env!("CARGO_BIN_EXE_reactor-safety-guard"))
+}
+
+#[cfg(windows)]
+fn write_slow_guard_script(dir: &Path) -> PathBuf {
+    let path = dir.join("slow-guard.cmd");
+    std::fs::write(&path, "@echo off\r\nping -n 6 127.0.0.1 >NUL\r\n").unwrap();
+    path
+}
+
+#[cfg(unix)]
+fn write_slow_guard_script(dir: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join("slow-guard.sh");
+    std::fs::write(&path, "#!/bin/sh\nsleep 5\n").unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    path
 }
 
 #[test]
@@ -143,11 +171,22 @@ fn daemon_rejects_unpaired_tls_options() {
 
 #[test]
 fn safety_guard_cli_clamps_targets_through_external_process() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let safety_path = temp_dir.path().join("safety.toml");
+    let safety = std::fs::read_to_string("config/safety.toml")
+        .unwrap()
+        .replace(
+            "safety_guard_timeout_ms = 1000",
+            "safety_guard_timeout_ms = 10000",
+        );
+    std::fs::write(&safety_path, safety).unwrap();
     let output = xingshu()
         .args([
             "--json",
             "safety",
             "check",
+            "--safety",
+            safety_path.to_str().unwrap(),
             "--temp",
             "999",
             "--rpm",
@@ -169,6 +208,35 @@ fn safety_guard_cli_clamps_targets_through_external_process() {
     assert_eq!(value["targets"]["stirrer_rpm"], 1200.0);
     assert_eq!(value["targets"]["shake_speed_cpm"], 60.0);
     assert_eq!(value["targets"]["target_pressure_mpa"], 10.0);
+}
+
+#[test]
+fn safety_guard_external_process_timeout_returns_before_slow_guard_finishes() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let guard = write_slow_guard_script(temp_dir.path());
+    let request = SafetyGuardRequest::ClampTargets {
+        safety: load_safety_config("config/safety.toml").unwrap(),
+        targets: ControlTargets {
+            temperature_c: 80.0,
+            heat_time_s: 300.0,
+            hold_time_s: 600.0,
+            cool_time_s: 180.0,
+            stirrer_rpm: 500.0,
+            shake_speed_cpm: 30.0,
+            target_pressure_mpa: 0.5,
+        },
+    };
+
+    let started_at = Instant::now();
+    let err = evaluate_with_process(&guard, &request, Duration::from_millis(100)).unwrap_err();
+
+    assert!(err
+        .to_string()
+        .contains("safety guard process exceeded timeout of 100ms"));
+    assert!(
+        started_at.elapsed() < Duration::from_secs(3),
+        "timeout should return before the slow guard script finishes"
+    );
 }
 
 #[test]

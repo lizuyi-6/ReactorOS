@@ -13,6 +13,7 @@ use reactor_edge_daemon::{
     db::Db,
     local_ai::LocalAiStatus,
     mqtt::load_integration_config,
+    number::{round1, round2, round3},
     safety_guard::evaluate_with_process,
     state::ControlTargets,
 };
@@ -687,20 +688,8 @@ fn demo_pipeline_sample(index: usize) -> Value {
         "tilt_state": if index % 2 == 0 { 1 } else { 0 },
         "flow_rate_l_min": round3(2.42 + (phase * 0.13).sin() * 0.08),
         "product_concentration_percent": round1(11.0 + phase * 0.04),
-        "ph": round2_value(6.15 + (phase * 0.09).cos() * 0.05)
+        "ph": round2(6.15 + (phase * 0.09).cos() * 0.05)
     })
-}
-
-fn round1(value: f64) -> f64 {
-    (value * 10.0).round() / 10.0
-}
-
-fn round2_value(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
-}
-
-fn round3(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
 }
 
 async fn control(
@@ -842,7 +831,7 @@ async fn ai(
         AiCommand::Suggest => {
             let value = request_json(
                 client,
-                Method::GET,
+                Method::POST,
                 api,
                 "/api/recommendations/latest",
                 None,
@@ -1061,6 +1050,7 @@ fn safety_guard_check(args: &SafetyArgs) -> Result<CommandOutput> {
             guard,
         } => {
             let safety_config = load_safety_config(safety)?;
+            let safety_guard_timeout_ms = safety_config.control.safety_guard_timeout_ms;
             let guard_path = if guard == &PathBuf::from("reactor-safety-guard") {
                 sibling_executable("reactor-safety-guard")?
             } else {
@@ -1078,7 +1068,11 @@ fn safety_guard_check(args: &SafetyArgs) -> Result<CommandOutput> {
                     target_pressure_mpa: *pressure,
                 },
             };
-            let response = evaluate_with_process(&guard_path, &request)?;
+            let response = evaluate_with_process(
+                &guard_path,
+                &request,
+                std::time::Duration::from_millis(safety_guard_timeout_ms),
+            )?;
             let SafetyGuardResponse::ClampedTargets(targets) = response else {
                 return Err(anyhow!(
                     "safety guard returned a non-clamp response for clamp request"
@@ -1169,6 +1163,7 @@ async fn perf(client: &Client, api: &str, args: &PerfArgs) -> Result<CommandOutp
             }
 
             let safety_config = load_safety_config(safety)?;
+            let safety_guard_timeout_ms = safety_config.control.safety_guard_timeout_ms;
             let guard_path = if guard == &PathBuf::from("reactor-safety-guard") {
                 sibling_executable("reactor-safety-guard")?
             } else {
@@ -1211,7 +1206,11 @@ async fn perf(client: &Client, api: &str, args: &PerfArgs) -> Result<CommandOutp
             let mut guard_samples = Vec::with_capacity(iterations);
             for _ in 0..iterations {
                 let started = Instant::now();
-                let response = evaluate_with_process(&guard_path, &guard_request)?;
+                let response = evaluate_with_process(
+                    &guard_path,
+                    &guard_request,
+                    std::time::Duration::from_millis(safety_guard_timeout_ms),
+                )?;
                 let elapsed_ms = started.elapsed().as_millis() as u64;
                 let SafetyGuardResponse::ClampedTargets(_) = response else {
                     return Err(anyhow!("safety guard returned a non-clamp response"));

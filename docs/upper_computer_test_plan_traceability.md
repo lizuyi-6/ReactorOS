@@ -13,7 +13,7 @@
 
 | PRD 测试项 | PRD 要求 | 当前证据 | 当前结论 | 还缺什么 |
 | --- | --- | --- | --- | --- |
-| 8.1 单元测试 | 所有函数与方法，`cargo test`，覆盖率 > 90% | `api_tests`、`cli_tests`、`db_tests`、`control_tests`、`config_tests`、`optimizer_tests` 等已运行过目标测试；结果见 `docs/upper_computer_test_report.md` | 部分完成 | 还缺正式覆盖率报告和全量测试一次性通过记录 |
+| 8.1 单元测试 | 所有函数与方法，`cargo test`，覆盖率 > 90% | `cargo test --all-targets -- --nocapture --test-threads=1` 已通过；结果见 `docs/upper_computer_test_report.md` | 部分完成 | 还缺正式覆盖率报告 |
 | 8.2 集成测试 | Modbus、AI、安全过滤器、第三方集成接口 | REST API、AINAS、MQTT payload、Modbus TCP PDU、safety guard、AI SOP 草案已有自动化/本地证据 | 部分完成 | 还缺真实 STM32 RTU、外部 MQTT broker、Modbus Poll/Slave、AINAS 真实平台 |
 | 8.3 系统测试 | 所有功能性需求与非功能性需求 | Web HMI、CLI、REST、RBAC、审计、导出、中英切换和本地样本流已验证 | 部分完成 | 非功能项、硬件闭环、真实 LoRA、用户验收尚未全量完成 |
 | 8.4 性能测试 | 数据采集延迟、AI 推理延迟、安全控制响应、资源占用、RS485 丢包率 | `output/upper-computer-perf-smoke.json`、`output/upper-computer-resource-snapshot.json` | 本地冒烟完成 | 缺 STM32/RS485 <100ms、RK LoRA <3s、release/RK 稳态 CPU/内存、RS485 丢包率、7x24/30 天报告 |

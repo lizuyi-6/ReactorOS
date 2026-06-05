@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
-    config::OptimizerBounds, db::BatchOutcome, memory::AiMemory, optimizer::Recommendation,
+    config::OptimizerBounds, db::BatchOutcome, memory::AiMemory, number::round2,
+    optimizer::Recommendation,
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.stepfun.com/v1";
@@ -12,6 +13,8 @@ const DEFAULT_MODEL: &str = "step-3.6";
 const DEFAULT_REASONING_EFFORT: &str = "medium";
 const DEFAULT_API_TYPE: StepFunApiType = StepFunApiType::ChatCompletions;
 const STEPFUN_MAX_ATTEMPTS: usize = 3;
+const STEPFUN_RETRY_BASE_MS: u64 = 300;
+const STEPFUN_RETRY_MAX_MS: u64 = 5_000;
 
 #[derive(Clone)]
 pub struct AiProvider {
@@ -95,6 +98,10 @@ struct ModelRecommendation {
 impl AiProvider {
     pub fn from_env() -> Result<Option<Self>> {
         let config = AiProviderConfig::from_env();
+        Self::from_config(config)
+    }
+
+    pub fn from_config(config: AiProviderConfig) -> Result<Option<Self>> {
         if !config.enabled {
             return Ok(None);
         }
@@ -249,6 +256,21 @@ pub fn fallback_envelope(
     }
 }
 
+pub fn stale_local_envelope(
+    recommendation: Recommendation,
+    model: impl Into<String>,
+    reason: impl Into<String>,
+) -> AiRecommendationEnvelope {
+    AiRecommendationEnvelope {
+        recommendation,
+        provider: AiRecommendationProvider {
+            mode: "stale_local_recommendation".to_string(),
+            model: model.into(),
+            fallback_reason: Some(reason.into()),
+        },
+    }
+}
+
 pub fn stepfun_envelope(
     recommendation: Recommendation,
     model: impl Into<String>,
@@ -334,7 +356,8 @@ fn retryable_status(status: StatusCode) -> bool {
 }
 
 fn stepfun_retry_delay(attempt: usize) -> std::time::Duration {
-    std::time::Duration::from_millis(300 * attempt as u64)
+    let multiplier = 1_u64 << attempt.saturating_sub(1).min(16);
+    std::time::Duration::from_millis((STEPFUN_RETRY_BASE_MS * multiplier).min(STEPFUN_RETRY_MAX_MS))
 }
 
 fn extract_response_content(api_type: StepFunApiType, text: &str) -> Result<String> {
@@ -541,10 +564,6 @@ fn sanitize_rationale(value: String, fallback: &str) -> String {
     }
 }
 
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
-}
-
 fn env_bool(name: &str) -> bool {
     std::env::var(name)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "on"))
@@ -614,6 +633,26 @@ mod tests {
         assert_eq!(
             extract_response_content(StepFunApiType::Messages, text).unwrap(),
             r#"{"target_temperature_c":121.0}"#
+        );
+    }
+
+    #[test]
+    fn stepfun_retry_delay_is_exponential_and_capped() {
+        assert_eq!(
+            stepfun_retry_delay(1),
+            std::time::Duration::from_millis(300)
+        );
+        assert_eq!(
+            stepfun_retry_delay(2),
+            std::time::Duration::from_millis(600)
+        );
+        assert_eq!(
+            stepfun_retry_delay(3),
+            std::time::Duration::from_millis(1200)
+        );
+        assert_eq!(
+            stepfun_retry_delay(9),
+            std::time::Duration::from_millis(5000)
         );
     }
 }

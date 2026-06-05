@@ -12,6 +12,7 @@
     "qemu:lubancat2:smoke": "powershell -ExecutionPolicy Bypass -File scripts\\run-lubancat2-qemu.ps1 --smoke",
     "qemu:lubancat2:visual": "node scripts/visual-click-lubancat2-qemu.mjs",
     "qemu:lubancat2:perf": "node scripts/perf-lubancat2-qemu.mjs",
+    "acceptance:local-gate": "node scripts/upper-computer-local-gate.mjs",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed"
   },

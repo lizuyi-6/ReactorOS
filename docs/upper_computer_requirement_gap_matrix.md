@@ -47,13 +47,13 @@
 | 数据采集与控制 | 急停、暂停、恢复 | 部分完成 | 急停 API、停止流程、恢复/重置联锁入口 | “暂停/恢复”作为完整生产语义需和硬件状态机联调确认 |
 | AI 智能决策 | 云端大模型参数建议 | 部分完成 | AI provider、历史批次推荐、StepFun/provider 配置边界、只读 SOP 草案接口 | 真实 StepFun 账号、提示词、A/B 测试和云端 SOP 生成验证 |
 | AI 智能决策 | 本地 LoRA 参数建议 | 未完成 | `/api/config/summary.local_ai.ready_for_inference=false`；`xingshu ai train` 显示缺口 | Qwen3.5-2B/GGUF、LoRA adapter、llama.cpp 推理接口 |
-| AI 智能决策 | 本地 GA/SA/PID 参数寻优 | 本地通过 | `src/optimizer.rs` 的 `local-ga-sa-pid` 策略包含 GA 风格交叉/变异、SA 接受/降温搜索和 PID 风格误差校正；`tests/optimizer_tests.rs` 覆盖边界、禁区和策略 rationale；`cargo test --test optimizer_tests -- --nocapture` 通过 | 仍需真实批次长期指标验证和与本地 LoRA 自进化的联动验收 |
+| AI 智能决策 | 本地 GA/SA/趋势校正参数寻优 | 本地通过 | `src/optimizer.rs` 的 `local-ga-sa-pid` 兼容模型标识对应 GA 风格交叉/变异、SA 接受/降温搜索和精英趋势校正；`tests/optimizer_tests.rs` 覆盖边界、禁区和策略 rationale；`cargo test --test optimizer_tests -- --nocapture` 通过 | 仍需真实批次长期指标验证和与本地 LoRA 自进化的联动验收 |
 | AI 智能决策 | 本地模型自动增量微调/自进化 | 未完成 | `docs/local_ai_adapter_status_addendum.md` 明确为 readiness boundary | PEFT/LoRA 训练脚本、数据集契约、自动触发、评估回滚、RK 验收 |
 | AI 智能决策 | AI 实验方案/SOP 自动生成 | 部分完成 | `GET /api/ai/experiment-plan` 和 `xingshu ai plan` 可基于批次推荐与安全边界生成只读三段式 SOP 草案；HMI AI 页可展示 | 仍缺云端/本地 LoRA 模型自主生成完整实验方案、人工审核流和真实执行闭环 |
 | 安全控制 | 独立安全过滤器、非法参数拦截 | 本地通过 | `reactor-safety-guard`、`xingshu safety check`、`control_tests` | 生产 watchdog、权限隔离、故障演练 |
 | 安全控制 | 单次步长限制 | 本地通过 | `config/safety.toml`、控制测试 | 真实硬件执行时的步进行为验证 |
 | 安全控制 | 传感器掉线/数据超时保护 | 本地通过 | `sensor_timeout_ms`、控制路径拒绝旧数据 | RS485 断线/CRC 错误/噪声场景实测 |
-| 安全控制 | 温度-转速安全禁区 | 本地通过 | `config/safety.toml` 的 `forbidden_control_zones`；`src/control.rs` 自动控制阻断；`src/api.rs` 手动/AI/AINAS/Modbus/工艺写入口拒绝禁区组合；`control_tests::control_blocks_forbidden_temperature_stirrer_zone`；`api_tests::operator_target_update_rejects_forbidden_temperature_stirrer_zone` | 仍需真实硬件异常工况和现场故障注入验收 |
+| 安全控制 | 温度-转速安全禁区 | 本地通过 | `config/safety.toml` 的 `forbidden_control_zones`；`src/control.rs` 自动控制阻断；`src/api.rs` 手动/AI/AINAS/工艺写入口拒绝禁区组合；`src/modbus_registers.rs` Modbus 调试写入口复用同一安全校验；`control_tests::control_blocks_forbidden_temperature_stirrer_zone`；`api_tests::operator_target_update_rejects_forbidden_temperature_stirrer_zone` | 仍需真实硬件异常工况和现场故障注入验收 |
 | 数据审计与管理 | 秒级本地持久化 | 部分完成 | SQLite 样本/批次存储 | 真实硬件秒级连续采样与 7x24 数据丢失率验证 |
 | 数据审计与管理 | 不可篡改审计日志 | 本地通过 | 审计 hash chain、审计导出 | 生产备份、归档、防删策略 |
 | 数据审计与管理 | 历史查询、导出、可视化 | 本地通过 | HMI History、CSV/XLSX、曲线 | 真实数据样本验收 |
@@ -113,6 +113,8 @@
 PRD 第八章测试计划和团队分工测试职责的逐项追踪见 `docs/upper_computer_test_plan_traceability.md`。
 
 PRD 第十章交付物清单和当前证据对照见 `docs/upper_computer_delivery_readiness_index.md`。面向李祖祎汇报的短版缺口摘要见 `docs/upper_computer_current_gap_summary_for_lizuyi.md`。培训 PPT/视频的制作计划见 `docs/upper_computer_training_material_plan.md`。
+
+PRD 指定技术栈与当前实现之间的偏离、影响和补偿措施见 `docs/architecture-deviations.md`。该文档同时修正一个容易误读的点：`reactor-safety-guard` 不是空壳，它会调用共享安全判断；真正缺口是生产默认启用、watchdog、权限隔离和故障演练。
 
 建议把剩余工作拆成三条并行线：
 

@@ -242,6 +242,24 @@ pub struct ControlConfig {
     pub manual_lock_default: bool,
     pub control_interval_ms: u64,
     pub sensor_timeout_ms: i64,
+    #[serde(default = "default_control_write_retry_backoff_ms")]
+    pub write_retry_backoff_ms: u64,
+    #[serde(default = "default_safety_guard_timeout_ms")]
+    pub safety_guard_timeout_ms: u64,
+    #[serde(default = "default_ai_stop_product_concentration_percent")]
+    pub ai_stop_product_concentration_percent: f64,
+}
+
+fn default_control_write_retry_backoff_ms() -> u64 {
+    5_000
+}
+
+fn default_safety_guard_timeout_ms() -> u64 {
+    1_000
+}
+
+fn default_ai_stop_product_concentration_percent() -> f64 {
+    95.0
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

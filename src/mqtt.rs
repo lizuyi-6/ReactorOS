@@ -1,11 +1,16 @@
-use std::{fs, path::Path, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fs,
+    path::Path,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS, Transport};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::RwLock;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::{
@@ -158,14 +163,14 @@ impl MqttBridgeStatus {
     }
 }
 
-type SharedMqttStatus = Arc<RwLock<MqttBridgeStatus>>;
+type SharedMqttStatus = Arc<Mutex<MqttBridgeStatus>>;
 
 static MQTT_STATUS: std::sync::OnceLock<SharedMqttStatus> = std::sync::OnceLock::new();
 
 fn status_handle() -> SharedMqttStatus {
     MQTT_STATUS
         .get_or_init(|| {
-            Arc::new(RwLock::new(MqttBridgeStatus::from_config(
+            Arc::new(Mutex::new(MqttBridgeStatus::from_config(
                 &MqttBridgeConfig::default(),
             )))
         })
@@ -173,7 +178,10 @@ fn status_handle() -> SharedMqttStatus {
 }
 
 pub async fn mqtt_status_snapshot() -> MqttBridgeStatus {
-    status_handle().read().await.clone()
+    status_handle()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
 }
 
 pub fn load_integration_config(path: impl AsRef<Path>) -> Result<IntegrationConfig> {
@@ -189,8 +197,8 @@ pub fn load_integration_config(path: impl AsRef<Path>) -> Result<IntegrationConf
 
 pub fn start_mqtt_bridge(config: MqttBridgeConfig, state: AppState) {
     let status = status_handle();
+    set_status_from_config(&status, &config);
     tokio::spawn(async move {
-        set_status(&status, MqttBridgeStatus::from_config(&config)).await;
         if !config.enabled {
             tracing::info!("MQTT bridge disabled");
             return;
@@ -199,8 +207,7 @@ pub fn start_mqtt_bridge(config: MqttBridgeConfig, state: AppState) {
             update_status(&status, |snapshot| {
                 snapshot.connected = false;
                 snapshot.last_error = Some(err.to_string());
-            })
-            .await;
+            });
             tracing::warn!("MQTT bridge stopped: {err}");
         }
     });
@@ -232,8 +239,7 @@ async fn run_mqtt_bridge(
         snapshot.last_error = None;
         snapshot.last_alert_active_count = alert.active_count;
         snapshot.last_alert_at = Some(alert.updated_at);
-    })
-    .await;
+    });
 
     let mut alert_interval = interval(Duration::from_secs(config.alert_interval_s.max(1)));
     alert_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -249,8 +255,7 @@ async fn run_mqtt_bridge(
                             update_status(&status, |snapshot| {
                                 snapshot.last_task_id = receipt.task_id;
                                 snapshot.last_error = receipt.error.clone();
-                            })
-                            .await;
+                            });
                             client
                                 .publish(
                                     config.receipt_topic.clone(),
@@ -266,8 +271,7 @@ async fn run_mqtt_bridge(
                         update_status(&status, |snapshot| {
                             snapshot.connected = false;
                             snapshot.last_error = Some(err.to_string());
-                        })
-                        .await;
+                        });
                         return Err(err.into());
                     }
                 }
@@ -278,17 +282,14 @@ async fn run_mqtt_bridge(
                     snapshot.last_alert_active_count = alert.active_count;
                     snapshot.last_alert_at = Some(alert.updated_at);
                     snapshot.last_error = None;
-                })
-                .await;
+                });
             }
         }
     }
 }
 
 fn mqtt_tls_transport(config: &MqttBridgeConfig) -> Result<Transport> {
-    if config.ca_cert.is_none() && config.client_cert.is_none() && config.client_key.is_none() {
-        return Ok(Transport::tls_with_default_config());
-    }
+    validate_mqtt_tls_config(config)?;
     crate::tls::install_rustls_provider();
     if let Some(ca_cert) = config.ca_cert.as_ref() {
         let ca_bytes = fs::read(ca_cert)
@@ -320,6 +321,18 @@ fn mqtt_tls_transport(config: &MqttBridgeConfig) -> Result<Transport> {
     anyhow::bail!(
         "MQTT TLS client certificate requires ca_cert so the broker certificate can be verified"
     )
+}
+
+pub fn validate_mqtt_tls_config(config: &MqttBridgeConfig) -> Result<()> {
+    let ca_missing = config
+        .ca_cert
+        .as_ref()
+        .map(|path| path.as_os_str().is_empty())
+        .unwrap_or(true);
+    if config.use_tls && ca_missing {
+        anyhow::bail!("MQTT TLS requires ca_cert; refusing to trust implicit system roots");
+    }
+    Ok(())
 }
 
 async fn publish_status(
@@ -444,12 +457,60 @@ fn receipt_from_result(result: Result<IntegrationTask, AppError>) -> MqttTaskRec
     }
 }
 
-async fn set_status(status: &SharedMqttStatus, next: MqttBridgeStatus) {
-    *status.write().await = next;
+fn set_status(status: &SharedMqttStatus, next: MqttBridgeStatus) {
+    *status
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = next;
 }
 
-async fn update_status(status: &SharedMqttStatus, update: impl FnOnce(&mut MqttBridgeStatus)) {
-    let mut snapshot = status.write().await;
+fn set_status_from_config(status: &SharedMqttStatus, config: &MqttBridgeConfig) {
+    set_status(status, MqttBridgeStatus::from_config(config));
+}
+
+fn update_status(status: &SharedMqttStatus, update: impl FnOnce(&mut MqttBridgeStatus)) {
+    let mut snapshot = status
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     update(&mut snapshot);
     snapshot.updated_at = Utc::now();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_status_from_config_updates_snapshot_synchronously() {
+        let status = Arc::new(Mutex::new(MqttBridgeStatus::from_config(
+            &MqttBridgeConfig::default(),
+        )));
+        let config = MqttBridgeConfig {
+            enabled: false,
+            host: "broker.internal.example".to_string(),
+            port: 1884,
+            client_id: "xingshu-status-test".to_string(),
+            username: None,
+            password: None,
+            use_tls: false,
+            ca_cert: None,
+            client_cert: None,
+            client_key: None,
+            keep_alive_s: 30,
+            queue_capacity: 16,
+            task_topic: "xingshu/status-test/tasks".to_string(),
+            receipt_topic: "xingshu/status-test/receipts".to_string(),
+            status_topic: "xingshu/status-test/status".to_string(),
+            alert_topic: "xingshu/status-test/alerts".to_string(),
+            alert_interval_s: 7,
+        };
+
+        set_status_from_config(&status, &config);
+        let snapshot = status.lock().unwrap().clone();
+
+        assert!(!snapshot.enabled);
+        assert_eq!(snapshot.broker, "broker.internal.example:1884");
+        assert_eq!(snapshot.client_id, "xingshu-status-test");
+        assert_eq!(snapshot.task_topic, "xingshu/status-test/tasks");
+        assert_eq!(snapshot.alert_interval_s, 7);
+    }
 }

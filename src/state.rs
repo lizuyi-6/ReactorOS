@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::config::SafetyConfig;
+use crate::{config::SafetyConfig, number::round2};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SensorSnapshot {
@@ -102,8 +102,4 @@ pub fn fit_tilt_angle_deg(tilt_state: u8, shake_speed_cpm: f64, captured_at: Dat
     let envelope = (phase * std::f64::consts::TAU).sin().abs();
     let sign = if tilt_state == 0 { -1.0 } else { 1.0 };
     round2(sign * 30.0 * envelope)
-}
-
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
 }

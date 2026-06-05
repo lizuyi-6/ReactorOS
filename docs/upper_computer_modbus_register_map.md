@@ -4,7 +4,7 @@
 
 适用范围：当前上位机默认 Modbus RTU/TCP 映射、CLI 调试和第三方接口联调。
 
-重要边界：本文档记录的是上位机当前默认映射，来源于 `config/device.toml`、`src/api.rs` 和 `src/modbus_tcp.rs`。正式交付前必须与 STM32 固件最终寄存器手册、传感器量程、执行器单位和现场缩放系数逐项确认。
+重要边界：本文档记录的是上位机当前默认映射，来源于 `config/device.toml`、`src/modbus_registers.rs` 和 `src/modbus_tcp.rs`。正式交付前必须与 STM32 固件最终寄存器手册、传感器量程、执行器单位和现场缩放系数逐项确认。
 
 ## 1. 通信参数
 
@@ -119,7 +119,7 @@ xingshu modbus read temperature_c
 xingshu modbus write target_temperature_c 65 --reason "acceptance test"
 ```
 
-写入示例中 `target_temperature_c=65` 会被编码为 raw `650`，并且必须通过安全链路。
+写入示例中 `target_temperature_c=65` 会被编码为 raw `650`，并且必须通过安全链路。HTTP REST 调试写入口仅允许 admin bearer session，且请求体必须提供非空 `reason`，避免 engineer 经调试路径绕过常规 `set_targets` 审计上下文。
 
 ## 9. 正式联调待确认项
 

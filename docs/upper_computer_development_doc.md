@@ -17,7 +17,7 @@
 - 第三方对接：AINAS 远程对接、CLI 控制台、API/MQTT 协议适配。
 - 自测交付：功能测试、边界测试、异常测试、测试报告、用户手册和开发文档。
 
-当前实现已经覆盖上位机主体软件与接口框架，并已支持 HTTP/HTTPS 入口、Modbus TCP TLS 本地回归和第三方任务载荷 AES-256-GCM 静态加密；尚未完成的内容主要集中在真实硬件联调、MQTT/Modbus TCP 外部 TLS 验收、外部 MQTT/Modbus 工具验收、本地 Qwen3.5-2B + LoRA 链路。
+当前实现已经覆盖上位机主体软件与接口框架，并已支持 HTTP/HTTPS 入口、Modbus TCP TLS 本地回归和第三方任务载荷 AES-256-GCM 静态加密；尚未完成的内容主要集中在真实硬件联调、MQTT/Modbus TCP 外部 TLS 验收、外部 MQTT/Modbus 工具验收、本地 Qwen3.5-2B + LoRA 链路。PRD 指定技术栈与当前工程实现的偏离口径见 `docs/architecture-deviations.md`。
 
 ## 2. 系统结构
 
@@ -52,18 +52,25 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | 文件 | 作用 |
 | --- | --- |
 | `src/main.rs` | daemon 启动参数、配置加载、控制循环、HTTP 服务、MQTT/Modbus TCP 启动 |
-| `src/api.rs` | REST API、RBAC、AINAS 任务、Modbus 调试、批次、审计、配置摘要 |
+| `src/api.rs` | REST API 路由挂载、批次、审计、配置摘要 |
+| `src/api_integrations.rs` | AINAS REST 任务、MQTT 任务复用执行路径和第三方任务持久化回执 |
+| `src/api_response.rs` | 统一 API 成功/错误响应信封、JSON 请求解析拒绝处理和内部错误脱敏 |
+| `src/api_auth.rs` | 本地 bearer session、默认角色登录、RBAC 权限策略和权限 guard |
 | `src/db.rs` | SQLite schema、批次/样本/审计/集成任务持久化、集成任务请求/回执 AES-256-GCM 加密 |
 | `src/config.rs` | 设备、寄存器、数据桥和硬件通信配置 |
 | `src/control.rs` | 安全限幅、目标参数更新、控制循环逻辑、安全守护进程 JSON 协议 |
 | `src/device.rs` | ESP32、JSON bridge、Modbus RTU 和管线设备适配 |
+| `src/modbus_registers.rs` | Modbus 调试寄存器 map、HTTP 读写 payload、admin-only 调试写入审计和安全校验复用 |
+| `src/reports.rs` | 审计/批次 CSV、批次 XLSX 包和单批次 Markdown 实验报告生成；XLSX 包装使用 `zip` crate，不再维护手写 ZIP central directory / CRC32 |
 | `src/mqtt.rs` | MQTT 3.1.1 bridge、任务订阅、receipt 发布、状态摘要 |
 | `src/modbus_tcp.rs` | Modbus TCP MBAP/PDU 处理、`01/02/03/06` 功能码、安全写入复用 |
-| `src/optimizer.rs` | 本地 `local-ga-sa-pid` 参数寻优，结合 GA 交叉/变异、SA 接受/降温搜索和 PID 风格误差校正 |
-| `src/bin/xingshu.rs` | 上位机 CLI，复用 REST API 和 RBAC token |
+| `src/optimizer.rs` | 本地 `local-ga-sa-pid` 参数寻优，结合 GA 交叉/变异、SA 接受/降温搜索和精英趋势校正 |
+| `src/bin/xingshu.rs` | 上位机 CLI，复用 REST API 和 `src/api_auth.rs` 签发的 bearer token |
 | `src/bin/reactor-safety-guard.rs` | 独立安全判定进程，stdin/stdout JSON 协议 |
 | `static/index.html` | 单页 Web HMI、七大页面、中英切换、浏览器端交互 |
 | `tests/*.rs` | Rust 集成测试，覆盖 API、CLI、DB、配置、控制和协议 |
+
+DB Recent/History 查询约定：实时样本、报警、批次、产物结果和审计事件类 Recent 接口先用 `ORDER BY id DESC LIMIT N` 限定“最新窗口”，再在外层按 `id ASC` 返回给 HMI/报告使用，保证用户看到的是窗口内从旧到新的时间线。
 
 ## 4. 配置文件
 
@@ -84,6 +91,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `docs/upper_computer_external_acceptance_checklist.md` | 硬件、外部接口、LoRA/RK、生产安全、性能可靠性和用户验收执行清单 |
 | `docs/upper_computer_test_plan_traceability.md` | PRD 第八章测试计划和团队分工测试职责追踪矩阵 |
 | `docs/upper_computer_security_key_lifecycle.md` | 生产密钥生命周期、证书、token、敏感字段和轮换验收清单 |
+| `docs/architecture-deviations.md` | PRD v2.2 技术栈、LoRA、安全进程、备份擦除、非功能验收和页面命名偏离说明 |
 
 ## 5. Web HMI 功能
 
@@ -94,7 +102,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | 实时监控 | 实时数值、曲线、设备状态、急停/锁定状态、当前目标 |
 | 参数控制 | 目标温度、搅拌转速、自动控制、人工锁定、急停 |
 | AI 智能决策 | 本地优化建议、云端 provider 状态、推荐上下文展示 |
-| 历史数据 | 批次、产品结果、CSV/XLSX/Markdown 报告导出 |
+| 历史数据 | 批次、产品结果、CSV/XLSX/Markdown 报告导出；XLSX 包结构由自动化测试解包校验 |
 | 审计日志 | 审计链状态、事件列表、CSV 导出 |
 | Modbus 调试 | 寄存器映射、读值、写入测试、集成接口状态 |
 | 系统配置 | 设备、安全、AI、权限和集成摘要 |
@@ -113,10 +121,10 @@ GET  /api/ai/experiment-plan
 GET  /api/live
 GET  /api/v1/devices/status
 POST /api/v1/reactor/:device_id/samples
-GET  /api/v1/reactor/:device_id/realtime
+GET  /api/v1/reactor/:device_id/realtime        # requires bearer token with monitor permission
 GET  /api/v1/reactor/:device_id/history
 POST /api/v1/reactor/:device_id/control
-WS   /ws/v1/reactor/:device_id/realtime
+WS   /ws/v1/reactor/:device_id/realtime         # requires bearer token with monitor permission
 
 POST /api/control/targets
 POST /api/control/auto
@@ -127,6 +135,8 @@ POST /api/processes/:id/stop
 
 GET  /api/audit/logs
 GET  /api/audit/export.csv
+GET  /api/recommendations/latest                # read cached latest recommendation only
+POST /api/recommendations/latest                # generate and persist latest recommendation
 
 POST /api/integrations/ainas/tasks
 GET  /api/integrations/ainas/tasks
@@ -139,13 +149,13 @@ POST /api/modbus/registers/:name/write
 
 写操作通过 RBAC bearer token 控制；控制类写入还会经过安全限幅和审计。
 
-`GET /api/ai/experiment-plan` 是只读 AI 实验方案/SOP 草案接口。它复用 `/api/recommendations/latest` 的批次结果推荐、当前 safety/optimizer 边界和本地 LoRA readiness 状态，输出三段式 heat/hold/cool 草案、验收指标、安全说明和模型边界说明。该接口不会启动工艺、不会写目标、不会替代操作员复核；真实执行仍必须通过 AI master-control dry-run、RBAC、安全限幅和审计链。
+`GET /api/ai/experiment-plan` 是只读 AI 实验方案/SOP 草案接口。它复用当前缓存推荐、批次结果、当前 safety/optimizer 边界和本地 LoRA readiness 状态，输出三段式 heat/hold/cool 草案、验收指标、安全说明和模型边界说明。`GET /api/recommendations/latest` 只读取缓存；需要触发模型调用和推荐落库时使用 `POST /api/recommendations/latest`。当 StepFun provider 已配置但缓存推荐来自本地优化器时，GET 会返回 `provider.mode = "stale_local_recommendation"`，表示 AI 主控前必须重新生成 StepFun 推荐，而不是 StepFun 请求失败 fallback。该接口不会启动工艺、不会写目标、不会替代操作员复核；真实执行仍必须通过 AI master-control dry-run、RBAC、安全限幅和审计链。
 
 本地推荐器 provider model 标识为 `local-ga-sa-pid`。当存在至少三条真实或参考批次结果时，推荐器会在安全 optimizer 边界内执行：
 
 - GA 风格候选生成：精英批次种群、交叉、变异。
 - SA 风格候选接受：按温度衰减接受更优或概率接受邻域候选。
-- PID 风格误差校正：向最佳批次、精英均值和历史参数变化方向做小步修正。
+- 精英趋势校正：向最佳批次、精英均值和历史参数变化方向做小步修正；`local-ga-sa-pid` 是兼容保留的 provider model 标识，不表示存在闭环 PID 控制器。
 
 推荐输出仍会避开 `ai_memory.toml` 的 `forbidden_zones`，真实控制写入还会继续经过 `config/safety.toml` 的硬性 `forbidden_control_zones`。
 
@@ -201,6 +211,7 @@ tls = true
 - receipt topic 发布执行结果。
 - alert topic 按 `alert_interval_s` 发布 retained 报警快照。
 - `/api/config/summary` 暴露状态摘要。
+- `use_tls = true` 时必须配置非空 `ca_cert`，缺失时启动 MQTT TLS 连接会 fail-closed，不会隐式信任系统根证书。
 
 仍需外部 broker 验收、断线重连验收和 MQTT.fx/生产证书链测试。
 
@@ -249,7 +260,7 @@ cargo run --bin xingshu -- perf smoke --iterations 20 --json
 ## 11. 本地运行
 
 ```powershell
-$env:CARGO_TARGET_DIR='target-alert-check'
+$env:CARGO_TARGET_DIR='C:\tmp\xingshu-target-bugfix'
 cargo run --bin reactor-edge-daemon -- `
   --config config/device.toml `
   --safety config/safety.toml `
@@ -297,10 +308,8 @@ cargo run --bin reactor-edge-daemon -- `
 
 ```powershell
 cargo fmt --check
-cargo test --test api_tests -- --nocapture
-cargo test --test cli_tests -- --nocapture
-cargo test --test db_tests -- --nocapture
-cargo test --test config_tests -- --nocapture
+cargo test --all-targets -- --nocapture --test-threads=1
+npm run acceptance:local-gate
 ```
 
 性能冒烟：
@@ -312,12 +321,18 @@ cargo run --bin xingshu -- --json perf smoke `
   --safety-threshold-ms 100
 ```
 
-上一轮验收结果：
+最近一次全量 Rust 回归结果：
 
-- `api_tests`: 41 passed。
-- `cli_tests`: 10 passed。
-- `db_tests`: 4 passed。
-- `config_tests`: 5 passed。
+- lib unit tests: 6 passed。
+- `api_tests`: 50 passed。
+- `cli_tests`: 11 passed。
+- `config_tests`: 6 passed。
+- `control_tests`: 5 passed。
+- `db_tests`: 8 passed。
+- `esp32_protocol_tests`: 7 passed。
+- `json_bridge_protocol_tests`: 8 passed。
+- `optimizer_tests`: 4 passed。
+- 本地交付 gate: 7 passed，报告 `output/upper-computer-local-gate-20260606.json`。
 
 ## 13. 已知缺口
 
@@ -326,6 +341,6 @@ cargo run --bin xingshu -- --json perf smoke `
 | 本地 LoRA | 尚未集成 Qwen3.5-2B、PEFT/LoRA 训练、GGUF 转换和 RK 端延迟验证 |
 | TLS/证书 | HTTP/HTTPS 入口、Modbus TCP over TLS 已本地验证；MQTT 证书链和外部工具 TLS 验收未完成 |
 | AES-256 / 密钥 | 集成任务请求/回执字段已支持 AES-256-GCM 静态加密并完成本地测试；密钥生命周期和敏感字段清单见 `docs/upper_computer_security_key_lifecycle.md`；生产密钥托管、轮换演练和签字验收仍未完成 |
-| 独立安全进程 | `reactor-safety-guard` 已支持独立进程 JSON 判定，daemon 可通过 `--safety-guard` 委托自动控制安全决策；生产部署 watchdog、权限隔离和故障演练仍需验收 |
+| 独立安全进程 | `reactor-safety-guard` 已支持独立进程 JSON 判定，daemon 可通过 `--safety-guard` 委托自动控制安全决策；外部进程等待使用 `wait-timeout` 超时等待并在超时后 kill 子进程；生产部署 watchdog、权限隔离和故障演练仍需验收 |
 | 外部工具验收 | MQTT.fx、Modbus Poll/Slave、第三方上位机系统联调未完成 |
 | 真实硬件联调 | 需要等待 STM32/硬件侧寄存器和实机状态稳定后做整机验收 |

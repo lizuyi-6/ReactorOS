@@ -128,6 +128,123 @@ fn migration_creates_indexes_for_hot_history_queries() {
     assert!(indexes.contains(&"idx_sensor_samples_captured_id".to_string()));
     assert!(indexes.contains(&"idx_sensor_samples_batch_id_id".to_string()));
     assert!(indexes.contains(&"idx_control_events_batch_id_id".to_string()));
+    assert!(indexes.contains(&"idx_control_events_hashed_id".to_string()));
+}
+
+#[test]
+fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
+    let db = Db::open_memory().unwrap();
+    let mut batch_ids = Vec::new();
+    for index in 0..4 {
+        let batch = db
+            .create_batch(
+                &format!("batch {index}"),
+                60.0 + index as f64,
+                300.0 + index as f64,
+                30.0,
+                60.0,
+            )
+            .unwrap();
+        db.insert_product_result(&ProductResult {
+            batch_id: batch.id,
+            yield_percent: 70.0 + index as f64,
+            product_ratio: 0.8,
+            notes: format!("outcome {index}"),
+        })
+        .unwrap();
+        db.insert_control_event(
+            Some(batch.id),
+            "recent_window_probe",
+            None,
+            &format!("event {index}"),
+        )
+        .unwrap();
+        batch_ids.push(batch.id);
+    }
+
+    let recent_batches = db.recent_batches(2).unwrap();
+    assert_eq!(
+        recent_batches
+            .iter()
+            .map(|batch| batch.id)
+            .collect::<Vec<_>>(),
+        vec![batch_ids[2], batch_ids[3]]
+    );
+
+    let recent_outcomes = db.recent_batch_outcomes(2).unwrap();
+    assert_eq!(
+        recent_outcomes
+            .iter()
+            .map(|outcome| outcome.batch_id)
+            .collect::<Vec<_>>(),
+        vec![batch_ids[2], batch_ids[3]]
+    );
+
+    let recent_events = db.recent_control_events(2).unwrap();
+    assert_eq!(
+        recent_events
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["event 2", "event 3"]
+    );
+
+    db.insert_control_event(
+        Some(batch_ids[3]),
+        "recent_window_probe",
+        None,
+        "batch event 1",
+    )
+    .unwrap();
+    db.insert_control_event(
+        Some(batch_ids[3]),
+        "recent_window_probe",
+        None,
+        "batch event 2",
+    )
+    .unwrap();
+    db.insert_control_event(
+        Some(batch_ids[3]),
+        "recent_window_probe",
+        None,
+        "batch event 3",
+    )
+    .unwrap();
+    let batch_events = db.control_events_for_batch(batch_ids[3], 2).unwrap();
+    assert_eq!(
+        batch_events
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["batch event 2", "batch event 3"]
+    );
+}
+
+#[test]
+fn audit_chain_status_uses_bounded_window_without_claiming_full_validity() {
+    let db = Db::open_memory().unwrap();
+    for index in 0..10_001 {
+        db.insert_control_event(None, "audit_window_probe", None, &format!("event {index}"))
+            .unwrap();
+    }
+
+    let status = db.audit_chain_status().unwrap();
+
+    assert_eq!(status.total_hashed_events, 10_001);
+    assert_eq!(status.checked_events, 10_000);
+    assert!(status.window_valid);
+    assert!(!status.valid);
+    assert!(status.verification_truncated);
+    assert_eq!(status.checked_from_event_id, Some(2));
+    assert_eq!(status.checked_to_event_id, Some(10_001));
+
+    let full = db.full_audit_chain_status_for_diagnostics().unwrap();
+    assert_eq!(full.total_hashed_events, 10_001);
+    assert_eq!(full.checked_events, 10_001);
+    assert!(full.valid);
+    assert!(!full.verification_truncated);
+    assert_eq!(full.checked_from_event_id, Some(1));
+    assert_eq!(full.checked_to_event_id, Some(10_001));
 }
 
 #[test]

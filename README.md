@@ -62,6 +62,8 @@ Dockerfile                      构建、测试、运行镜像
 - 通信：默认外部数据管线，硬件联调支持 ESP32 Serial、JSON 文件桥接；配置中保留 Modbus RTU 映射。
 - 部署：单二进制 + `systemd`，也支持 Docker Compose。
 
+上述选型与 PRD v2.2 中的 Vue3/Element Plus/ECharts、SQLx、tokio-modbus 等指定技术栈存在偏离。偏离原因、影响、补偿措施和后续排期见 [docs/architecture-deviations.md](docs/architecture-deviations.md)。
+
 ## 快速启动
 
 默认配置使用外部数据管线模式，不会自动生成传感器读数。没有 ESP32 或测试管线样本流入时，`/api/live` 会按约定返回 `503`，前端显示空值和错误码。
@@ -379,9 +381,9 @@ POST https://api.stepfun.com/v1/messages
 调用策略：
 
 - `/api/live` 不直接请求外部模型，避免页面轮询刷爆 API。
-- 录入批次结果或请求 `/api/recommendations/latest` 时会尝试调用 StepFun。
+- 录入批次结果或 `POST /api/recommendations/latest` 时会尝试调用 StepFun；`GET /api/recommendations/latest` 只读取已缓存的最新建议。
 - 模型输出必须是推荐参数 JSON，后端会再次校验边界和禁区。
-- StepFun 超时、无 key、返回异常或输出落入禁区时，会自动回退本地优化器。
+- StepFun 超时、无 key、返回异常或输出落入禁区时，会自动回退本地优化器；可重试错误使用 300ms 起步、5s 封顶的指数退避。
 - API Key 只从环境变量读取，不写入代码、配置模板或数据库。
 
 树莓派 `systemd` 部署建议把密钥放到 `/etc/reactor-edge/reactor-edge.env`，并在服务文件中启用：
@@ -480,14 +482,15 @@ the operator tooling instead of pretending the feature exists.
 | `POST` | `/api/control/manual-lock` | 开启或关闭人工锁定 |
 | `POST` | `/api/control/targets` | 更新目标温度和转速 |
 | `POST` | `/api/control/emergency-stop` | 急停或复位急停 |
-| `GET` | `/api/recommendations/latest` | 获取最新 AI 推荐 |
+| `GET` | `/api/recommendations/latest` | 读取最新已缓存 AI 推荐，不触发模型调用或写库 |
+| `POST` | `/api/recommendations/latest` | 生成并持久化最新 AI 推荐 |
 | `GET` | `/api/ai/experiment-plan` | 基于批次结果和安全边界生成只读实验 SOP 草案 |
 | `GET` | `/api/v1/devices/status` | 文档版设备在线状态接口 |
 | `POST` | `/api/v1/reactor/:device_id/control` | 文档版控制接口 |
 | `POST` | `/api/v1/reactor/:device_id/samples` | 数据管线上行样本写入接口 |
-| `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据接口 |
+| `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据接口，需 `Authorization: Bearer <token>` 且具备监控权限 |
 | `GET` | `/api/v1/reactor/:device_id/history` | 文档版历史数据接口 |
-| `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket |
+| `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket，需 `Authorization: Bearer <token>` 且具备监控权限 |
 
 Additional upper-computer endpoints used by the HMI and CLI:
 
@@ -561,9 +564,10 @@ publishes receipts to `xingshu/reactor_001/task_receipts`. It also publishes a
 retained alarm snapshot to `xingshu/reactor_001/alerts` on the configured alert
 interval so third-party supervisors can consume the same active alarm state used
 by the Web HMI. The default template uses port `8883` with TLS enabled and
-supports `ca_cert`, `client_cert`, and `client_key`; provide broker credentials
-and production certificates in the config before connecting to a production
-broker.
+supports `ca_cert`, `client_cert`, and `client_key`; `use_tls = true` requires an
+explicit non-empty `ca_cert` and fails closed instead of silently trusting
+implicit system roots. Provide broker credentials and production certificates in
+the config before connecting to a production broker.
 
 本地 E2E 使用的 `/api/test/reset` 和 `/api/test/pipeline-sample` 只有在启动参数包含 `--enable-test-reset` 时可用，生产部署不要开启。
 

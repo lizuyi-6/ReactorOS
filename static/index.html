@@ -880,6 +880,26 @@
     .alarm-row.active-alarm { border-left: 5px solid var(--red); background: var(--red-soft); }
     .alarm-cell { display: flex; align-items: center; min-width: 0; padding: 10px 12px; border-right: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
     .alarm-cell:last-child { border-right: 0; justify-content: flex-end; }
+    .audit-row {
+      grid-template-columns: 72px 96px minmax(130px, .9fr) minmax(180px, 1.1fr);
+      min-height: 78px;
+    }
+    .audit-row .audit-event-main,
+    .audit-row .audit-reason-cell {
+      display: grid;
+      align-content: center;
+      gap: 4px;
+    }
+    .audit-row .audit-event-type,
+    .audit-row .audit-reason-cell {
+      word-break: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.35;
+    }
+    .audit-row .audit-hash {
+      font-size: 11px;
+      color: var(--dim);
+    }
     .alarm-distribution { height: 86px; margin: 0 12px 12px; background: var(--surface); }
     .alarm-card .alarm-row { grid-template-columns: 76px minmax(0,1fr) 124px; }
     .alarm-card .alarm-cell:nth-child(2),
@@ -4450,8 +4470,9 @@
           </div>
           <div class="settings-stack">
             <section class="settings-panel">
-              <div class="panel-head"><div class="panel-title">Safety Write Test</div><span class="mono muted">CLAMPED</span></div>
+              <div class="panel-head"><div class="panel-title">Admin Safety Write Test</div><span class="mono muted">ADMIN ONLY</span></div>
               <div class="settings-panel-body">
+                <div class="analysis-note">Modbus debug writes require an admin session and a non-empty reason.</div>
                 <label class="label" for="modbusWriteRegister">Writable register</label>
                 <select id="modbusWriteRegister" class="field-line">
                   <option value="target_temperature_c">target_temperature_c</option>
@@ -4459,8 +4480,8 @@
                 </select>
                 <label class="label" for="modbusWriteValue">Value</label>
                 <input id="modbusWriteValue" class="field-line" type="number" step="0.1" value="120">
-                <button id="modbusWriteBtn" class="primary-btn" type="button">Write Through Safety Gate</button>
-                <div id="modbusWriteResult" class="analysis-note">No write request sent.</div>
+                <button id="modbusWriteBtn" class="primary-btn" type="button">Admin Write Through Safety Gate</button>
+                <div id="modbusWriteResult" class="analysis-note">No admin write request sent.</div>
               </div>
             </section>
             <section class="settings-panel">
@@ -4912,17 +4933,27 @@
       "Targets": "目标",
       "Batch": "批次",
       "Hash chain": "哈希链",
+      "Chain valid": "链路有效",
+      "Chain window valid": "窗口链路有效",
+      "Chain invalid": "链路异常",
+      "Chain unchecked": "链路未校验",
+      "full chain": "全链路",
+      "verified window": "已校验窗口",
+      "DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only": "DEMO 上下文已写入：工艺、历史批次结果、AI 推荐和非传感器演示报警",
       "No audit events yet": "暂无审计事件",
       "Audit chain is waiting for the first operation event.": "审计链正在等待第一条操作事件。",
       "Modbus Debug": "Modbus 调试",
       "Register mapping, live reads, and safety-gated write tests.": "寄存器映射、实时读取与安全门控写入测试。",
       "Register Map": "寄存器表",
       "RTU HOLDING REGISTERS": "RTU 保持寄存器",
-      "Safety Write Test": "安全写入测试",
+      "Admin Safety Write Test": "管理员安全写入测试",
+      "ADMIN ONLY": "仅管理员",
+      "Modbus debug writes require an admin session and a non-empty reason.": "Modbus 调试写入需要管理员会话和非空原因。",
       "Writable register": "可写寄存器",
       "Value": "数值",
-      "Write Through Safety Gate": "通过安全门写入",
-      "No write request sent.": "尚未发送写入请求。",
+      "Admin Write Through Safety Gate": "管理员通过安全门写入",
+      "No admin write request sent.": "尚未发送管理员写入请求。",
+      "Write failed": "写入失败",
       "Integration Surface": "集成接口",
       "AINAS / API": "AINAS / 接口",
       "No register map": "暂无寄存器表",
@@ -4965,6 +4996,7 @@
       "GGUF inference ready": "GGUF 推理就绪",
       "Local model assets missing": "本地模型资产缺失",
       "GGUF inference and adapter configured": "GGUF 推理与适配器已配置",
+      "Refresh cached local recommendation before AI master control": "AI 主控前需刷新缓存的本地推荐",
       "inference binary and GGUF model are missing": "推理二进制和 GGUF 模型缺失",
       "set XINGSHU_LOCAL_AI_BIN to llama.cpp or compatible local inference binary": "设置 XINGSHU_LOCAL_AI_BIN 指向 llama.cpp 或兼容推理程序",
       "set XINGSHU_LOCAL_AI_GGUF to the Qwen GGUF model file": "设置 XINGSHU_LOCAL_AI_GGUF 指向 Qwen GGUF 模型文件",
@@ -5349,6 +5381,7 @@
         .replace(/AI 识别到高搅拌\/长保温在安全范围内但产率下降；建议靠近温和优化区域。/g, "AI detected that high stirring and long hold time reduce yield within the safety envelope; move toward the mild optimization region. ")
         .replace(/StepFun 根据历史批次、参考记忆和禁区生成推荐。/g, "StepFun generated this recommendation from historical batches, reference memory, and forbidden zones.")
         .replace(/最终管线验证工艺/g, "Final Pipeline Validation Process")
+        .replace(/客户演示/g, "Customer Demo ")
         .replace(/新工艺/g, "New Process")
         .replace(/工艺 A - 温和优化/g, "Process A - Mild Optimization")
         .replace(/工艺 B - 高搅拌对照/g, "Process B - High Stirring Control")
@@ -5371,7 +5404,7 @@
 
     function displayText(value) {
       const text = String(value ?? "");
-      return state.lang === "zh" ? text : enDataText(text);
+      return state.lang === "zh" ? zhText(text) : enDataText(text);
     }
 
     function uiText(value) {
@@ -5829,6 +5862,7 @@
     function shouldRefreshStepFunRecommendation(rec) {
       const providerMode = String(state.aiProvider?.mode || "");
       const modelName = String(state.aiProvider?.model || "");
+      if (providerMode === "stale_local_recommendation") return true;
       if (!modelName.includes("step") && !providerMode.includes("stepfun")) return false;
       return !rec || isStepFunFallbackRecommendation(rec);
     }
@@ -5842,7 +5876,7 @@
       state.recommendationRefreshAttempted = true;
       state.recommendationRefreshing = true;
       try {
-        const payload = await apiJson("/api/recommendations/latest");
+        const payload = await apiJson("/api/recommendations/latest", { method: "POST" });
         const envelope = payload?.provider ? payload : null;
         const next = envelope ? payload : payload?.recommendation || payload;
         if (envelope?.provider) state.aiProvider = envelope.provider;
@@ -7325,7 +7359,14 @@
       const chain = payload?.chain || {};
       if ($("#auditStats")) {
         const valid = chain.valid === true;
-        $("#auditStats").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill ${valid ? "" : "warn"}">Chain ${valid ? "valid" : "unchecked"}</span><span class="status-pill">${payload?.total ?? 0} events</span><span class="status-pill">${chain.checked_events ?? 0} hashed</span></div>`;
+        const windowValid = chain.window_valid === true;
+        const truncated = chain.verification_truncated === true;
+        const totalHashed = chain.total_hashed_events ?? chain.checked_events ?? 0;
+        const chainLabel = valid ? "Chain valid" : windowValid && truncated ? "Chain window valid" : totalHashed === 0 ? "Chain unchecked" : "Chain invalid";
+        const checkedRange = chain.checked_from_event_id && chain.checked_to_event_id
+          ? `#${chain.checked_from_event_id}..#${chain.checked_to_event_id}`
+          : (truncated ? "verified window" : "full chain");
+        $("#auditStats").innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap"><span class="status-pill ${valid || windowValid ? "" : "warn"}">${escapeHtml(uiText(chainLabel))}</span><span class="status-pill">${payload?.total ?? 0} ${escapeHtml(uiText("events"))}</span><span class="status-pill">${chain.checked_events ?? 0}/${totalHashed} ${escapeHtml(uiText("hashed"))}</span><span class="status-pill ${truncated ? "warn" : ""}">${escapeHtml(uiText(checkedRange))}</span></div>`;
       }
       if ($("#auditRows")) {
         if (state.auditError) {
@@ -7333,7 +7374,7 @@
         } else if (!events.length) {
           $("#auditRows").innerHTML = `<div class="alarm-row"><div class="alarm-cell">--</div><div class="alarm-cell">Audit</div><div class="alarm-cell">No audit events yet</div><div class="alarm-cell">--</div><div class="alarm-cell">--</div></div>`;
         } else {
-          $("#auditRows").innerHTML = events.map((event) => `<div class="alarm-row" data-audit-id="${event.id}"><div class="alarm-cell mono">#${event.id}</div><div class="alarm-cell">${timeLabel(event.created_at)}</div><div class="alarm-cell">${escapeHtml(event.event_type || "--")}</div><div class="alarm-cell mono">${escapeHtml(shortHash(event.event_hash))}</div><div class="alarm-cell">${escapeHtml(displayText(event.reason || ""))}</div></div>`).join("");
+          $("#auditRows").innerHTML = events.map((event) => `<div class="alarm-row audit-row" data-audit-id="${event.id}"><div class="alarm-cell mono">#${event.id}</div><div class="alarm-cell">${timeLabel(event.created_at)}</div><div class="alarm-cell audit-event-main"><span class="audit-event-type">${escapeHtml(event.event_type || "--")}</span><span class="audit-hash">${escapeHtml(shortHash(event.event_hash))}</span></div><div class="alarm-cell audit-reason-cell">${escapeHtml(displayText(event.reason || ""))}</div></div>`).join("");
         }
       }
       const selected = events[0];
@@ -7422,10 +7463,10 @@
       if ($("#modbusWriteResult")) {
         const result = state.modbusWriteResult;
         $("#modbusWriteResult").innerHTML = !result
-          ? "No write request sent."
+          ? escapeHtml(uiText("No admin write request sent."))
           : result.error
-            ? `Write failed code=${result.code || 500}: ${escapeHtml(result.error)}`
-            : `Applied ${escapeHtml(result.register)}=${fmtValue(result.applied_value, 2)} raw=${result.raw}`;
+            ? `${escapeHtml(uiText("Write failed"))} code=${result.code || 500}: ${escapeHtml(result.error)}`
+            : `${escapeHtml(uiText("Applied"))} ${escapeHtml(result.register)}=${fmtValue(result.applied_value, 2)} raw=${result.raw}`;
       }
     }
 
@@ -7441,7 +7482,9 @@
       }
       if ($("#settingsCards")) {
         const aiMode = state.aiProvider?.mode || "unknown";
-        const aiWarn = aiMode === "fallback_local_optimizer" || state.aiProvider?.fallback_reason;
+        const aiStale = aiMode === "stale_local_recommendation";
+        const aiWarn = aiStale || aiMode === "fallback_local_optimizer" || state.aiProvider?.fallback_reason;
+        const aiNote = aiStale ? "Refresh cached local recommendation before AI master control" : (aiWarn ? `Unavailable ${state.aiProvider?.fallback_reason || aiMode}` : `Mode: ${aiMode}`);
         const localAi = state.configSummary?.local_ai || {};
         const localAiWarn = localAiHasGap(localAi);
         const deviceMode = state.configSummary?.device_mode || "unknown";
@@ -7450,7 +7493,7 @@
         $("#settingsCards").innerHTML = [
           ["Backend Service", state.backendError ? "Error" : "Online", state.backendError ? state.backendError.message : "API heartbeat normal"],
           ["Connected Devices", `${onlineCount}/${totalCount}`, state.dataReady ? "Receiving sensor data" : "Waiting for data pipeline"],
-          ["AI Model", state.aiProvider?.model || "--", aiWarn ? `Unavailable ${state.aiProvider?.fallback_reason || aiMode}` : `Mode: ${aiMode}`],
+          ["AI Model", state.aiProvider?.model || "--", aiNote],
           ["Local Qwen LoRA", localAi.ready_for_inference ? "Ready" : "Pending", localAiWarn ? (localAi.missing?.slice?.(0, 2)?.join(", ") || "Local model assets missing") : "GGUF inference and adapter configured"],
           ["Device Mode", deviceMode, `Limit ${fmtValue(tempLimit, 1)} degC / ${fmtValue(rpmLimit, 0)} RPM`],
           ["Current Batch", state.activeBatchId ? String(state.activeBatchId) : "---", state.running ? "Running" : "Standby"]
@@ -7640,8 +7683,8 @@
       if ($("#modbusWriteResult")) {
         const result = state.modbusWriteResult;
         $("#modbusWriteResult").innerHTML = result?.error
-          ? `Write failed code=${result.code || 500}: ${escapeHtml(result.error)}`
-          : `Applied ${escapeHtml(result.register)}=${fmtValue(result.applied_value, 2)} raw=${result.raw}`;
+          ? `${escapeHtml(uiText("Write failed"))} code=${result.code || 500}: ${escapeHtml(result.error)}`
+          : `${escapeHtml(uiText("Applied"))} ${escapeHtml(result.register)}=${fmtValue(result.applied_value, 2)} raw=${result.raw}`;
       }
     }
 

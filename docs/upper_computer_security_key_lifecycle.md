@@ -12,7 +12,7 @@
 | `XINGSHU_AUTH_SECRET` | 环境变量 | 本地 bearer session 签名 | 已实现；未设置时使用本地默认开发 secret | 生产必须覆盖；轮换后所有旧 session 失效 |
 | `XINGSHU_OPERATOR_PASSWORD` / `XINGSHU_ENGINEER_PASSWORD` / `XINGSHU_ADMIN_PASSWORD` | 环境变量 | 默认本地账号密码覆盖 | 已实现；未设置时使用本地演示密码 | 生产必须覆盖，且按角色最小权限发放 |
 | HTTP TLS `--tls-cert` / `--tls-key` | daemon 启动参数 | HTTPS 入口证书和私钥 | 已实现；必须成对提供 | 使用正式 CA 或企业 CA，私钥只允许服务账号读取 |
-| MQTT `ca_cert` / `client_cert` / `client_key` | `config/integration.toml` | MQTT broker CA 与客户端证书 | 已实现配置解析和本地状态摘要 | 生产 broker 证书链、客户端证书和私钥需外部 broker 验收 |
+| MQTT `ca_cert` / `client_cert` / `client_key` | `config/integration.toml` | MQTT broker CA 与客户端证书 | 已实现配置解析、本地状态摘要和 `use_tls=true` 缺少非空 `ca_cert` 时 fail-closed | 生产 broker 证书链、客户端证书和私钥需外部 broker 验收 |
 | MQTT `username` / `password` | `config/integration.toml` | MQTT broker 用户认证 | 已实现字段和 rumqttc credentials 设置 | 不得提交真实账号；建议通过部署模板注入 |
 | Modbus TCP `tls_cert` / `tls_key` | `config/integration.toml` | Modbus TCP TLS server 证书与私钥 | 已实现；本地 TLS/MBAP 回归通过 | 生产证书链、外部 Modbus Poll/Slave TLS 需验收 |
 | `STEPFUN_API_KEY` | 环境变量 | 云端大模型 API bearer key | 已实现 provider 调用 | 不得落库或进入日志；生产需最小权限 key 和调用审计 |

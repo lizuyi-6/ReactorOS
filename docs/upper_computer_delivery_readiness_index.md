@@ -17,6 +17,7 @@
 
 - STM32 Modbus RTU 固件和真实整机联调不属于当前本地证据范围。
 - Qwen3.5-2B + LoRA 推理、训练、自进化和 RK 延迟未完成。
+- 当前 HMI、数据库和 Modbus 实现与 PRD 指定技术栈存在偏离，统一说明见 `docs/architecture-deviations.md`。
 - MQTT.fx、Modbus Poll/Slave、AINAS 真实平台、Postman/第三方系统验收未完成。
 - 30 天工业环境、安全扫描、用户签字和培训材料仍待补；培训材料计划见 `docs/upper_computer_training_material_plan.md`。
 
@@ -24,7 +25,7 @@
 
 | PRD 交付物 | 上位机当前证据 | 当前状态 | 还缺什么 |
 | --- | --- | --- | --- |
-| 星宿边缘中枢 Rust 守护程序 ARM64/AMD64 | `src/main.rs`、`src/api.rs`、`docs/lubancat2_debian10_deploy.md`、`docs/upper_computer_rk_deployment_acceptance_guide.md` | 部分完成 | 需最终 ARM64/RK release 包、SHA256、RK 实机运行记录 |
+| 星宿边缘中枢 Rust 守护程序 ARM64/AMD64 | `src/main.rs`、`src/api.rs`、`src/modbus_registers.rs`、`docs/lubancat2_debian10_deploy.md`、`docs/upper_computer_rk_deployment_acceptance_guide.md` | 部分完成 | 需最终 ARM64/RK release 包、SHA256、RK 实机运行记录 |
 | Web 控制台静态资源 | `static/index.html`、`static/favicon.svg`、视觉证据 `output/visual-i18n/*.png` | 本地完成 | 需多浏览器/移动端最终验收截图 |
 | 配置文件模板 | `config/device.toml`、`config/safety.toml`、`config/integration.toml`、`config/ai_memory.toml` | 本地完成 | 需生产脱敏配置、真实证书、STM32 串口和寄存器最终值 |
 | 安装脚本与升级脚本 | `docs/lubancat2_debian10_deploy.md` 提到打包和 install 脚本路径 | 部分完成 | 需在全新 RK/PC 设备执行部署计时、升级/回滚演练 |
@@ -35,6 +36,7 @@
 | PRD 文档交付物 | 当前文件 | 当前状态 | 还缺什么 |
 | --- | --- | --- | --- |
 | 技术设计文档 | `docs/upper_computer_development_doc.md` | 本地完成 | 最终版需并入真实硬件、外部接口、RK 和 LoRA 验收结果 |
+| PRD 偏离说明 | `docs/architecture-deviations.md` | 本地完成 | 随 Vue/SQLx/tokio-modbus/LoRA/生产安全等后续排期结果更新 |
 | 用户手册 | `docs/upper_computer_user_manual.md` | 本地完成 | 需最终部署、角色账号、现场 SOP 和客户操作流程确认 |
 | 部署手册 | `docs/lubancat2_debian10_deploy.md`、`docs/upper_computer_rk_deployment_acceptance_guide.md` | 部分完成 | 需全新 RK/PC 部署计时、生产证书、systemd 和资源采样证据 |
 | 维护手册 | `docs/upper_computer_maintenance_manual.md`、`docs/upper_computer_security_key_lifecycle.md`、`docs/upper_computer_rk_deployment_acceptance_guide.md` | 本地完成 / 生产待验收 | 需现场备份系统、密钥托管、证书链、watchdog/权限隔离、安全扫描和升级回滚演练证据 |
@@ -79,8 +81,8 @@ delivery/
 | --- | --- |
 | `software/` | 编译产物、安装包、SHA256、启动命令 |
 | `config/` | `config/*.toml` 脱敏副本、证书链说明 |
-| `docs/` | `docs/upper_computer_*.md`、`docs/third_party_interface_acceptance_report.md`，含 `docs/upper_computer_current_gap_summary_for_lizuyi.md` |
-| `tests/` | Cargo 测试输出、`output/upper-computer-perf-smoke.json`、`output/upper-computer-resource-snapshot.json` |
+| `docs/` | `docs/upper_computer_*.md`、`docs/third_party_interface_acceptance_report.md`，含 `docs/upper_computer_current_gap_summary_for_lizuyi.md` 和 `docs/architecture-deviations.md` |
+| `tests/` | Cargo 测试输出、`output/upper-computer-perf-smoke.json`、`output/upper-computer-resource-snapshot.json`、`output/upper-computer-local-gate-20260606.json` |
 | `acceptance/` | HMI 截图、外部接口工具截图、RK 运行日志、用户签字 |
 | `training/` | `docs/upper_computer_training_material_plan.md`、PPT、视频、培训签到和问题记录 |
 

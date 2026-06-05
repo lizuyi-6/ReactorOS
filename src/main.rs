@@ -1,6 +1,7 @@
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use reactor_edge_daemon::{
     ai_provider::AiProvider,
@@ -124,6 +125,7 @@ async fn control_loop(
 ) {
     let interval = Duration::from_millis(safety.control.control_interval_ms);
     let mut last_written_command: Option<SafeCommandFingerprint> = None;
+    let mut retry_after: Option<DateTime<Utc>> = None;
     loop {
         if matches!(device_mode, DeviceMode::Pipeline) {
             let mut state = runtime.write().await;
@@ -163,6 +165,10 @@ async fn control_loop(
 
         match decision {
             ControlDecision::Write(command) => {
+                if retry_after.is_some_and(|deadline| Utc::now() < deadline) {
+                    sleep(interval).await;
+                    continue;
+                }
                 let fingerprint = SafeCommandFingerprint::from(&command);
                 if last_written_command.as_ref() == Some(&fingerprint) {
                     sleep(interval).await;
@@ -172,6 +178,7 @@ async fn control_loop(
                 match device.write_targets(&command).await {
                     Ok(()) => {
                         last_written_command = Some(fingerprint);
+                        retry_after = None;
                         if let Err(err) = db.insert_control_event(
                             active_batch_id,
                             "device_write",
@@ -184,6 +191,13 @@ async fn control_loop(
                     Err(err) => {
                         tracing::warn!("device write failed: {err}");
                         last_written_command = None;
+                        retry_after = Some(
+                            Utc::now()
+                                + chrono::Duration::from_std(Duration::from_millis(
+                                    safety.control.write_retry_backoff_ms,
+                                ))
+                                .unwrap_or_else(|_| chrono::Duration::seconds(5)),
+                        );
                         let mut state = runtime.write().await;
                         state.last_control_error = Some(err.to_string());
                     }
@@ -191,6 +205,7 @@ async fn control_loop(
             }
             ControlDecision::Blocked(reason) => {
                 last_written_command = None;
+                retry_after = None;
                 tracing::debug!("control blocked: {reason:?}");
             }
         }
@@ -213,7 +228,8 @@ fn decide_control_with_optional_guard(
         emergency_stop: state.emergency_stop,
     };
     if let Some(guard) = safety_guard {
-        match evaluate_with_process(guard, &request) {
+        let timeout = Duration::from_millis(safety.control.safety_guard_timeout_ms);
+        match evaluate_with_process(guard, &request, timeout) {
             Ok(reactor_edge_daemon::control::SafetyGuardResponse::ControlDecision(decision)) => {
                 return decision;
             }

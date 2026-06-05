@@ -7,7 +7,7 @@
 本地开发/验收启动：
 
 ```powershell
-$env:CARGO_TARGET_DIR='target-alert-check'
+$env:CARGO_TARGET_DIR='C:\tmp\xingshu-target-bugfix'
 cargo run --bin reactor-edge-daemon -- `
   --config config/device.toml `
   --safety config/safety.toml `
@@ -16,7 +16,7 @@ cargo run --bin reactor-edge-daemon -- `
   --db data/reactor.sqlite3 `
   --assets static `
   --bind 127.0.0.1:8000 `
-  --safety-guard target-tls-check/debug/reactor-safety-guard.exe `
+  --safety-guard C:\tmp\xingshu-target-bugfix\debug\reactor-safety-guard.exe `
   --enable-test-reset
 ```
 
@@ -192,7 +192,7 @@ Modbus 调试页用于：
 - 写入可写目标寄存器。
 - 查看 Modbus RTU/TCP、MQTT、AINAS 等集成状态。
 
-写寄存器同样受安全校验和 RBAC 控制。当前可写寄存器：
+写寄存器同样受安全校验和 RBAC 控制；HTTP REST 调试写入口仅允许 admin 会话，并且必须填写非空写入原因。当前可写寄存器：
 
 ```text
 target_temperature_c

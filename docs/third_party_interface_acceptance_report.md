@@ -12,7 +12,7 @@
 | REST API | 已实现 HMI/CLI/第三方共用 API，写入受 RBAC 和安全保护 | 本地通过 |
 | Safety guard | 已实现独立 `reactor-safety-guard` 进程和 `xingshu safety check` 本地验收入口 | 本地通过 |
 | AINAS REST | 已实现任务创建、列表、单任务查询、执行回执持久化；启用 `XINGSHU_DB_ENCRYPTION_KEY` 后请求/回执 AES-256-GCM 加密落盘 | 本地通过 |
-| MQTT | 已实现 bridge 框架、任务执行、receipt 发布逻辑、CA/客户端证书配置字段 | 代码测试通过，外部 broker 未验收 |
+| MQTT | 已实现 bridge 框架、任务执行、receipt 发布逻辑、CA/客户端证书配置字段；`use_tls=true` 时缺少非空 `ca_cert` 会 fail-closed | 代码测试通过，外部 broker 未验收 |
 | Modbus RTU | 已有配置映射和上位机调试接口 | 需等待 STM32 实机联调 |
 | Modbus TCP | 已实现 server 框架、PDU 处理、本地 TCP/MBAP 与 TLS/MBAP 客户端测试 | 代码测试通过，外部 Modbus Poll/Slave 未验收 |
 
@@ -158,7 +158,8 @@ GET /api/integrations/ainas/tasks/:id
 
 - MQTT 3.1.1。
 - `rumqttc` client。
-- 默认 TLS/8883 模板，支持 `ca_cert`、`client_cert`、`client_key`。
+- 默认 TLS/8883 模板，支持 `ca_cert`、`client_cert`、`client_key`；TLS 模式必须配置非空 `ca_cert`，否则拒绝连接而不是隐式信任系统根证书。
+- bridge 启动时会同步刷新 `mqtt_status`，配置摘要不会在后台任务调度前短暂显示默认 broker/topic。
 - task payload 复用 AINAS 执行路径。
 - receipt 逻辑和持久化测试已覆盖。
 - alert topic retained 报警快照已覆盖。

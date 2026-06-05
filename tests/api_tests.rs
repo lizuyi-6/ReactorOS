@@ -1,4 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    io::{Cursor, Read},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use axum::{
     body::{to_bytes, Body},
@@ -6,6 +10,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use reactor_edge_daemon::{
+    ai_provider::{AiProvider, AiProviderConfig, StepFunApiType},
     api::{router, AppState},
     config::{
         load_device_config, ControlConfig, DeviceConfig, DeviceMode, ForbiddenControlZone,
@@ -22,7 +27,10 @@ use reactor_edge_daemon::{
         AiMemory, ForbiddenZone, MemoryOptimizerBounds, RecommendationMemory, ReferenceBatch,
     },
     modbus_tcp::{handle_modbus_tcp_pdu, handle_modbus_tcp_stream},
-    mqtt::{execute_mqtt_task_payload, load_integration_config, mqtt_alert_snapshot},
+    mqtt::{
+        execute_mqtt_task_payload, load_integration_config, mqtt_alert_snapshot,
+        validate_mqtt_tls_config,
+    },
     state::{ControlTargets, DeviceStatusSnapshot, RuntimeState, SensorSnapshot, SharedState},
 };
 use serde_json::{json, Value};
@@ -36,6 +44,13 @@ use tokio_rustls::TlsConnector;
 
 const TEST_TLS_CERT: &str = "tests/fixtures/tls/server.crt";
 const TEST_TLS_KEY: &str = "tests/fixtures/tls/server.key";
+
+fn read_zip_entry(archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str) -> String {
+    let mut entry = archive.by_name(name).unwrap();
+    let mut text = String::new();
+    entry.read_to_string(&mut text).unwrap();
+    text
+}
 
 fn test_device() -> SharedDevice {
     Arc::new(PipelineDevice)
@@ -157,6 +172,9 @@ fn safety() -> SafetyConfig {
             manual_lock_default: false,
             control_interval_ms: 2000,
             sensor_timeout_ms: 6000,
+            write_retry_backoff_ms: 5000,
+            safety_guard_timeout_ms: 1000,
+            ai_stop_product_concentration_percent: 95.0,
         },
         temperature: TemperatureSafety {
             min_c: 20.0,
@@ -558,9 +576,21 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
     assert_eq!(body["data"]["devices"][0]["status"], "offline");
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/reactor/reactor_001/realtime")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/reactor/reactor_001/realtime")
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1310,6 +1340,7 @@ async fn latest_recommendation_waits_for_real_product_results() {
     let response = app
         .oneshot(
             Request::builder()
+                .method("POST")
                 .uri("/api/recommendations/latest")
                 .body(Body::empty())
                 .unwrap(),
@@ -1325,6 +1356,105 @@ async fn latest_recommendation_waits_for_real_product_results() {
         .as_str()
         .unwrap()
         .contains("product result data unavailable"));
+}
+
+#[tokio::test]
+async fn latest_recommendation_get_is_read_only_when_cache_is_empty() {
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/recommendations/latest")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body, Value::Null);
+}
+
+#[tokio::test]
+async fn cached_local_recommendation_is_marked_stale_when_stepfun_is_configured() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_recommendation(&reactor_edge_daemon::optimizer::Recommendation {
+        based_on_batch_count: 3,
+        target_temperature_c: 88.5,
+        target_stirrer_rpm: 460.0,
+        heating_minutes: 72.0,
+        stirring_minutes: 55.0,
+        expected_score: 0.84,
+        rationale: "Local optimizer cached recommendation".to_string(),
+    })
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let ai_provider = AiProvider::from_config(AiProviderConfig {
+        enabled: true,
+        api_key: Some("test-stepfun-key".to_string()),
+        base_url: "http://127.0.0.1:9/v1".to_string(),
+        api_type: StepFunApiType::ChatCompletions,
+        model: "step-3.6".to_string(),
+        reasoning_effort: "medium".to_string(),
+        timeout_seconds: 1,
+    })
+    .unwrap()
+    .map(Arc::new);
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/api/recommendations/latest")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["provider"]["mode"], "stale_local_recommendation");
+    assert_eq!(body["provider"]["model"], "step-3.6");
+    assert!(body["provider"]["fallback_reason"]
+        .as_str()
+        .unwrap()
+        .contains("regenerated by StepFun"));
 }
 
 #[tokio::test]
@@ -1681,8 +1811,8 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
         .oneshot(
             Request::builder()
                 .method("POST")
-                .uri("/api/modbus/registers/target_temperature_c/write")
-                .header("authorization", auth_header("engineer"))
+                .uri("/api/modbus/registers/target_stirrer_rpm/write")
+                .header("authorization", auth_header("admin"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -1700,14 +1830,14 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["data"]["applied_value"], 160.0);
-    assert_eq!(body["data"]["raw"], 1600);
+    assert_eq!(body["data"]["applied_value"], 500.0);
+    assert_eq!(body["data"]["raw"], 500);
 
     let read_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri("/api/modbus/registers/target_temperature_c/read")
+                .uri("/api/modbus/registers/target_stirrer_rpm/read")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1718,7 +1848,7 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
         .await
         .unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(body["data"]["value"], 160.0);
+    assert_eq!(body["data"]["value"], 500.0);
     assert_eq!(body["data"]["source"], "runtime_targets");
 
     let pressure_read_response = app
@@ -1745,9 +1875,15 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
             Request::builder()
                 .method("POST")
                 .uri("/api/modbus/registers/target_pressure_mpa/write")
-                .header("authorization", auth_header("engineer"))
+                .header("authorization", auth_header("admin"))
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "value": 12.0 }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "value": 12.0,
+                        "reason": "pressure clamp smoke test"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -1759,6 +1895,29 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["data"]["applied_value"], 10.0);
     assert_eq!(body["data"]["raw"], 1000);
+
+    let missing_reason_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_pressure_mpa/write")
+                .header("authorization", auth_header("admin"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "value": 8.0 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(missing_reason_response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(missing_reason_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("reason is required"));
 
     let audit_response = app
         .clone()
@@ -1894,18 +2053,63 @@ async fn rbac_login_and_role_permissions_gate_sensitive_upper_computer_actions()
     assert_eq!(operator_modbus_write.status(), StatusCode::FORBIDDEN);
 
     let engineer_modbus_write = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/modbus/registers/target_temperature_c/write")
                 .header("authorization", format!("Bearer {token}"))
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "value": 61.0 }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "value": 61.0,
+                        "reason": "engineer rbac write smoke test"
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(engineer_modbus_write.status(), StatusCode::OK);
+    assert_eq!(engineer_modbus_write.status(), StatusCode::FORBIDDEN);
+
+    let admin_modbus_write = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_temperature_c/write")
+                .header("authorization", auth_header("admin"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "value": 61.0,
+                        "reason": "admin rbac write smoke test"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(admin_modbus_write.status(), StatusCode::OK);
+
+    let admin_modbus_write_without_reason = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_temperature_c/write")
+                .header("authorization", auth_header("admin"))
+                .header("content-type", "application/json")
+                .body(Body::from(json!({ "value": 62.0 }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        admin_modbus_write_without_reason.status(),
+        StatusCode::BAD_REQUEST
+    );
 }
 
 #[test]
@@ -1945,6 +2149,43 @@ fn integration_config_template_defines_disabled_tls_mqtt_bridge() {
         config.modbus_tcp.tls_key.as_deref(),
         Some(std::path::Path::new("output/tls-test/server.key"))
     );
+}
+
+#[test]
+fn mqtt_tls_requires_explicit_ca_certificate() {
+    let config: reactor_edge_daemon::mqtt::IntegrationConfig = toml::from_str(
+        r#"
+[mqtt]
+enabled = true
+host = "broker.example.com"
+port = 8883
+client_id = "xingshu-test"
+use_tls = true
+ca_cert = ""
+client_cert = ""
+client_key = ""
+keep_alive_s = 30
+queue_capacity = 16
+task_topic = "xingshu/test/tasks"
+receipt_topic = "xingshu/test/task_receipts"
+status_topic = "xingshu/test/status"
+alert_topic = "xingshu/test/alerts"
+alert_interval_s = 5
+
+[modbus_tcp]
+enabled = false
+bind = "127.0.0.1:1502"
+unit_id = 1
+require_tls = true
+tls_cert = ""
+tls_key = ""
+max_pdu_bytes = 253
+"#,
+    )
+    .unwrap();
+
+    let err = validate_mqtt_tls_config(&config.mqtt).unwrap_err();
+    assert!(err.to_string().contains("MQTT TLS requires ca_cert"));
 }
 
 #[tokio::test]
@@ -2460,6 +2701,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/reactor/reactor_001/realtime")
+                .header("authorization", auth_header("operator"))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2618,6 +2860,66 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn v1_control_auto_start_rolls_back_runtime_when_audit_fails() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+    db.break_control_events_for_tests().unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "command_id": "cmd_audit_fail",
+                        "params": {
+                            "heat_time": 300,
+                            "hold_time": 600,
+                            "cool_time": 180,
+                            "stir_speed": 650,
+                            "shake_speed": 30,
+                            "target_temp": 90.0,
+                            "target_pressure": 0.5
+                        },
+                        "priority": "normal",
+                        "auto_start": true
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["message"], "internal server error");
+    assert!(!body.to_string().contains("control_events"));
+    let state = runtime.read().await;
+    assert_eq!(state.active_batch_id, None);
+    assert_eq!(state.auto_enabled, false);
 }
 
 #[tokio::test]
@@ -2956,12 +3258,15 @@ async fn batch_export_and_report_are_generated_from_backend_data() {
     );
     let body = to_bytes(xlsx.into_body(), usize::MAX).await.unwrap();
     assert!(body.starts_with(b"PK\x03\x04"));
-    let workbook = String::from_utf8_lossy(&body);
-    assert!(workbook.contains("xl/worksheets/sheet1.xml"));
-    assert!(workbook.contains("xl/worksheets/sheet2.xml"));
-    assert!(workbook.contains("xl/worksheets/sheet3.xml"));
-    assert!(workbook.contains("report validation"));
-    assert!(workbook.contains("average_yield_percent"));
+    let mut archive = zip::ZipArchive::new(Cursor::new(body.to_vec())).unwrap();
+    let workbook = read_zip_entry(&mut archive, "xl/workbook.xml");
+    assert!(workbook.contains("Batches"));
+    assert!(workbook.contains("Results"));
+    assert!(workbook.contains("Summary"));
+    let batch_sheet = read_zip_entry(&mut archive, "xl/worksheets/sheet1.xml");
+    assert!(batch_sheet.contains("report validation"));
+    let summary_sheet = read_zip_entry(&mut archive, "xl/worksheets/sheet3.xml");
+    assert!(summary_sheet.contains("average_yield_percent"));
 
     let report = app
         .oneshot(
@@ -3339,6 +3644,51 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
 }
 
 #[tokio::test]
+async fn process_start_rolls_back_runtime_when_audit_fails_after_activation() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(35.4, 0.0629, 300.0, 30.0, 12.9)).await;
+    let process_id = add_simple_process(&db, "audit failure rollback");
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+    db.break_control_events_for_tests().unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/processes/{process_id}/start"))
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["message"], "internal server error");
+    assert!(!body.to_string().contains("control_events"));
+    let state = runtime.read().await;
+    assert_eq!(state.active_batch_id, None);
+    assert_eq!(state.auto_enabled, false);
+}
+
+#[tokio::test]
 async fn process_stop_without_active_batch_returns_json_error_code() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -3570,6 +3920,7 @@ async fn ai_master_control_execute_starts_process_and_audits_decision() {
                 .body(Body::from(
                     json!({
                         "dry_run": false,
+                        "intent": "optimize; preserve structured audit fields, even with punctuation",
                         "preferred_process_id": process_id,
                         "allow_target_adjustment": false
                     })
@@ -3607,11 +3958,27 @@ async fn ai_master_control_execute_starts_process_and_audits_decision() {
         .unwrap()
         .iter()
         .any(|event| event["event_type"] == "ai_process_started"));
-    assert!(body["recent_events"]
+    let audit_event = body["recent_events"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|event| event["event_type"] == "ai_master_decision"));
+        .find(|event| event["event_type"] == "ai_master_decision")
+        .expect("ai master decision audit event should be present");
+    let audit_reason: Value = serde_json::from_str(audit_event["reason"].as_str().unwrap())
+        .expect("ai master-control audit reason should be structured JSON");
+    assert!(audit_reason["decision"]
+        .as_str()
+        .unwrap()
+        .contains("start_process"));
+    assert!(audit_reason["rationale"]
+        .as_str()
+        .unwrap()
+        .contains("optimize; preserve structured audit fields"));
+    assert!(audit_reason["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["action_type"] == "process_start" && action["status"] == "executed"));
 }
 
 #[tokio::test]
@@ -3706,6 +4073,101 @@ async fn ai_master_control_stops_active_process_when_product_concentration_is_hi
         .unwrap()
         .iter()
         .any(|event| event["event_type"] == "ai_process_stopped"));
+}
+
+#[tokio::test]
+async fn ai_master_control_respects_configured_product_stop_threshold() {
+    let safety = Arc::new(SafetyConfig {
+        control: ControlConfig {
+            ai_stop_product_concentration_percent: 99.0,
+            ..safety().control
+        },
+        ..safety()
+    });
+    let db = Db::open_memory().unwrap();
+    let process_id = add_simple_process(&db, "ai configurable stop process");
+    let batch = db
+        .create_batch_for_process(Some(process_id), "running", 90.0, 300.0, 30.0, 45.0)
+        .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(90.0, 0.0629, 300.0, 24.0, 96.0)).await;
+    {
+        let mut state = runtime.write().await;
+        state.active_batch_id = Some(batch.id);
+        state.auto_enabled = true;
+        state.device_status = Some(DeviceStatusSnapshot {
+            connected: true,
+            last_seen_at: Some(Utc::now()),
+            last_frame_ok: true,
+            relay: Some(0),
+            motor: Some(1),
+            tilt: Some(1),
+            speed_delay_us: Some(10000),
+            port: Some("/dev/ttyUSB0".to_string()),
+            baudrate: Some(115200),
+            last_command_request_id: None,
+            last_command_ok: Some(true),
+            last_command_error: None,
+            updated_at: Utc::now(),
+        });
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: component_test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/ai/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "dry_run": false,
+                        "allow_process_stop": true,
+                        "allow_target_adjustment": false
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(!body["data"]["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|action| action["action_type"] == "process_stop"));
+
+    let live = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(live.status(), StatusCode::OK);
+    let body = to_bytes(live.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["runtime"]["active_batch_id"], batch.id);
 }
 
 #[tokio::test]
@@ -3876,6 +4338,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
         .clone()
         .oneshot(
             Request::builder()
+                .method("POST")
                 .uri("/api/recommendations/latest")
                 .body(Body::empty())
                 .unwrap(),

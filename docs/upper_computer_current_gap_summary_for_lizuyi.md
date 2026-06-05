@@ -1,6 +1,6 @@
 # 李祖祎上位机当前缺口摘要
 
-日期：2026-06-04
+日期：2026-06-05
 
 本文档面向项目内部汇报，用一句话说明当前上位机状态：上位机主体软件已经具备本地运行、演示、联调和继续验收的基础，但仍不是 PRD 意义上的全量最终交付版本。
 
@@ -14,8 +14,10 @@
 | 数据与报告 | SQLite 批次/样本、CSV/XLSX 导出、Markdown 实验报告、审计 CSV 已具备 | `docs/upper_computer_user_manual.md`、`docs/upper_computer_test_report.md` |
 | 安全控制 | 范围、步长、急停、人工锁、传感器超时、温度-转速禁区、独立 safety guard 已有本地自动化证据 | `config/safety.toml`、`tests/control_tests.rs`、`docs/upper_computer_test_report.md` |
 | 第三方接口基础 | AINAS REST、MQTT bridge、Modbus RTU/TCP 映射和 Modbus TCP/TLS 本地路径已准备 | `docs/third_party_interface_acceptance_report.md`、`docs/upper_computer_modbus_register_map.md` |
+| AI 推荐缓存语义 | `GET /api/recommendations/latest` 保持只读；StepFun 配置下的本地缓存推荐会标记为 `stale_local_recommendation`，AI 主控前需用 POST 重新生成 | `src/api.rs`、`src/ai_provider.rs`、`tests/api_tests.rs` |
 | 本地性能冒烟 | 本地 Web/API 往返、安全计算和 Windows debug 资源快照已有短测证据 | `output/upper-computer-perf-smoke.json`、`output/upper-computer-resource-snapshot.json` |
 | 交付文档 | 开发、用户、测试、API、CLI、维护、Modbus、RK、外部验收、交付索引等文档已有初版 | `docs/upper_computer_delivery_readiness_index.md` |
+| PRD 偏离口径 | Vue/SQLx/tokio-modbus/LoRA/安全进程/备份擦除/页面命名等偏离已单独说明，方便评审统一说法 | `docs/architecture-deviations.md` |
 
 ## 2. 当前还不能宣称完成什么
 
@@ -48,4 +50,4 @@
 3. 由算法侧提供 Qwen3.5-2B/GGUF/LoRA/训练脚本/RK 报告，再接入上位机推理与训练入口。
 4. 在 RK 或目标 PC 上生成 release 部署包、SHA256、资源采样和部署计时记录。
 5. 执行多浏览器/移动端、用户验收、培训 PPT/视频和签字归档。
-
+6. 若团队坚持 PRD 原始技术栈，单独排期 Vue/Element Plus/ECharts、SQLx 和 tokio-modbus 迁移，避免和当前 PoC 功能验收混在同一条线上。

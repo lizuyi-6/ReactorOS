@@ -1,0 +1,911 @@
+{
+  "url": "http://127.0.0.1:8000/",
+  "login": {
+    "user": {
+      "username": "engineer",
+      "role": "engineer",
+      "permissions": [
+        "view_monitor",
+        "view_history",
+        "view_audit",
+        "export_reports",
+        "edit_process",
+        "start_stop_process",
+        "set_safe_targets",
+        "apply_ai_suggestion",
+        "emergency_stop",
+        "modbus_debug"
+      ]
+    },
+    "expires_at": "2026-06-06T00:54:48.965990+00:00"
+  },
+  "generated_at": "2026-06-05T12:54:49.053Z",
+  "computer_use": {
+    "requested": true,
+    "available": false,
+    "reason": "Computer Use native pipe path/nativePipe was unavailable in this Codex runtime; Playwright and in-app Browser were used for equivalent visual verification."
+  },
+  "pages": [
+    {
+      "tab": "monitor",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:52 ENGINEER ENGINEER EN 急停 边缘计算 CPU 16% 控制循环 4.8 Hz 节拍 12 368 样本 1 264 + 6 / s 批次进度 63% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 OEE 综合效率 0.0% +0.4% 可用0.0% 性能0.0% 质量99.1% AI 预测质量 R2 0.984 优秀 RMSE0.038 样本1254 收率与工艺产出 94.2% +1.2% 批次1254 超调<1.2 degC 边缘端遥测 CPU 6% 42.3 degC I/O0.01 MB/s 丢包100.00% 系统健康: ERROR 503 LINK ESP32 链路: 0/1 AUTO 自动控制：待机 实时趋势 温度 压力 RPM 浓度 摇摆 倾角 流量 温度 --degC PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old 压力 --MPa PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old 搅拌 --RPM 工艺历史 温度 DEGC 升温 0.00% 已运行 00:00 / 计划 05:00 工艺链路 ESP32 -> Pi -> HMI 检测信号 1 活动 报警 TEMP 正常 -- degC PRESS 正常 -- MPa RPM 正常 -- RPM SHAKE 正常 -- CPM TILT 正常 -- deg FLOW 正常 -- L/min CONC 正常 -- % PH 正常 -- AI 预测诊断 FFT 与 U 值健康 FFT:HEALTHY (99.8%) U 值:正常 操作员控制 数据管线 unavailable code=503 目标温度 92.39 degC 目标转速 565.30 RPM 摇摆目标 -- CPM 保温时间 94.36 min 当前批次 --- 启动工艺 停止工艺 暂停自动 应用 AI 急停",
+      "viewTextSample": "OEE 综合效率 0.0% +0.4% 可用0.0% 性能0.0% 质量99.1% AI 预测质量 R2 0.984 优秀 RMSE0.038 样本1254 收率与工艺产出 94.2% +1.2% 批次1254 超调<1.2 degC 边缘端遥测 CPU 6% 42.3 degC I/O0.01 MB/s 丢包100.00% 系统健康: ERROR 503 LINK ESP32 链路: 0/1 AUTO 自动控制：待机 实时趋势 温度 压力 RPM 浓度 摇摆 倾角 流量 温度 --degC PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old 压力 --MPa PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old 搅拌 --RPM 工艺历史 温度 DEGC 升温 0.00% 已运行 00:00 / 计划 05:00 工艺链路 ESP32 -> Pi -> HMI 检测信号 1 活动 报警 TEMP 正常 -- degC PRESS 正常 -- MPa RPM 正常 -- RPM SHAKE 正常 -- CPM TILT 正常 -- deg FLOW 正常 -- L/min CONC 正常 -- % PH 正常 -- AI 预测诊断 FFT 与 U 值健康 FFT:HEALTHY (99.8%) U 值:正常 操作员控制 数据管线 unavailable code=503 目标温度 92.39 degC 目标转速 565.30 RPM 摇摆目标 -- CPM 保温时间 94.36 min 当前批次 --- 启动工艺 停止工艺 暂停自动 应用 AI 急停 AI 指挥中心 模型: LOCAL-GA-SA-PID \"基于 the top 3 批次 from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mut",
+      "viewTextLength": 1588,
+      "visibleBlockCount": 178,
+      "cjkBlockCount": 104,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        },
+        {
+          "text": "92 degC",
+          "id": "monitorTargetTemp",
+          "tag": "div",
+          "rect": {
+            "x": 161,
+            "y": 586,
+            "w": 94,
+            "h": 20
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-monitor-zh-20260605.png"
+    },
+    {
+      "tab": "recipes",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:53 ENGINEER ENGINEER EN 急停 边缘计算 CPU 18% 控制循环 5.0 Hz 节拍 12 378 样本 1 271 + 6 / s 批次进度 63% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 批次管理 高级筛选 导出 EXCEL 学习概览 批次 ID Start End Avg Temp Peak Pressure AI Score 状态 DEMO-批次-042 延长保温 06-04 19:47:53 06-04 19:47:53 98.0 degC -- MPa 78% OK Finished DEMO-批次-041 温和优化 06-04 19:47:53 06-04 19:47:53 96.0 degC -- MPa 82% OK Finished DEMO-批次-040 高搅拌对照 06-04 19:47:53 06-04 19:47:53 118.0 degC -- MPa 68% OK Finished DEMO-批次-039 基准参数 06-04 19:47:53 06-04 19:47:53 92.0 degC -- MPa 75% OK Finished DEMO-批次-038 搅拌不足 06-04 19:47:53 06-04 19:47:53 84.0 degC -- MPa 65% OK Finished DEMO-批次-037 低温短时 06-04 19:47:53 06-04 19:47:53 72.0 degC -- MPa 61% OK Finished From backend data 数据管线, 6 records LIVE",
+      "viewTextSample": "批次管理 高级筛选 导出 EXCEL 学习概览 批次 ID Start End Avg Temp Peak Pressure AI Score 状态 DEMO-批次-042 延长保温 06-04 19:47:53 06-04 19:47:53 98.0 degC -- MPa 78% OK Finished DEMO-批次-041 温和优化 06-04 19:47:53 06-04 19:47:53 96.0 degC -- MPa 82% OK Finished DEMO-批次-040 高搅拌对照 06-04 19:47:53 06-04 19:47:53 118.0 degC -- MPa 68% OK Finished DEMO-批次-039 基准参数 06-04 19:47:53 06-04 19:47:53 92.0 degC -- MPa 75% OK Finished DEMO-批次-038 搅拌不足 06-04 19:47:53 06-04 19:47:53 84.0 degC -- MPa 65% OK Finished DEMO-批次-037 低温短时 06-04 19:47:53 06-04 19:47:53 72.0 degC -- MPa 61% OK Finished From backend data 数据管线, 6 records LIVE",
+      "viewTextLength": 595,
+      "visibleBlockCount": 85,
+      "cjkBlockCount": 31,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-recipes-zh-20260605.png"
+    },
+    {
+      "tab": "program",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:54 ENGINEER ENGINEER EN 急停 边缘计算 CPU 18% 控制循环 5.0 Hz 节拍 12 378 样本 1 271 + 6 / s 批次进度 63% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 工艺控制面板 选择或新建工艺，然后配置步骤和优化参数。 新建工艺 实时数据管线状态 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old Process definitions can still be added and configured through /api/processes. 工艺 API:加载中 实时数据管线:错误 503 工艺数: 2 当前批次:--- 客户演示工艺 B - 高搅拌对照 版本 V1 2 步 状态 草稿 更新 06-04 19:47:53 配置 客户演示工艺 A - 温和优化 版本 V1 3 步 状态 草稿 更新 06-04 19:47:53 配置",
+      "viewTextSample": "工艺控制面板 选择或新建工艺，然后配置步骤和优化参数。 新建工艺 实时数据管线状态 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86415181 ms old Process definitions can still be added and configured through /api/processes. 工艺 API:加载中 实时数据管线:错误 503 工艺数: 2 当前批次:--- 客户演示工艺 B - 高搅拌对照 版本 V1 2 步 状态 草稿 更新 06-04 19:47:53 配置 客户演示工艺 A - 温和优化 版本 V1 3 步 状态 草稿 更新 06-04 19:47:53 配置",
+      "viewTextLength": 341,
+      "visibleBlockCount": 55,
+      "cjkBlockCount": 41,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-program-zh-20260605.png"
+    },
+    {
+      "tab": "ai",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:55 ENGINEER ENGINEER EN 急停 边缘计算 CPU 20% 控制循环 4.8 Hz 节拍 12 388 样本 1 280 + 6 / s 批次进度 64% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 AI 辅助控制中心 模型状态 ERROR 503 建议来源 置信度: 12.0% 基于 the top 3 批次 from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference 批次. TARGET_TEMP 后端建议 92.39 degC TARGET_RPM 后端建议 565.30 RPM 参数应用预览 当前系统状态 反应釜温度 -- degC 搅拌转速 -- RPM -> AI 建议目标 反应釜温度 92.4 degC 搅拌转速 565 RPM 忽略 应用建议 AI 主控 AI 可通过安全执行器启动/停止工艺流程，并控制摇摆釜组件。 SUPERVISED PIPELINE ERR 503 DEVICE 等待中 INTERLOCK 等待中 ACTIVE BATCH -- 预览 AI 控制 执行 AI 主控 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86417681 ms old 实验 SOP 草案 由批次结果和安全边",
+      "viewTextSample": "AI 辅助控制中心 模型状态 ERROR 503 建议来源 置信度: 12.0% 基于 the top 3 批次 from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference 批次. TARGET_TEMP 后端建议 92.39 degC TARGET_RPM 后端建议 565.30 RPM 参数应用预览 当前系统状态 反应釜温度 -- degC 搅拌转速 -- RPM -> AI 建议目标 反应釜温度 92.4 degC 搅拌转速 565 RPM 忽略 应用建议 AI 主控 AI 可通过安全执行器启动/停止工艺流程，并控制摇摆釜组件。 SUPERVISED PIPELINE ERR 503 DEVICE 等待中 INTERLOCK 等待中 ACTIVE BATCH -- 预览 AI 控制 执行 AI 主控 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86417681 ms old 实验 SOP 草案 由批次结果和安全边界生成的只读 AI 方案。 草案待操作员复核 基于 6 个真实产物结果批次，生成三段式 heat/hold/cool 实验 SOP 草案：目标 93.6 degC / 572 RPM。该草案仅供操作员复核，不会自动启动工艺或写入硬件目标。 该接口只生成 SOP 草案，不启动工艺，也不写入硬件目标。 真实执行必须先运行 AI 主控预览，再由操作员确认启动工艺或写入目标。 后续所有写入仍会经过 RBAC、安全限幅、审计日志和可选独立 sa",
+      "viewTextLength": 2433,
+      "visibleBlockCount": 102,
+      "cjkBlockCount": 70,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        },
+        {
+          "text": "基于 the top 3 批次 from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference 批次.",
+          "id": "aiIntentQuote",
+          "tag": "div",
+          "rect": {
+            "x": 147,
+            "y": 253,
+            "w": 785,
+            "h": 58
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-ai-zh-20260605.png"
+    },
+    {
+      "tab": "materials",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:56 ENGINEER ENGINEER EN 急停 边缘计算 CPU 20% 控制循环 4.8 Hz 节拍 12 388 样本 1 280 + 6 / s 批次进度 64% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 历史数据 由真实实验批次归档。打开批次可查看拟合曲线和学习记录。 导出 EXCEL 实时数据管线状态 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86417681 ms old Historical experiments are still read through /api/batches. 客户演示工艺 A - 温和优化 批次 ID 6 Finished Started 06-04 19:47:53 Yield 78.1% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 5 Finished Started 06-04 19:47:53 Yield 82.4% VIEW TREND 客户演示工艺 B - 高搅拌对照 批次 ID 4 Finished Started 06-04 19:47:53 Yield 67.5% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 3 Finished Started 06-04 19:47:53 Yield 74.8% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 2 Finished Started 06-04 19:47:53 Yield 64.7% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 1 Finished Started 06-04 19:47:53 Yield 61.2% VIEW TREND",
+      "viewTextSample": "历史数据 由真实实验批次归档。打开批次可查看拟合曲线和学习记录。 导出 EXCEL 实时数据管线状态 PIPELINE 503: sensor data stale; last data 数据管线 sample is 86417681 ms old Historical experiments are still read through /api/batches. 客户演示工艺 A - 温和优化 批次 ID 6 Finished Started 06-04 19:47:53 Yield 78.1% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 5 Finished Started 06-04 19:47:53 Yield 82.4% VIEW TREND 客户演示工艺 B - 高搅拌对照 批次 ID 4 Finished Started 06-04 19:47:53 Yield 67.5% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 3 Finished Started 06-04 19:47:53 Yield 74.8% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 2 Finished Started 06-04 19:47:53 Yield 64.7% VIEW TREND 客户演示工艺 A - 温和优化 批次 ID 1 Finished Started 06-04 19:47:53 Yield 61.2% VIEW TREND",
+      "viewTextLength": 659,
+      "visibleBlockCount": 72,
+      "cjkBlockCount": 35,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-materials-zh-20260605.png"
+    },
+    {
+      "tab": "alarms",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:58 ENGINEER ENGINEER EN 急停 边缘计算 CPU 21% 控制循环 4.8 Hz 节拍 12 398 样本 1 287 + 6 / s 批次进度 64% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 报警中心 需要操作员介入的活动故障。 1 严重 0 警告 1 未读 筛选 数据管线-ERROR 数据管线 error code=503: sensor data stale; last data 数据管线 sample is 86420185 ms old 20:54:56 Data 数据管线 / 当前 ERR Level: high Backend alarm 数据管线-error 数据管线 error code=503: sensor data stale; last data 数据管线 sample is 86420185 ms old 当前 VALUE ERR Data 数据管线 报警 LEVEL -- From backend data 数据管线 Backend suggestion No suggestion 操作员记录 记录",
+      "viewTextSample": "报警中心 需要操作员介入的活动故障。 1 严重 0 警告 1 未读 筛选 数据管线-ERROR 数据管线 error code=503: sensor data stale; last data 数据管线 sample is 86420185 ms old 20:54:56 Data 数据管线 / 当前 ERR Level: high Backend alarm 数据管线-error 数据管线 error code=503: sensor data stale; last data 数据管线 sample is 86420185 ms old 当前 VALUE ERR Data 数据管线 报警 LEVEL -- From backend data 数据管线 Backend suggestion No suggestion 操作员记录 记录",
+      "viewTextLength": 378,
+      "visibleBlockCount": 54,
+      "cjkBlockCount": 35,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-alarms-zh-20260605.png"
+    },
+    {
+      "tab": "audit",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:54:59 ENGINEER ENGINEER EN 急停 边缘计算 CPU 21% 控制循环 4.8 Hz 节拍 12 408 样本 1 296 + 6 / s 批次进度 64% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 审计日志 具备防篡改链路的操作事件与安全决策。 链路有效 1 事件 1/1 已哈希 全链路 刷新 导出 CSV #1 19:47:53 demo_seed_applied 6fb5b32452... DEMO 上下文已写入：工艺、历史批次结果、AI 推荐和非传感器演示报警 防篡改 事件 #1 demo_seed_applied DEMO 上下文已写入：工艺、历史批次结果、AI 推荐和非传感器演示报警 目标 -- degC -- RPM / -- CPM 批次 -- 2026-06-04T11:47:53.586477100Z 哈希链 prev=-- hash=6fb5b324522f4bf0f4d9e4e290229134ffa2cd5e6da713384b502b8668b4b5b2",
+      "viewTextSample": "审计日志 具备防篡改链路的操作事件与安全决策。 链路有效 1 事件 1/1 已哈希 全链路 刷新 导出 CSV #1 19:47:53 demo_seed_applied 6fb5b32452... DEMO 上下文已写入：工艺、历史批次结果、AI 推荐和非传感器演示报警 防篡改 事件 #1 demo_seed_applied DEMO 上下文已写入：工艺、历史批次结果、AI 推荐和非传感器演示报警 目标 -- degC -- RPM / -- CPM 批次 -- 2026-06-04T11:47:53.586477100Z 哈希链 prev=-- hash=6fb5b324522f4bf0f4d9e4e290229134ffa2cd5e6da713384b502b8668b4b5b2",
+      "viewTextLength": 349,
+      "visibleBlockCount": 56,
+      "cjkBlockCount": 33,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "auditStats": "链路有效 1 事件 1/1 已哈希 全链路",
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-audit-zh-20260605.png"
+    },
+    {
+      "tab": "modbus",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:55:00 ENGINEER ENGINEER EN 急停 边缘计算 CPU 21% 控制循环 4.8 Hz 节拍 12 408 样本 1 296 + 6 / s 批次进度 64% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 Modbus 调试 寄存器映射、实时读取与安全门控写入测试。 数据管线 从站 1 已映射 寄存器表 RTU 保持寄存器 TEMPERATURE_C @ 0 当前温度 | 读取 | 比例 0.1 | 原始值 326 32.60 STIRRER_RPM @ 1 当前搅拌转速 | 读取 | 比例 1 | 原始值 129 129.20 PRESSURE_MPA @ 2 当前压力 | 读取 | 比例 0.01 | 原始值 52 0.52 SHAKE_SPEED_CPM @ 3 当前摇摆速度 | 读取 | 比例 1 | 原始值 31 31.00 TILT_ANGLE_DEG @ 4 当前倾角 | 读取 | 比例 0.01 | 原始值 1803 -26.97 FLOW_RATE_L_MIN @ 5 当前流量 | 读取 | 比例 0.01 | 原始值 247 2.47 PRODUCT_CONCENTRATION_PERCENT @ 6 当前产物浓度 | 读取 | 比例 0.1 | 原始值 112 11.20 PH @ 7 当前 pH | 读取 | 比例 0.01 | 原始值 620 6.20 TARGET_TEMPERATURE_C @ 10 目标温度 | 写入 | 比例 0.1 | 原始值 600 60.00 TARGET_STIRRER_RPM @ 11 目标搅拌转速 | 写入 | 比例 1 | 原始值 300 300.00 TARGET_SHAKE_SPEED_CPM @ 12 目标摇摆速度 | 写入 | 比例 1 | 原始值 30 30.00 TARGET_PRESSURE_MPA @ 13 目标压力 | 写入 | 比例 0.01 | 原始值 50 0.50 HEAT_TIME_S @ 14 升温时长 | 写入 | 比例 1 | 原始值 300",
+      "viewTextSample": "Modbus 调试 寄存器映射、实时读取与安全门控写入测试。 数据管线 从站 1 已映射 寄存器表 RTU 保持寄存器 TEMPERATURE_C @ 0 当前温度 | 读取 | 比例 0.1 | 原始值 326 32.60 STIRRER_RPM @ 1 当前搅拌转速 | 读取 | 比例 1 | 原始值 129 129.20 PRESSURE_MPA @ 2 当前压力 | 读取 | 比例 0.01 | 原始值 52 0.52 SHAKE_SPEED_CPM @ 3 当前摇摆速度 | 读取 | 比例 1 | 原始值 31 31.00 TILT_ANGLE_DEG @ 4 当前倾角 | 读取 | 比例 0.01 | 原始值 1803 -26.97 FLOW_RATE_L_MIN @ 5 当前流量 | 读取 | 比例 0.01 | 原始值 247 2.47 PRODUCT_CONCENTRATION_PERCENT @ 6 当前产物浓度 | 读取 | 比例 0.1 | 原始值 112 11.20 PH @ 7 当前 pH | 读取 | 比例 0.01 | 原始值 620 6.20 TARGET_TEMPERATURE_C @ 10 目标温度 | 写入 | 比例 0.1 | 原始值 600 60.00 TARGET_STIRRER_RPM @ 11 目标搅拌转速 | 写入 | 比例 1 | 原始值 300 300.00 TARGET_SHAKE_SPEED_CPM @ 12 目标摇摆速度 | 写入 | 比例 1 | 原始值 30 30.00 TARGET_PRESSURE_MPA @ 13 目标压力 | 写入 | 比例 0.01 | 原始值 50 0.50 HEAT_TIME_S @ 14 升温时长 | 写入 | 比例 1 | 原始值 300 300.00 HOLD_TIME_S @ 15 保温时长 | 写入 | 比例 1 | 原始值 600 600.00 COOL_TIME_S @ 16 冷却时长 | 写入 | 比例 1 | 原始值 180 180.00 TOG AUTO_ENABLED @ 0 自动控制线圈 | 读写 | 原始值 0 关 TOG MANUAL_LOCK @ 1 手动锁定线圈 | 读写 | 原始值 0 关 TOG EMERGENCY_STOP @ 2 急",
+      "viewTextLength": 1807,
+      "visibleBlockCount": 145,
+      "cjkBlockCount": 88,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-modbus-zh-20260605.png"
+    },
+    {
+      "tab": "settings",
+      "lang": "zh",
+      "htmlLang": "zh-CN",
+      "bodyTextSample": "REACTOROS REACTOROS 上位机 / 反应釜边缘监控 / V1.0 错误 503 设备 0/1 数据管线 503 00:00:00 20:55:01 ENGINEER ENGINEER EN 急停 边缘计算 CPU 22% 控制循环 4.9 Hz 节拍 12 418 样本 1 303 + 6 / s 批次进度 65% V-01 / 第 5 / 7 步 监控 批次 控制 AI 实验室 历史 报警 审计 Modbus 设置 设置 ERROR 503 0/1 设备 系统状态 ERROR 503 后端服务 错误 sensor data stale; last data 数据管线 sample is 86425171 ms old 已连接设备 0/1 等待数据管线 AI 模型 local-ga-sa-pid 模式: 本地优化器 本地 QWEN LORA 待配置 XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN 设备模式 数据管线 限制 160.0 degC / 1200 RPM 当前批次 --- 待机 后端数据端点 只读 /API/LIVE /API/PROCESSES /API/PROCESSES/:ID/STEPS /API/PROCESSES/:ID/START /API/PROCESSES/CURRENT/STOP /API/BATCHES 控制权限 安全门 OPERATOR 已强制 ENGINEER 已强制 ADMIN 已强制 Local username/password login issues signed bearer sessions; 写入 and export operations are checked against role permissions. 设备通道 0/1 REACTOR_001 stale 该设备下的传感器 温度 32.60 C 压力 0.52 MPa 搅拌转速 129.20 RPM 摇摆釜速度 31.00 CPM 倾角二值状态 0.00 0/1 拟合倾角 -26.97 deg 流量 2.47 L/min 产物浓度 11.20 % PH 6.20 组件控制 设备组件 暂无可控组件 无",
+      "viewTextSample": "设置 ERROR 503 0/1 设备 系统状态 ERROR 503 后端服务 错误 sensor data stale; last data 数据管线 sample is 86425171 ms old 已连接设备 0/1 等待数据管线 AI 模型 local-ga-sa-pid 模式: 本地优化器 本地 QWEN LORA 待配置 XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN 设备模式 数据管线 限制 160.0 degC / 1200 RPM 当前批次 --- 待机 后端数据端点 只读 /API/LIVE /API/PROCESSES /API/PROCESSES/:ID/STEPS /API/PROCESSES/:ID/START /API/PROCESSES/CURRENT/STOP /API/BATCHES 控制权限 安全门 OPERATOR 已强制 ENGINEER 已强制 ADMIN 已强制 Local username/password login issues signed bearer sessions; 写入 and export operations are checked against role permissions. 设备通道 0/1 REACTOR_001 stale 该设备下的传感器 温度 32.60 C 压力 0.52 MPa 搅拌转速 129.20 RPM 摇摆釜速度 31.00 CPM 倾角二值状态 0.00 0/1 拟合倾角 -26.97 deg 流量 2.47 L/min 产物浓度 11.20 % PH 6.20 组件控制 设备组件 暂无可控组件 无",
+      "viewTextLength": 734,
+      "visibleBlockCount": 97,
+      "cjkBlockCount": 57,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 225,
+            "h": 28
+          }
+        },
+        {
+          "text": "sensor data stale; last data 数据管线 sample is 86425171 ms old",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 156,
+            "y": 282,
+            "w": 116,
+            "h": 19
+          }
+        },
+        {
+          "text": "local-ga-sa-pid",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 440,
+            "y": 263,
+            "w": 116,
+            "h": 18
+          }
+        },
+        {
+          "text": "XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 583,
+            "y": 282,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "限制 160.0 degC / 1200 RPM",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 156,
+            "y": 365,
+            "w": 116,
+            "h": 19
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-settings-zh-20260605.png"
+    },
+    {
+      "tab": "monitor",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:03 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 12% CONTROL LOOP 5.0 Hz tick 12 348 SAMPLES 1 248 + 6 / s BATCH PROGRESS 62% V-01 / step 4 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings OEE OVERALL EFFICIENCY 0.0% +0.4% Avail 0.0% Perf 0.0% Qual 99.1% AI PREDICTION QUALITY R2 0.984 EXCELLENT RMSE 0.038 Samples 1254 YIELD AND PROCESS OUTPUT 94.2% +1.2% Batches 1254 Overshoot <1.2 degC EDGE TELEMETRY CPU 5% 42.0 degC I/O 0.01 MB/s Loss 100.00% SYSTEM HEALTH: ERROR 503 LINK ESP32 LINK: 0/1 AUTO AUTO CONTROL: STANDBY LIVE TREND Temp Press RPM Conc Shk Tilt Flow TEMPERATURE --degC PIPELINE 503: sensor data stale; last data pipeline sample is 86425597 ms old PRESSURE --MPa PIPELINE 503: sensor data stale; last data pipeline sample is 86425597 ms old STIRRER --RPM Process History TEMP DEGC Heat-up 0.00% Elapsed 00:00 / Plan 05:00 PROCESS LINE ESP32 -> Pi -> HMI D",
+      "viewTextSample": "OEE OVERALL EFFICIENCY 0.0% +0.4% Avail 0.0% Perf 0.0% Qual 99.1% AI PREDICTION QUALITY R2 0.984 EXCELLENT RMSE 0.038 Samples 1254 YIELD AND PROCESS OUTPUT 94.2% +1.2% Batches 1254 Overshoot <1.2 degC EDGE TELEMETRY CPU 5% 42.0 degC I/O 0.01 MB/s Loss 100.00% SYSTEM HEALTH: ERROR 503 LINK ESP32 LINK: 0/1 AUTO AUTO CONTROL: STANDBY LIVE TREND Temp Press RPM Conc Shk Tilt Flow TEMPERATURE --degC PIPELINE 503: sensor data stale; last data pipeline sample is 86425597 ms old PRESSURE --MPa PIPELINE 503: sensor data stale; last data pipeline sample is 86425597 ms old STIRRER --RPM Process History TEMP DEGC Heat-up 0.00% Elapsed 00:00 / Plan 05:00 PROCESS LINE ESP32 -> Pi -> HMI DETECTOR SIGNALS 3 ACTIVE ALARMS TEMP NORMAL -- degC PRESS NORMAL -- MPa RPM NORMAL -- RPM SHAKE NORMAL -- CPM TILT NORMAL -- deg FLOW NORMAL -- L/min CONC NORMAL -- % PH NORMAL -- AI PREDICTIVE DIAGNOSTICS FFT & U-Value Health FFT: HEALTHY (99.8%) U-Value: NORMAL OPERATOR CONTROL Pipeline unavailable code=503 TARGET ",
+      "viewTextLength": 2269,
+      "visibleBlockCount": 178,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        },
+        {
+          "text": "Target Temp",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 152,
+            "y": 797,
+            "w": 24,
+            "h": 28
+          }
+        },
+        {
+          "text": "Target RPM",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 202,
+            "y": 797,
+            "w": 24,
+            "h": 28
+          }
+        },
+        {
+          "text": "Shake Target",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 253,
+            "y": 797,
+            "w": 24,
+            "h": 28
+          }
+        },
+        {
+          "text": "Hold Time",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 303,
+            "y": 797,
+            "w": 24,
+            "h": 28
+          }
+        },
+        {
+          "text": "Active Batch",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 353,
+            "y": 797,
+            "w": 24,
+            "h": 28
+          }
+        },
+        {
+          "text": "92 degC",
+          "id": "monitorTargetTemp",
+          "tag": "div",
+          "rect": {
+            "x": 161,
+            "y": 586,
+            "w": 124,
+            "h": 20
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-monitor-en-20260605.png"
+    },
+    {
+      "tab": "recipes",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:04 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 21% CONTROL LOOP 4.8 Hz tick 12 368 SAMPLES 1 262 + 6 / s BATCH PROGRESS 63% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Batch Management ADVANCED FILTER EXPORT EXCEL LEARNING OVERVIEW Batch ID Start End Avg Temp Peak Pressure AI Score Status DEMO-Batch-042 Extended Hold 06-04 19:47:53 06-04 19:47:53 98.0 degC -- MPa 78% OK Finished DEMO-Batch-041 Mild Optimization 06-04 19:47:53 06-04 19:47:53 96.0 degC -- MPa 82% OK Finished DEMO-Batch-040 High Stirring Control 06-04 19:47:53 06-04 19:47:53 118.0 degC -- MPa 68% OK Finished DEMO-Batch-039 Baseline Parameters 06-04 19:47:53 06-04 19:47:53 92.0 degC -- MPa 75% OK Finished DEMO-Batch-038 Low Stirring 06-04 19:47:53 06-04 19:47:53 84.0 degC -- MPa 65% OK Finished DEMO-Batch-037 Low Temperature Short Hold 06-04 19:47:53 06-04 19:47:53 72.0 degC ",
+      "viewTextSample": "Batch Management ADVANCED FILTER EXPORT EXCEL LEARNING OVERVIEW Batch ID Start End Avg Temp Peak Pressure AI Score Status DEMO-Batch-042 Extended Hold 06-04 19:47:53 06-04 19:47:53 98.0 degC -- MPa 78% OK Finished DEMO-Batch-041 Mild Optimization 06-04 19:47:53 06-04 19:47:53 96.0 degC -- MPa 82% OK Finished DEMO-Batch-040 High Stirring Control 06-04 19:47:53 06-04 19:47:53 118.0 degC -- MPa 68% OK Finished DEMO-Batch-039 Baseline Parameters 06-04 19:47:53 06-04 19:47:53 92.0 degC -- MPa 75% OK Finished DEMO-Batch-038 Low Stirring 06-04 19:47:53 06-04 19:47:53 84.0 degC -- MPa 65% OK Finished DEMO-Batch-037 Low Temperature Short Hold 06-04 19:47:53 06-04 19:47:53 72.0 degC -- MPa 61% OK Finished From backend data pipeline, 6 records LIVE",
+      "viewTextLength": 750,
+      "visibleBlockCount": 85,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-recipes-en-20260605.png"
+    },
+    {
+      "tab": "program",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:05 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 21% CONTROL LOOP 4.8 Hz tick 12 368 SAMPLES 1 262 + 6 / s BATCH PROGRESS 63% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Process Control Panel Select or create a process, then configure steps and optimization parameters. NEW PROCESS Realtime pipeline status PIPELINE 503: sensor data stale; last data pipeline sample is 86428105 ms old Process definitions can still be added and configured through /api/processes. PROCESS API: LOADING REALTIME PIPELINE: ERROR 503 PROCESSES: 2 ACTIVE BATCH: --- Customer Demo Process B - High Stirring Control Version V1 2 steps Status Draft Updated 06-04 19:47:53 CONFIGURE Customer Demo Process A - Mild Optimization Version V1 3 steps Status Draft Updated 06-04 19:47:53 CONFIGURE",
+      "viewTextSample": "Process Control Panel Select or create a process, then configure steps and optimization parameters. NEW PROCESS Realtime pipeline status PIPELINE 503: sensor data stale; last data pipeline sample is 86428105 ms old Process definitions can still be added and configured through /api/processes. PROCESS API: LOADING REALTIME PIPELINE: ERROR 503 PROCESSES: 2 ACTIVE BATCH: --- Customer Demo Process B - High Stirring Control Version V1 2 steps Status Draft Updated 06-04 19:47:53 CONFIGURE Customer Demo Process A - Mild Optimization Version V1 3 steps Status Draft Updated 06-04 19:47:53 CONFIGURE",
+      "viewTextLength": 596,
+      "visibleBlockCount": 55,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-program-en-20260605.png"
+    },
+    {
+      "tab": "ai",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:06 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 20% CONTROL LOOP 4.8 Hz tick 12 378 SAMPLES 1 270 + 6 / s BATCH PROGRESS 63% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings AI Assisted Control Center Model status ERROR 503 RECOMMENDATION SOURCE CONFIDENCE: 12.0% Based on the top 3 batches from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference batches. TARGET_TEMP BACKEND RECOMMENDATION 92.33 degC TARGET_RPM BACKEND RECOMMENDATION 556.84 RPM PARAMETER APPLICATION PREVIEW CURRENT SYSTEM STATE REACTOR TEMP -- degC STIRRER RPM -- RPM -> AI SUGGESTE",
+      "viewTextSample": "AI Assisted Control Center Model status ERROR 503 RECOMMENDATION SOURCE CONFIDENCE: 12.0% Based on the top 3 batches from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference batches. TARGET_TEMP BACKEND RECOMMENDATION 92.33 degC TARGET_RPM BACKEND RECOMMENDATION 556.84 RPM PARAMETER APPLICATION PREVIEW CURRENT SYSTEM STATE REACTOR TEMP -- degC STIRRER RPM -- RPM -> AI SUGGESTED TARGETS REACTOR TEMP 92.3 degC STIRRER RPM 557 RPM IGNORE APPLY RECOMMENDATION AI MASTER CONTROL AI can start/stop process flow and control shake vessel components through the safety executor. SUPERVISED PIPELINE ERR 503 DEVICE WAITING INTERLOCK WAITING ACTIVE BATCH -- PREVIEW AI CONTROL EXECUTE AI MASTER PIPELINE ",
+      "viewTextLength": 3496,
+      "visibleBlockCount": 102,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        },
+        {
+          "text": "Based on the top 3 batches from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference batches.",
+          "id": "aiIntentQuote",
+          "tag": "div",
+          "rect": {
+            "x": 147,
+            "y": 253,
+            "w": 785,
+            "h": 58
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-ai-en-20260605.png"
+    },
+    {
+      "tab": "materials",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:07 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 20% CONTROL LOOP 4.8 Hz tick 12 378 SAMPLES 1 270 + 6 / s BATCH PROGRESS 63% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings History Data Archived by real experiment batch. Open a batch to inspect fitted curves and learning records. EXPORT EXCEL Realtime pipeline status PIPELINE 503: sensor data stale; last data pipeline sample is 86428105 ms old Historical experiments are still read through /api/batches. Customer Demo Process A - Mild Optimization Batch ID 6 Finished Started 06-04 19:47:53 Yield 78.1% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 5 Finished Started 06-04 19:47:53 Yield 82.4% VIEW TREND Customer Demo Process B - High Stirring Control Batch ID 4 Finished Started 06-04 19:47:53 Yield 67.5% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 3 Finished ",
+      "viewTextSample": "History Data Archived by real experiment batch. Open a batch to inspect fitted curves and learning records. EXPORT EXCEL Realtime pipeline status PIPELINE 503: sensor data stale; last data pipeline sample is 86428105 ms old Historical experiments are still read through /api/batches. Customer Demo Process A - Mild Optimization Batch ID 6 Finished Started 06-04 19:47:53 Yield 78.1% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 5 Finished Started 06-04 19:47:53 Yield 82.4% VIEW TREND Customer Demo Process B - High Stirring Control Batch ID 4 Finished Started 06-04 19:47:53 Yield 67.5% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 3 Finished Started 06-04 19:47:53 Yield 74.8% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 2 Finished Started 06-04 19:47:53 Yield 64.7% VIEW TREND Customer Demo Process A - Mild Optimization Batch ID 1 Finished Started 06-04 19:47:53 Yield 61.2% VIEW TREND",
+      "viewTextLength": 948,
+      "visibleBlockCount": 72,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-materials-en-20260605.png"
+    },
+    {
+      "tab": "alarms",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:08 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 19% CONTROL LOOP 5.0 Hz tick 12 388 SAMPLES 1 276 + 6 / s BATCH PROGRESS 64% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Alarm Center Active faults requiring operator intervention. 1 critical 0 warnings 1 unread FILTER PIPELINE-ERROR Pipeline error code=503: sensor data stale; last data pipeline sample is 86430607 ms old 20:55:07 Data Pipeline / Current ERR Level: high Backend alarm pipeline-error Pipeline error code=503: sensor data stale; last data pipeline sample is 86430607 ms old CURRENT VALUE ERR Data Pipeline ALARM LEVEL -- From backend data pipeline Backend suggestion No suggestion OPERATOR LOG ENTRY RECORD",
+      "viewTextSample": "Alarm Center Active faults requiring operator intervention. 1 critical 0 warnings 1 unread FILTER PIPELINE-ERROR Pipeline error code=503: sensor data stale; last data pipeline sample is 86430607 ms old 20:55:07 Data Pipeline / Current ERR Level: high Backend alarm pipeline-error Pipeline error code=503: sensor data stale; last data pipeline sample is 86430607 ms old CURRENT VALUE ERR Data Pipeline ALARM LEVEL -- From backend data pipeline Backend suggestion No suggestion OPERATOR LOG ENTRY RECORD",
+      "viewTextLength": 505,
+      "visibleBlockCount": 54,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-alarms-en-20260605.png"
+    },
+    {
+      "tab": "audit",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:09 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 19% CONTROL LOOP 5.0 Hz tick 12 388 SAMPLES 1 276 + 6 / s BATCH PROGRESS 64% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Audit Log Tamper-evident operation events and safety decisions. Chain valid 1 events 1/1 hashed full chain RELOAD EXPORT CSV #1 19:47:53 demo_seed_applied 6fb5b32452... DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only Tamper-evident event #1 demo_seed_applied DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only TARGETS -- degC -- RPM / -- CPM BATCH -- 2026-06-04T11:47:53.586477100Z Hash chain prev=-- hash=6fb5b324522f4bf0f4d9e4e290229134ffa2cd5e6da713384b502b8668b4b5b2",
+      "viewTextSample": "Audit Log Tamper-evident operation events and safety decisions. Chain valid 1 events 1/1 hashed full chain RELOAD EXPORT CSV #1 19:47:53 demo_seed_applied 6fb5b32452... DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only Tamper-evident event #1 demo_seed_applied DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only TARGETS -- degC -- RPM / -- CPM BATCH -- 2026-06-04T11:47:53.586477100Z Hash chain prev=-- hash=6fb5b324522f4bf0f4d9e4e290229134ffa2cd5e6da713384b502b8668b4b5b2",
+      "viewTextLength": 593,
+      "visibleBlockCount": 56,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "auditStats": "Chain valid 1 events 1/1 hashed full chain",
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-audit-en-20260605.png"
+    },
+    {
+      "tab": "modbus",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:11 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 18% CONTROL LOOP 5.0 Hz tick 12 398 SAMPLES 1 284 + 6 / s BATCH PROGRESS 64% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Modbus Debug Register mapping, live reads, and safety-gated write tests. pipeline slave 1 mapped REGISTER MAP RTU HOLDING REGISTERS TEMPERATURE_C @ 0 current temperature | read | scale 0.1 | raw 326 32.60 STIRRER_RPM @ 1 current stirrer speed | read | scale 1 | raw 129 129.20 PRESSURE_MPA @ 2 current pressure | read | scale 0.01 | raw 52 0.52 SHAKE_SPEED_CPM @ 3 current shake speed | read | scale 1 | raw 31 31.00 TILT_ANGLE_DEG @ 4 current tilt angle | read | scale 0.01 | raw 1803 -26.97 FLOW_RATE_L_MIN @ 5 current flow rate | read | scale 0.01 | raw 247 2.47 PRODUCT_CONCENTRATION_PERCENT @ 6 current product concentration | read | scale 0.1 | raw 112 11.20 PH @ 7 current pH",
+      "viewTextSample": "Modbus Debug Register mapping, live reads, and safety-gated write tests. pipeline slave 1 mapped REGISTER MAP RTU HOLDING REGISTERS TEMPERATURE_C @ 0 current temperature | read | scale 0.1 | raw 326 32.60 STIRRER_RPM @ 1 current stirrer speed | read | scale 1 | raw 129 129.20 PRESSURE_MPA @ 2 current pressure | read | scale 0.01 | raw 52 0.52 SHAKE_SPEED_CPM @ 3 current shake speed | read | scale 1 | raw 31 31.00 TILT_ANGLE_DEG @ 4 current tilt angle | read | scale 0.01 | raw 1803 -26.97 FLOW_RATE_L_MIN @ 5 current flow rate | read | scale 0.01 | raw 247 2.47 PRODUCT_CONCENTRATION_PERCENT @ 6 current product concentration | read | scale 0.1 | raw 112 11.20 PH @ 7 current pH | read | scale 0.01 | raw 620 6.20 TARGET_TEMPERATURE_C @ 10 target temperature | write | scale 0.1 | raw 600 60.00 TARGET_STIRRER_RPM @ 11 target stirrer speed | write | scale 1 | raw 300 300.00 TARGET_SHAKE_SPEED_CPM @ 12 target shake speed | write | scale 1 | raw 30 30.00 TARGET_PRESSURE_MPA @ 13 target pressure ",
+      "viewTextLength": 2612,
+      "visibleBlockCount": 145,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-modbus-en-20260605.png"
+    },
+    {
+      "tab": "settings",
+      "lang": "en",
+      "htmlLang": "en",
+      "bodyTextSample": "REACTOROS REACTOROS HMI / REACTOR EDGE SUPERVISOR / V1.0 ERROR 503 DEVICES 0/1 PIPELINE 503 00:00:00 20:55:12 ENGINEER ENGINEER 中文 E-STOP EDGE COMPUTE CPU 16% CONTROL LOOP 4.8 Hz tick 12 408 SAMPLES 1 290 + 6 / s BATCH PROGRESS 64% V-01 / step 5 / 7 Monitor Batches Control AI Lab History Alarms Audit Modbus Settings Settings ERROR 503 0/1 DEVICES SYSTEM STATE ERROR 503 BACKEND SERVICE Error sensor data stale; last data pipeline sample is 86435608 ms old CONNECTED DEVICES 0/1 Waiting for data pipeline AI MODEL local-ga-sa-pid Mode: local_optimizer LOCAL QWEN LORA Pending XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN DEVICE MODE pipeline Limit 160.0 degC / 1200 RPM CURRENT BATCH --- Standby BACKEND DATA ENDPOINTS READ ONLY /API/LIVE /API/PROCESSES /API/PROCESSES/:ID/STEPS /API/PROCESSES/:ID/START /API/PROCESSES/CURRENT/STOP /API/BATCHES CONTROL PERMISSIONS SAFETY GATE OPERATOR Enforced ENGINEER Enforced ADMIN Enforced Local username/password login issues signed bearer sessions; write an",
+      "viewTextSample": "Settings ERROR 503 0/1 DEVICES SYSTEM STATE ERROR 503 BACKEND SERVICE Error sensor data stale; last data pipeline sample is 86435608 ms old CONNECTED DEVICES 0/1 Waiting for data pipeline AI MODEL local-ga-sa-pid Mode: local_optimizer LOCAL QWEN LORA Pending XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN DEVICE MODE pipeline Limit 160.0 degC / 1200 RPM CURRENT BATCH --- Standby BACKEND DATA ENDPOINTS READ ONLY /API/LIVE /API/PROCESSES /API/PROCESSES/:ID/STEPS /API/PROCESSES/:ID/START /API/PROCESSES/CURRENT/STOP /API/BATCHES CONTROL PERMISSIONS SAFETY GATE OPERATOR Enforced ENGINEER Enforced ADMIN Enforced Local username/password login issues signed bearer sessions; write and export operations are checked against role permissions. DEVICE CHANNEL 0/1 REACTOR_001 stale SENSORS UNDER THIS DEVICE TEMPERATURE 32.60 C PRESSURE 0.52 MPa STIRRER RPM 129.20 RPM SHAKE VESSEL SPEED 31.00 CPM TILT BINARY STATE 0.00 0/1 FITTED TILT ANGLE -26.97 deg FLOW RATE 2.47 L/min PRODUCT CONCENTRATION 11.20 % ",
+      "viewTextLength": 1075,
+      "visibleBlockCount": 97,
+      "cjkBlockCount": 1,
+      "disallowedEnglishCjk": [],
+      "mojibakeBlocks": [],
+      "clippedBlocks": [
+        {
+          "text": "ReactorOS",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 68,
+            "y": 10,
+            "w": 294,
+            "h": 28
+          }
+        },
+        {
+          "text": "sensor data stale; last data pipeline sample is 86435608 ms old",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 156,
+            "y": 282,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "Waiting for data pipeline",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 298,
+            "y": 296,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "local-ga-sa-pid",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 440,
+            "y": 263,
+            "w": 116,
+            "h": 18
+          }
+        },
+        {
+          "text": "Mode: local_optimizer",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 440,
+            "y": 282,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "XINGSHU_LOCAL_AI_ENABLED, XINGSHU_LOCAL_AI_BIN",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 583,
+            "y": 282,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "Limit 160.0 degC / 1200 RPM",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 156,
+            "y": 377,
+            "w": 116,
+            "h": 17
+          }
+        },
+        {
+          "text": "Shake Vessel Speed",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 1135,
+            "y": 552,
+            "w": 98,
+            "h": 14
+          }
+        },
+        {
+          "text": "Tilt Binary State",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 768,
+            "y": 616,
+            "w": 98,
+            "h": 14
+          }
+        },
+        {
+          "text": "Fitted Tilt Angle",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 890,
+            "y": 616,
+            "w": 98,
+            "h": 14
+          }
+        },
+        {
+          "text": "Product Concentration",
+          "id": "",
+          "tag": "div",
+          "rect": {
+            "x": 1135,
+            "y": 616,
+            "w": 98,
+            "h": 14
+          }
+        }
+      ],
+      "screenshot": "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-settings-en-20260605.png"
+    }
+  ],
+  "screenshots": [
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-monitor-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-recipes-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-program-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-ai-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-materials-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-alarms-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-audit-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-modbus-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-settings-zh-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-monitor-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-recipes-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-program-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-ai-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-materials-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-alarms-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-audit-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-modbus-en-20260605.png",
+    "X:\\tianhks\\output\\visual-i18n\\upper-computer-i18n-settings-en-20260605.png"
+  ],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 503 (Service Unavailable)",
+      "location": {
+        "url": "http://127.0.0.1:8000/api/live?sample_limit=60&include_processes=true&include_batches=true&include_events=false",
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "summary": {
+    "pageCount": 18,
+    "englishPagesWithUnexpectedCjk": [],
+    "pagesWithMojibake": [],
+    "pagesWithEmptyViewText": [],
+    "auditStats": [
+      {
+        "lang": "zh",
+        "text": "链路有效 1 事件 1/1 已哈希 全链路"
+      },
+      {
+        "lang": "en",
+        "text": "Chain valid 1 events 1/1 hashed full chain"
+      }
+    ],
+    "consoleErrorCount": 13,
+    "expectedDataPipeline503Count": 13,
+    "unexpectedConsoleMessages": []
+  }
+}

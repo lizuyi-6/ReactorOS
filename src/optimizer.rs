@@ -5,6 +5,7 @@ use crate::{
     config::OptimizerBounds,
     db::BatchOutcome,
     memory::{AiMemory, ForbiddenZone, ReferenceBatch},
+    number::round2,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,7 +228,7 @@ fn hybrid_search_candidate(
             let second = &parents[rng.gen_range(0..parents.len())];
             let child = crossover_candidate(rng, first, second, bounds);
             let child = mutate_candidate(rng, child, bounds, 1.0);
-            let child = pid_correct_candidate(child, outcomes, elites, bounds);
+            let child = trend_correct_candidate(child, outcomes, elites, bounds);
             if !is_forbidden(&child, forbidden_zones) {
                 population.push(child);
             }
@@ -244,7 +245,7 @@ fn hybrid_search_candidate(
 
     for _ in 0..32 {
         let neighbor = mutate_candidate(rng, current.clone(), bounds, temperature / 8.0);
-        let neighbor = pid_correct_candidate(neighbor, outcomes, elites, bounds);
+        let neighbor = trend_correct_candidate(neighbor, outcomes, elites, bounds);
         if is_forbidden(&neighbor, forbidden_zones) {
             temperature *= 0.86;
             continue;
@@ -261,7 +262,7 @@ fn hybrid_search_candidate(
 
     Some(SearchOutcome {
         candidate: current,
-        note: "Local GA/SA/PID optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and PID-style error correction.".to_string(),
+        note: "Local GA/SA/trend-correction optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and elite trend correction.".to_string(),
     })
 }
 
@@ -377,7 +378,7 @@ fn mutate_candidate(
     }
 }
 
-fn pid_correct_candidate(
+fn trend_correct_candidate(
     candidate: Candidate,
     outcomes: &[BatchOutcome],
     elites: &[BatchOutcome],
@@ -393,7 +394,7 @@ fn pid_correct_candidate(
     };
 
     Candidate {
-        temperature_c: pid_axis(
+        temperature_c: trend_axis(
             candidate.temperature_c,
             best.target_temperature_c,
             elite_mean.temperature_c,
@@ -401,7 +402,7 @@ fn pid_correct_candidate(
             bounds.min_temperature_c,
             bounds.max_temperature_c,
         ),
-        stirrer_rpm: pid_axis(
+        stirrer_rpm: trend_axis(
             candidate.stirrer_rpm,
             best.target_stirrer_rpm,
             elite_mean.stirrer_rpm,
@@ -409,7 +410,7 @@ fn pid_correct_candidate(
             bounds.min_stirrer_rpm,
             bounds.max_stirrer_rpm,
         ),
-        heating_minutes: pid_axis(
+        heating_minutes: trend_axis(
             candidate.heating_minutes,
             best.heating_minutes,
             elite_mean.heating_minutes,
@@ -417,7 +418,7 @@ fn pid_correct_candidate(
             bounds.min_heating_minutes,
             bounds.max_heating_minutes,
         ),
-        stirring_minutes: pid_axis(
+        stirring_minutes: trend_axis(
             candidate.stirring_minutes,
             best.stirring_minutes,
             elite_mean.stirring_minutes,
@@ -467,7 +468,7 @@ fn mutate_axis(rng: &mut impl Rng, value: f64, min: f64, max: f64, ratio: f64) -
     (value + rng.gen_range(-(span * ratio)..=(span * ratio))).clamp(min, max)
 }
 
-fn pid_axis(
+fn trend_axis(
     current: f64,
     best: f64,
     integral_anchor: f64,
@@ -631,8 +632,4 @@ fn rationale(
         "Based on the top {elite_count} batches from {real_outcome_count} recorded and {memory_outcome_count} file reference outcomes; best batch {} reached yield {:.2}% and product ratio {:.3}. {optimizer_note}{memory_note}{reference_note}{forbidden_note}",
         best.batch_id, best.yield_percent, best.product_ratio
     )
-}
-
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
 }

@@ -22,6 +22,7 @@ use crate::{
         SafetyConfig, WriteRegister,
     },
     control::{clamp_operator_targets, SafeCommand},
+    number::round2,
     state::{fit_tilt_angle_deg, ControlTargets, DeviceStatusSnapshot, SensorSnapshot},
 };
 
@@ -492,128 +493,20 @@ impl ReactorDevice for JsonBridgeDevice {
         tokio::task::spawn_blocking(move || {
             let state = read_json_bridge_state(&config.state_path)?;
             validate_json_bridge_state(&config, &state)?;
-            let control = match (request.component_id.as_str(), request.action.as_str()) {
-                ("shake_stepper", "start") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "motor",
-                    Some(serde_json::json!(1)),
-                    Some("shake_stepper"),
-                ),
-                ("shake_stepper", "stop") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "motor",
-                    Some(serde_json::json!(0)),
-                    Some("shake_stepper"),
-                ),
-                ("shake_stepper", "speed_up") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "speed",
-                    Some(serde_json::json!("up")),
-                    Some("shake_stepper"),
-                ),
-                ("shake_stepper", "speed_down") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "speed",
-                    Some(serde_json::json!("down")),
-                    Some("shake_stepper"),
-                ),
-                ("heater_relay", "on") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "relay",
-                    Some(serde_json::json!(1)),
-                    Some("heater_relay"),
-                ),
-                ("heater_relay", "off") => build_json_bridge_control(
-                    &config.request_id_prefix,
-                    "relay",
-                    Some(serde_json::json!(0)),
-                    Some("heater_relay"),
-                ),
-                ("stirrer_motor", "set_rpm") => {
-                    let next_targets = targets_for_component(&request, &targets, &safety)?;
-                    let safe = safe_command_from_targets(&next_targets, "manual component control");
-                    let rpm = safe.target_stirrer_rpm;
-                    let current_rpm = state
-                        .stirrer_rpm
-                        .or_else(|| last_stirrer_command.lock().ok().and_then(|cached| *cached));
-                    if current_rpm
-                        .map(|current| (rpm - current).abs() <= 0.01)
-                        .unwrap_or(false)
-                    {
-                        return Ok(ComponentControlOutcome {
-                            component_id: request.component_id,
-                            action: request.action,
-                            command: None,
-                            targets: Some(safe),
-                            message: "stirrer target already matches json bridge state".to_string(),
-                        });
-                    }
-                    let control = build_json_bridge_control(
-                        &config.request_id_prefix,
-                        "stir_speed",
-                        Some(serde_json::json!(rpm)),
-                        Some("stirrer_motor"),
-                    );
-                    *last_stirrer_command
-                        .lock()
-                        .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? =
-                        Some(rpm);
-                    write_json_bridge_control(&config.control_path, &control)?;
-                    return Ok(ComponentControlOutcome {
-                        component_id: request.component_id,
-                        action: request.action,
-                        command: Some(control),
-                        targets: Some(safe),
-                        message: "stirrer RPM written to json bridge control.json".to_string(),
-                    });
-                }
-                ("shake_stepper", "set_speed")
-                | ("temperature_controller", "set_target_temperature") => {
-                    let next_targets = targets_for_component(&request, &targets, &safety)?;
-                    let safe = safe_command_from_targets(&next_targets, "manual component control");
-                    let Some(control) = next_json_bridge_control(
-                        &config,
-                        &state,
-                        &safe,
-                        &last_commanded_shake_speed_cpm,
-                        &last_temperature_command,
-                        &last_stirrer_command,
-                    )?
-                    else {
-                        return Ok(ComponentControlOutcome {
-                            component_id: request.component_id,
-                            action: request.action,
-                            command: None,
-                            targets: Some(safe),
-                            message: "component target already inside json bridge deadband"
-                                .to_string(),
-                        });
-                    };
-                    write_json_bridge_control(&config.control_path, &control)?;
-                    return Ok(ComponentControlOutcome {
-                        component_id: request.component_id,
-                        action: request.action,
-                        command: Some(control),
-                        targets: Some(safe),
-                        message: "component target translated to json bridge command".to_string(),
-                    });
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "unsupported component control {}:{} for json bridge",
-                        request.component_id,
-                        request.action
-                    ));
-                }
-            };
-            write_json_bridge_control(&config.control_path, &control)?;
-            Ok(ComponentControlOutcome {
-                component_id: request.component_id,
-                action: request.action,
-                command: Some(control),
-                targets: None,
-                message: "component command written to json bridge control.json".to_string(),
-            })
+            let outcome = json_bridge_component_control_outcome(
+                &config,
+                &state,
+                &request,
+                &targets,
+                &safety,
+                &last_commanded_shake_speed_cpm,
+                &last_temperature_command,
+                &last_stirrer_command,
+            )?;
+            if let Some(control) = &outcome.command {
+                write_json_bridge_control(&config.control_path, control)?;
+            }
+            Ok(outcome)
         })
         .await?
         .map(Some)
@@ -727,8 +620,181 @@ fn safe_command_from_targets(targets: &ControlTargets, reason: &str) -> SafeComm
     }
 }
 
-fn round2(value: f64) -> f64 {
-    (value * 100.0).round() / 100.0
+fn json_bridge_component_control_outcome(
+    config: &JsonBridgeConfig,
+    state: &JsonBridgeState,
+    request: &ComponentControlCommand,
+    targets: &ControlTargets,
+    safety: &SafetyConfig,
+    last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
+    last_temperature_command: &StdMutex<Option<f64>>,
+    last_stirrer_command: &StdMutex<Option<f64>>,
+) -> Result<ComponentControlOutcome> {
+    if let Some(control) = json_bridge_direct_component_control(config, request) {
+        return Ok(ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control),
+            targets: None,
+            message: "component command written to json bridge control.json".to_string(),
+        });
+    }
+
+    match (request.component_id.as_str(), request.action.as_str()) {
+        ("stirrer_motor", "set_rpm") => json_bridge_stirrer_component_outcome(
+            config,
+            state,
+            request,
+            targets,
+            safety,
+            last_stirrer_command,
+        ),
+        ("shake_stepper", "set_speed") | ("temperature_controller", "set_target_temperature") => {
+            json_bridge_target_component_outcome(
+                config,
+                state,
+                request,
+                targets,
+                safety,
+                last_commanded_shake_speed_cpm,
+                last_temperature_command,
+                last_stirrer_command,
+            )
+        }
+        _ => Err(anyhow!(
+            "unsupported component control {}:{} for json bridge",
+            request.component_id,
+            request.action
+        )),
+    }
+}
+
+fn json_bridge_direct_component_control(
+    config: &JsonBridgeConfig,
+    request: &ComponentControlCommand,
+) -> Option<JsonBridgeControl> {
+    let control = match (request.component_id.as_str(), request.action.as_str()) {
+        ("shake_stepper", "start") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "motor",
+            Some(serde_json::json!(1)),
+            Some("shake_stepper"),
+        ),
+        ("shake_stepper", "stop") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "motor",
+            Some(serde_json::json!(0)),
+            Some("shake_stepper"),
+        ),
+        ("shake_stepper", "speed_up") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "speed",
+            Some(serde_json::json!("up")),
+            Some("shake_stepper"),
+        ),
+        ("shake_stepper", "speed_down") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "speed",
+            Some(serde_json::json!("down")),
+            Some("shake_stepper"),
+        ),
+        ("heater_relay", "on") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "relay",
+            Some(serde_json::json!(1)),
+            Some("heater_relay"),
+        ),
+        ("heater_relay", "off") => build_json_bridge_control(
+            &config.request_id_prefix,
+            "relay",
+            Some(serde_json::json!(0)),
+            Some("heater_relay"),
+        ),
+        _ => return None,
+    };
+    Some(control)
+}
+
+fn json_bridge_stirrer_component_outcome(
+    config: &JsonBridgeConfig,
+    state: &JsonBridgeState,
+    request: &ComponentControlCommand,
+    targets: &ControlTargets,
+    safety: &SafetyConfig,
+    last_stirrer_command: &StdMutex<Option<f64>>,
+) -> Result<ComponentControlOutcome> {
+    let next_targets = targets_for_component(request, targets, safety)?;
+    let safe = safe_command_from_targets(&next_targets, "manual component control");
+    let rpm = safe.target_stirrer_rpm;
+    let current_rpm = state
+        .stirrer_rpm
+        .or_else(|| last_stirrer_command.lock().ok().and_then(|cached| *cached));
+    if current_rpm
+        .map(|current| (rpm - current).abs() <= 0.01)
+        .unwrap_or(false)
+    {
+        return Ok(ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: None,
+            targets: Some(safe),
+            message: "stirrer target already matches json bridge state".to_string(),
+        });
+    }
+    let control = build_json_bridge_control(
+        &config.request_id_prefix,
+        "stir_speed",
+        Some(serde_json::json!(rpm)),
+        Some("stirrer_motor"),
+    );
+    *last_stirrer_command
+        .lock()
+        .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? = Some(rpm);
+    Ok(ComponentControlOutcome {
+        component_id: request.component_id.clone(),
+        action: request.action.clone(),
+        command: Some(control),
+        targets: Some(safe),
+        message: "stirrer RPM written to json bridge control.json".to_string(),
+    })
+}
+
+fn json_bridge_target_component_outcome(
+    config: &JsonBridgeConfig,
+    state: &JsonBridgeState,
+    request: &ComponentControlCommand,
+    targets: &ControlTargets,
+    safety: &SafetyConfig,
+    last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
+    last_temperature_command: &StdMutex<Option<f64>>,
+    last_stirrer_command: &StdMutex<Option<f64>>,
+) -> Result<ComponentControlOutcome> {
+    let next_targets = targets_for_component(request, targets, safety)?;
+    let safe = safe_command_from_targets(&next_targets, "manual component control");
+    let Some(control) = next_json_bridge_control(
+        config,
+        state,
+        &safe,
+        last_commanded_shake_speed_cpm,
+        last_temperature_command,
+        last_stirrer_command,
+    )?
+    else {
+        return Ok(ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: None,
+            targets: Some(safe),
+            message: "component target already inside json bridge deadband".to_string(),
+        });
+    };
+    Ok(ComponentControlOutcome {
+        component_id: request.component_id.clone(),
+        action: request.action.clone(),
+        command: Some(control),
+        targets: Some(safe),
+        message: "component target translated to json bridge command".to_string(),
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]

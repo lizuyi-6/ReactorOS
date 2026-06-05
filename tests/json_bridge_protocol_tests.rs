@@ -357,6 +357,9 @@ offset = 0.0
                     manual_lock_default: false,
                     control_interval_ms: 2000,
                     sensor_timeout_ms: 6000,
+                    write_retry_backoff_ms: 5000,
+                    safety_guard_timeout_ms: 1000,
+                    ai_stop_product_concentration_percent: 95.0,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
@@ -482,6 +485,9 @@ offset = 0.0
                     manual_lock_default: false,
                     control_interval_ms: 2000,
                     sensor_timeout_ms: 6000,
+                    write_retry_backoff_ms: 5000,
+                    safety_guard_timeout_ms: 1000,
+                    ai_stop_product_concentration_percent: 95.0,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,

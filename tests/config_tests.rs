@@ -111,3 +111,13 @@ fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
     assert_eq!(bounds.min_stirrer_rpm, 250.0);
     assert_eq!(memory.sensor_limits.configured_count(), 8);
 }
+
+#[test]
+fn safety_template_exposes_production_retry_guard_and_ai_stop_bounds() {
+    let safety: SafetyConfig =
+        toml::from_str(&std::fs::read_to_string("config/safety.toml").unwrap()).unwrap();
+
+    assert_eq!(safety.control.write_retry_backoff_ms, 5000);
+    assert_eq!(safety.control.safety_guard_timeout_ms, 1000);
+    assert_eq!(safety.control.ai_stop_product_concentration_percent, 95.0);
+}
