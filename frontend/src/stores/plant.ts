@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 
 export type ApiRecord = Record<string, unknown>;
+export type UiLanguage = "zh" | "en";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
 
@@ -24,6 +25,7 @@ interface LoginResponse {
 
 const TOKEN_KEY = "reactoros.vue.auth.token";
 const USER_KEY = "reactoros.vue.auth.user";
+const LANGUAGE_KEY = "reactoros.vue.language";
 
 const rolePasswords: Record<string, string> = {
   operator: "operator123",
@@ -64,6 +66,7 @@ function errorMessage(payload: unknown, fallback: string): string {
 export const usePlantStore = defineStore("plant", () => {
   const token = ref(localStorage.getItem(TOKEN_KEY));
   const user = ref<LoginResponse["user"] | null>(readStoredUser());
+  const language = ref<UiLanguage>(localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "zh");
   const health = ref<ApiRecord | null>(null);
   const live = ref<ApiRecord | null>(null);
   const config = ref<ApiRecord | null>(null);
@@ -76,6 +79,20 @@ export const usePlantStore = defineStore("plant", () => {
 
   const isAuthenticated = computed(() => Boolean(token.value && user.value));
   const role = computed(() => user.value?.role ?? "guest");
+  const isChinese = computed(() => language.value === "zh");
+
+  function setLanguage(nextLanguage: UiLanguage): void {
+    language.value = nextLanguage;
+    localStorage.setItem(LANGUAGE_KEY, nextLanguage);
+  }
+
+  function toggleLanguage(): void {
+    setLanguage(language.value === "zh" ? "en" : "zh");
+  }
+
+  function tr(zh: string, en: string): string {
+    return language.value === "zh" ? zh : en;
+  }
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers();
@@ -166,7 +183,9 @@ export const usePlantStore = defineStore("plant", () => {
   return {
     token,
     user,
+    language,
     role,
+    isChinese,
     isAuthenticated,
     health,
     live,
@@ -177,6 +196,9 @@ export const usePlantStore = defineStore("plant", () => {
     loading,
     error,
     lastUpdated,
+    setLanguage,
+    toggleLanguage,
+    tr,
     login,
     logout,
     refreshAll,
