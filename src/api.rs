@@ -699,7 +699,8 @@ async fn audit_logs(
     let total = state.db.audit_event_count_sqlx(event_type).await?;
     let events = state
         .db
-        .audit_events(page_size, (page - 1) * page_size, event_type)?;
+        .audit_events_sqlx(page_size, (page - 1) * page_size, event_type)
+        .await?;
     let chain = state.db.audit_chain_status()?;
     Ok(Json(success(AuditLogResponse {
         page,
@@ -721,7 +722,7 @@ async fn audit_export_csv(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let events = state.db.audit_events(10_000, 0, event_type)?;
+    let events = state.db.audit_events_sqlx(10_000, 0, event_type).await?;
     let csv = build_audit_csv(&events);
     Ok((
         [

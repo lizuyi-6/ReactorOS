@@ -22,7 +22,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow},
+    Row,
+};
 
 use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
 
@@ -1513,6 +1516,52 @@ impl Db {
         Ok(count as usize)
     }
 
+    pub async fn audit_events_sqlx(
+        &self,
+        limit: usize,
+        offset: usize,
+        event_type: Option<&str>,
+    ) -> Result<Vec<ControlEvent>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.audit_events(limit, offset, event_type);
+        };
+        let rows = if let Some(event_type) = event_type {
+            sqlx::query(
+                r#"
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                WHERE event_type = ?
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                "#,
+            )
+            .bind(event_type)
+            .bind(limit as i64)
+            .bind(offset as i64)
+            .fetch_all(pool)
+            .await
+            .context("failed to list filtered control events with SQLx")?
+        } else {
+            sqlx::query(
+                r#"
+                SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
+                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                FROM control_events
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                "#,
+            )
+            .bind(limit as i64)
+            .bind(offset as i64)
+            .fetch_all(pool)
+            .await
+            .context("failed to list control events with SQLx")?
+        };
+
+        rows.into_iter().map(control_event_from_sqlx_row).collect()
+    }
+
     pub fn audit_chain_status(&self) -> Result<AuditChainStatus> {
         let conn = self.read_conn()?;
         let total_hashed_events: usize = conn.query_row(
@@ -1828,6 +1877,22 @@ fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEv
     })
 }
 
+fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
+    let created_at: String = row.try_get("created_at")?;
+    Ok(ControlEvent {
+        id: row.try_get("id")?,
+        batch_id: row.try_get("batch_id")?,
+        event_type: row.try_get("event_type")?,
+        target_temperature_c: row.try_get("target_temperature_c")?,
+        target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
+        target_shake_speed_cpm: row.try_get("target_shake_speed_cpm")?,
+        reason: row.try_get("reason")?,
+        created_at: parse_dt_anyhow(&created_at)?,
+        previous_hash: row.try_get("previous_hash")?,
+        event_hash: row.try_get("event_hash")?,
+    })
+}
+
 fn control_event_hash(
     previous_hash: Option<&str>,
     batch_id: Option<i64>,
@@ -2137,6 +2202,12 @@ fn parse_dt(value: &str) -> rusqlite::Result<DateTime<Utc>> {
         .map_err(|err| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(err))
         })
+}
+
+fn parse_dt_anyhow(value: &str) -> Result<DateTime<Utc>> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .with_context(|| format!("invalid RFC3339 timestamp in database: {value}"))
 }
 
 fn rusqlite_conversion_error(

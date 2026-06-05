@@ -272,6 +272,52 @@ async fn async_file_database_audit_count_uses_sqlx_pool() {
     );
 }
 
+#[tokio::test]
+async fn async_file_database_audit_events_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    for index in 0..5 {
+        let event_type = if index % 2 == 0 {
+            "sqlx_list_probe"
+        } else {
+            "other_probe"
+        };
+        db.insert_control_event(None, event_type, None, &format!("event {index}"))
+            .unwrap();
+    }
+
+    let first_page = db.audit_events_sqlx(2, 0, None).await.unwrap();
+    assert_eq!(
+        first_page
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["event 4", "event 3"]
+    );
+
+    let second_page = db.audit_events_sqlx(2, 2, None).await.unwrap();
+    assert_eq!(
+        second_page
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["event 2", "event 1"]
+    );
+
+    let filtered = db
+        .audit_events_sqlx(10, 0, Some("sqlx_list_probe"))
+        .await
+        .unwrap();
+    assert_eq!(
+        filtered
+            .iter()
+            .map(|event| event.reason.as_str())
+            .collect::<Vec<_>>(),
+        vec!["event 4", "event 2", "event 0"]
+    );
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
