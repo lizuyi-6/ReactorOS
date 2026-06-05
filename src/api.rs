@@ -616,7 +616,7 @@ async fn live(
     let runtime = state.runtime.read().await.clone();
     ensure_fresh_sample(&state, &runtime)?;
     let sample_limit = query.sample_limit.unwrap_or(480).clamp(1, 480);
-    let recent_samples = state.db.recent_sample_records(sample_limit)?;
+    let recent_samples = state.db.recent_sample_records_sqlx(sample_limit).await?;
     let processes = if query.include_processes.unwrap_or(true) {
         state.db.list_processes()?
     } else {
@@ -1225,7 +1225,10 @@ async fn get_batch_detail(
     };
     Ok(Json(success(BatchDetailResponse {
         outcome: state.db.batch_outcome_by_id(batch_id)?,
-        samples: state.db.sample_records_for_batch(batch_id, 480)?,
+        samples: state
+            .db
+            .sample_records_for_batch_sqlx(batch_id, 480)
+            .await?,
         events: state.db.control_events_for_batch(batch_id, 100)?,
         batch,
     })))
@@ -1284,7 +1287,10 @@ async fn batch_report_markdown(
         return Err(AppError::not_found("batch not found"));
     };
     let outcome = state.db.batch_outcome_by_id(batch_id)?;
-    let samples = state.db.sample_records_for_batch(batch_id, 10_000)?;
+    let samples = state
+        .db
+        .sample_records_for_batch_sqlx(batch_id, 10_000)
+        .await?;
     let events = state.db.control_events_for_batch(batch_id, 500)?;
     let report = build_batch_report_markdown(&batch, outcome.as_ref(), &samples, &events);
     Ok((
@@ -2171,7 +2177,8 @@ async fn v1_history(
     let offset = (page - 1) * page_size;
     let samples = state
         .db
-        .samples_between(start_time, end_time, page_size, offset)?;
+        .samples_between_sqlx(start_time, end_time, page_size, offset)
+        .await?;
     let rows: Vec<Value> = samples
         .into_iter()
         .map(|record| {

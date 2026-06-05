@@ -843,6 +843,36 @@ impl Db {
         Ok(samples)
     }
 
+    pub async fn recent_sample_records_sqlx(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<SensorSampleRecord>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.recent_sample_records(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                   shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+            FROM (
+                SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                       shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                FROM sensor_samples
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list recent sensor samples with SQLx")?;
+        rows.into_iter()
+            .map(sensor_sample_record_from_sqlx_row)
+            .collect()
+    }
+
     pub fn samples_between(
         &self,
         start_time: DateTime<Utc>,
@@ -893,6 +923,38 @@ impl Db {
             samples.push(row?);
         }
         Ok(samples)
+    }
+
+    pub async fn samples_between_sqlx(
+        &self,
+        start_time: DateTime<Utc>,
+        end_time: DateTime<Utc>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<SensorSampleRecord>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.samples_between(start_time, end_time, limit, offset);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                   shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+            FROM sensor_samples
+            WHERE captured_at >= ? AND captured_at <= ?
+            ORDER BY captured_at ASC, id ASC
+            LIMIT ? OFFSET ?
+            "#,
+        )
+        .bind(start_time.to_rfc3339())
+        .bind(end_time.to_rfc3339())
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list sensor history with SQLx")?;
+        rows.into_iter()
+            .map(sensor_sample_record_from_sqlx_row)
+            .collect()
     }
 
     pub fn insert_control_event(
@@ -1485,6 +1547,39 @@ impl Db {
         Ok(samples)
     }
 
+    pub async fn sample_records_for_batch_sqlx(
+        &self,
+        batch_id: i64,
+        limit: usize,
+    ) -> Result<Vec<SensorSampleRecord>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.sample_records_for_batch(batch_id, limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                   shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+            FROM (
+                SELECT id, batch_id, temperature_c, pressure_mpa, stirrer_rpm,
+                       shake_speed_cpm, tilt_state, tilt_angle_deg, flow_rate_l_min, product_concentration_percent, ph, captured_at
+                FROM sensor_samples
+                WHERE batch_id = ?
+                ORDER BY id DESC
+                LIMIT ?
+            )
+            ORDER BY id ASC
+            "#,
+        )
+        .bind(batch_id)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list batch sensor samples with SQLx")?;
+        rows.into_iter()
+            .map(sensor_sample_record_from_sqlx_row)
+            .collect()
+    }
+
     pub fn recent_control_events(&self, limit: usize) -> Result<Vec<ControlEvent>> {
         let conn = self.read_conn()?;
         let mut stmt = conn.prepare(
@@ -2001,6 +2096,27 @@ fn batch_outcome_from_sqlx_row(row: SqliteRow) -> Result<BatchOutcome> {
         stirring_minutes: row.try_get("stirring_minutes")?,
         yield_percent: row.try_get("yield_percent")?,
         product_ratio: row.try_get("product_ratio")?,
+    })
+}
+
+fn sensor_sample_record_from_sqlx_row(row: SqliteRow) -> Result<SensorSampleRecord> {
+    let captured_at: String = row.try_get("captured_at")?;
+    let tilt_state: i64 = row.try_get("tilt_state")?;
+    Ok(SensorSampleRecord {
+        batch_id: row.try_get("batch_id")?,
+        sample: SensorSnapshot {
+            temperature_c: row.try_get("temperature_c")?,
+            pressure_mpa: row.try_get("pressure_mpa")?,
+            stirrer_rpm: row.try_get("stirrer_rpm")?,
+            shake_speed_cpm: row.try_get("shake_speed_cpm")?,
+            tilt_state: u8::try_from(tilt_state)
+                .with_context(|| format!("invalid tilt_state in database: {tilt_state}"))?,
+            tilt_angle_deg: row.try_get("tilt_angle_deg")?,
+            flow_rate_l_min: row.try_get("flow_rate_l_min")?,
+            product_concentration_percent: row.try_get("product_concentration_percent")?,
+            ph: row.try_get("ph")?,
+            captured_at: parse_dt_anyhow(&captured_at)?,
+        },
     })
 }
 

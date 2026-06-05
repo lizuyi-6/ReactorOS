@@ -430,6 +430,58 @@ async fn async_file_database_all_batch_outcomes_use_sqlx_pool() {
     assert_eq!(rec.based_on_batch_count, 3);
 }
 
+#[tokio::test]
+async fn async_file_database_sensor_history_reads_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let batch = db
+        .create_batch("sqlx samples", 70.0, 400.0, 45.0, 60.0)
+        .unwrap();
+    let base_time = Utc::now();
+    for index in 0..5 {
+        let mut sample = sample(index);
+        sample.captured_at = base_time + chrono::Duration::seconds(index as i64);
+        db.insert_sample(Some(batch.id), &sample).unwrap();
+    }
+
+    let recent = db.recent_sample_records_sqlx(2).await.unwrap();
+    assert_eq!(
+        recent
+            .iter()
+            .map(|record| record.sample.temperature_c)
+            .collect::<Vec<_>>(),
+        vec![173.0, 174.0]
+    );
+    assert_eq!(recent[1].batch_id, Some(batch.id));
+    assert_eq!(recent[1].sample.tilt_state, 0);
+
+    let batch_samples = db.sample_records_for_batch_sqlx(batch.id, 3).await.unwrap();
+    assert_eq!(
+        batch_samples
+            .iter()
+            .map(|record| record.sample.temperature_c)
+            .collect::<Vec<_>>(),
+        vec![172.0, 173.0, 174.0]
+    );
+
+    let ranged = db
+        .samples_between_sqlx(
+            base_time + chrono::Duration::seconds(1),
+            base_time + chrono::Duration::seconds(4),
+            2,
+            1,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        ranged
+            .iter()
+            .map(|record| record.sample.temperature_c)
+            .collect::<Vec<_>>(),
+        vec![172.0, 173.0]
+    );
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
