@@ -11,7 +11,7 @@
 当前上位机主体软件已经达到本地运行、演示、联调准备和继续验收状态。PRD 中多数“上位机基础功能”已有代码、测试或文档证据，但以下几类不能直接宣称完全满足 PRD：
 
 - 本地 Qwen3.5-2B + LoRA 推理、训练、自进化、GGUF 转换和 RK 端延迟验收。
-- PRD 指定的 Vue3、Element Plus、ECharts、Pinia、SQLx、tokio-modbus 技术栈。
+- PRD 指定的 SQLx、tokio-modbus 技术栈；Vue3、Element Plus、ECharts、Pinia 迁移已在 `codex/prd-tech-stack-migration` 分支启动，但尚未替换生产 HMI。
 - 生产级安全与运维能力，包括 watchdog/权限隔离、自动备份、介质安全擦除、生产密钥托管和安全扫描。
 - 真实硬件、真实第三方平台、release/RK 稳态性能和长期运行验收。
 
@@ -19,7 +19,7 @@
 
 | 编号 | PRD 表述 | 当前实现 | 状态 | 影响 | 补偿或下一步 |
 | --- | --- | --- | --- | --- | --- |
-| D1 | 前端采用 Vue 3.4+、Vite、Element Plus、ECharts、Pinia | `static/index.html` 是单文件原生 HTML/CSS/JS HMI，`frontend/src/main.ts` 仅作为组件化迁移目标 | 已接受的工程偏离 | 功能可运行，但与 PRD 技术栈和招聘/维护预期不一致 | 保留现有 HMI 作为 PoC/联调版本；若客户或团队坚持 PRD 技术栈，单独排期 Vue 迁移 |
+| D1 | 前端采用 Vue 3.4+、Vite、Element Plus、ECharts、Pinia | `frontend/` 已接入 Vue 3、Vite、Element Plus、ECharts、Pinia、Vue Router，包含 PRD 七大页面迁移壳、Pinia 后端数据 store 和 ECharts 实时曲线；生产服务仍托管 `static/index.html` | 迁移中 | PRD 前端栈已开始落地，但功能 parity、视觉验收和生产替换未完成 | 继续把 `static/index.html` 的控制、审计、Modbus 写入、中英切换和视觉验收迁入 Vue；通过后再把 daemon 静态资源切到 `frontend/dist/index.html` |
 | D2 | 后端数据库采用 SQLx ORM | 当前采用 `rusqlite`、SQLite WAL、手写 row mapping | 已接受的工程偏离 | 功能等效，但编译期 SQL 校验和连接池能力与 SQLx 不同 | 在开发文档中明确低依赖、本地部署优先；如后续切 PostgreSQL/多连接，再评估 SQLx |
 | D3 | Modbus 后端库采用 `tokio-modbus` | 当前采用 `serialport` 手写 RTU 帧，Modbus TCP server 也为自实现 | 已接受的工程偏离 | 可控性高，但需要更严格互操作测试 | 保留手写实现；用 Modbus Poll/Slave、STM32 实机和 TLS 工具补足验收证据 |
 | D4 | 本地 LoRA 推理、自训练、自进化、GGUF 转换 | `local_ai.rs` 只探测模型、adapter、脚本和资产路径；daemon 未执行真实推理/训练 | P0 未交付 | PRD P0 卖点未完成，不能宣称 M2/M3 完成 | 算法侧提供模型/adapter/训练脚本/RK 报告；上位机接入 llama.cpp HTTP 或等效推理服务 |
@@ -34,9 +34,9 @@
 
 ### 3.1 前端技术栈
 
-PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。当前真实 HMI 是 `static/index.html` 单文件原生实现，目标是降低 RK/边缘设备部署成本、减少构建链风险、便于离线单二进制托管。
+PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。`codex/prd-tech-stack-migration` 分支已经把 `frontend/` 从占位 TypeScript 页面推进为真实 Vue 应用：`App.vue` 承载工业 HMI shell，`router.ts` 映射 PRD 七大页面，`stores/plant.ts` 集中访问 `/health`、`/api/config/summary`、`/api/audit/logs`、`/api/modbus/registers` 和 `/api/recommendations/latest`，`MonitorView.vue` 使用 ECharts 绘制实时曲线。
 
-当前 HMI 已实现实时监控、参数/工艺控制、AI、历史批次、物料/产品结果、报警、审计、Modbus、系统配置、中英切换和本地视觉验证。但它不满足 PRD 的前端技术栈要求。对外应表述为“功能版 HMI 已交付，Vue/Element Plus/ECharts 为后续组件化迁移项”，不能表述为“已按 PRD 前端栈交付”。
+当前生产 HMI 仍由 `static/index.html` 单文件原生实现提供，已覆盖实时监控、参数/工艺控制、AI、历史批次、物料/产品结果、报警、审计、Modbus、系统配置、中英切换和本地视觉验证。对外应表述为“PRD 前端技术栈迁移已启动，Vue 版本具备可构建的七页面迁移壳；生产 HMI 替换和 parity 验收待完成”，不能表述为“已按 PRD 前端栈完成生产交付”。
 
 ### 3.2 数据库和 Modbus 技术栈
 
@@ -117,7 +117,7 @@ PRD 和团队分工写的是七大页面。当前 HMI 为 9 个 tab，是把部�
 | P1 | 生产安全 | `--safety-guard` 强制启用方案、watchdog、低权限用户、密钥轮换、安全扫描 |
 | P1 | 备份与擦除 | 数据库备份命令/计划任务、恢复演练、安全擦除 SOP |
 | P1 | 性能可靠性 | release/RK 资源采样、采集/控制延迟、RS485 丢包率、7x24 或 30 天报告 |
-| P2 | 前端组件化迁移 | Vue/Element Plus/ECharts/Pinia 迁移计划和页面验收 |
+| P1 | 前端组件化迁移 | Vue/Element Plus/ECharts/Pinia 已有首版迁移壳；继续补齐功能 parity、i18n 视觉审计和生产静态资源切换 |
 
 ## 6. 推荐对外说法
 
@@ -129,4 +129,4 @@ PRD 和团队分工写的是七大页面。当前 HMI 为 9 个 tab，是把部�
 
 > 上位机已经完整满足 PRD v2.2 的所有技术栈和 P0 AI 自进化要求。
 
-原因是本地 LoRA 和自进化仍未真实交付，Vue/SQLx/tokio-modbus 等 PRD 技术栈也没有按原文实现。
+原因是本地 LoRA 和自进化仍未真实交付，SQLx/tokio-modbus 尚未按原文实现，Vue 前端栈也仍处于迁移壳和生产替换前状态。

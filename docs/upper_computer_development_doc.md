@@ -68,6 +68,7 @@ ESP32 serial / JSON bridge / Modbus RTU map / external data pipeline
 | `src/bin/xingshu.rs` | 上位机 CLI，复用 REST API 和 `src/api_auth.rs` 签发的 bearer token |
 | `src/bin/reactor-safety-guard.rs` | 独立安全判定进程，stdin/stdout JSON 协议 |
 | `static/index.html` | 单页 Web HMI、七大页面、中英切换、浏览器端交互 |
+| `frontend/` | PRD 前端技术栈迁移工程，已接入 Vue 3、Vite、Element Plus、ECharts、Pinia 和 Vue Router；生产替换前仍需 parity 和视觉验收 |
 | `tests/*.rs` | Rust 集成测试，覆盖 API、CLI、DB、配置、控制和协议 |
 
 DB Recent/History 查询约定：实时样本、报警、批次、产物结果和审计事件类 Recent 接口先用 `ORDER BY id DESC LIMIT N` 限定“最新窗口”，再在外层按 `id ASC` 返回给 HMI/报告使用，保证用户看到的是窗口内从旧到新的时间线。
@@ -95,7 +96,7 @@ DB Recent/History 查询约定：实时样本、报警、批次、产物结果�
 
 ## 5. Web HMI 功能
 
-当前 Web HMI 由 `static/index.html` 提供，支持中英切换。动态字块已经覆盖 Modbus/MQTT/集成状态等接口返回字段。
+当前生产 Web HMI 由 `static/index.html` 提供，支持中英切换。动态字块已经覆盖 Modbus/MQTT/集成状态等接口返回字段。`codex/prd-tech-stack-migration` 分支已启动 PRD 前端技术栈切换，`frontend/` 可构建 Vue 3 / Element Plus / ECharts / Pinia 首版迁移壳，但尚未替换生产静态资源。
 
 | 页面 | 当前能力 |
 | --- | --- |
