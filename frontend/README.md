@@ -38,6 +38,10 @@ new HMI has parity with `static/index.html`.
   and exposes emergency stop/reset. When `/api/live` is unavailable because the
   pipeline sample is stale, the page still shows the last successful control
   response so operators can see the clamped target acknowledgement.
+- `src/views/ModbusView.vue` reads Modbus register payloads and performs
+  admin-only debug writes with the required audit reason. The default read
+  target is a runtime target register so the page remains verifiable without
+  fresh hardware samples.
 - All seven PRD route views now render their primary visible UI blocks through
   the shared language state. Chromium verification checks both zh and en text
   for `/#/monitor`, `/#/control`, `/#/ai`, `/#/history`, `/#/audit`,
@@ -47,7 +51,9 @@ new HMI has parity with `static/index.html`.
   is archived as `output/playwright/vue-i18n-verification.json` and
   `output/playwright/vue-i18n-*.png`. Control-write evidence is archived as
   `output/playwright/vue-control-write-verification.json` and
-  `output/playwright/vue-control-write-en.png`.
+  `output/playwright/vue-control-write-en.png`. Modbus-write evidence is
+  archived as `output/playwright/vue-modbus-write-verification.json` and
+  `output/playwright/vue-modbus-write-en.png`.
 
 ## Migration Rules
 

@@ -255,18 +255,34 @@ select {
   align-items: start;
 }
 
-.control-form {
+.modbus-debug-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, .65fr) minmax(420px, 1.35fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.control-form,
+.modbus-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
-.control-form .el-form-item {
+.control-form .el-form-item,
+.modbus-form .el-form-item {
   margin-bottom: 0;
 }
 
-.control-form .el-input-number {
+.control-form .el-input-number,
+.modbus-form .el-input-number,
+.modbus-form .el-select,
+.modbus-form .el-input {
   width: 100%;
+}
+
+.modbus-form .reason-field {
+  grid-column: span 2;
 }
 
 .control-actions {
@@ -358,6 +374,7 @@ select {
   .topbar,
   .view-heading,
   .control-panel,
+  .modbus-debug-panel,
   .two-col {
     display: block;
   }
@@ -381,8 +398,13 @@ select {
   }
 
   .control-form,
+  .modbus-form,
   .switch-grid {
     grid-template-columns: 1fr;
+  }
+
+  .modbus-form .reason-field {
+    grid-column: auto;
   }
 
   .target-summary {

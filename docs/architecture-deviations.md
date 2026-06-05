@@ -19,7 +19,7 @@
 
 | 编号 | PRD 表述 | 当前实现 | 状态 | 影响 | 补偿或下一步 |
 | --- | --- | --- | --- | --- | --- |
-| D1 | 前端采用 Vue 3.4+、Vite、Element Plus、ECharts、Pinia | `frontend/` 已接入 Vue 3、Vite、Element Plus、ECharts、Pinia、Vue Router，包含 PRD 七大页面、Pinia 后端数据 store、ECharts 实时曲线、持久化中英切换、控制目标写入、自动控制、人工锁定和急停/复位；`npm run frontend:build`、七路由中英 DOM/截图验证和控制写入浏览器验证已通过；生产服务仍托管 `static/index.html` | 迁移中 | PRD 前端栈已开始落地，并具备可验证的七页面迁移版；工艺管理、审计导出、Modbus 写入、生产替换和完整 parity 尚未完成 | 继续把 `static/index.html` 的工艺管理、审计导出、Modbus 写入和剩余交互迁入 Vue；通过后再把 daemon 静态资源切到 `frontend/dist/index.html` |
+| D1 | 前端采用 Vue 3.4+、Vite、Element Plus、ECharts、Pinia | `frontend/` 已接入 Vue 3、Vite、Element Plus、ECharts、Pinia、Vue Router，包含 PRD 七大页面、Pinia 后端数据 store、ECharts 实时曲线、持久化中英切换、控制目标写入、自动控制、人工锁定、急停/复位、Modbus 寄存器读回和 admin-only 调试写入；`npm run frontend:build`、七路由中英 DOM/截图验证、控制写入和 Modbus 写入浏览器验证已通过；生产服务仍托管 `static/index.html` | 迁移中 | PRD 前端栈已开始落地，并具备可验证的七页面迁移版；工艺管理、审计导出、生产替换和完整 parity 尚未完成 | 继续把 `static/index.html` 的工艺管理、审计导出和剩余交互迁入 Vue；通过后再把 daemon 静态资源切到 `frontend/dist/index.html` |
 | D2 | 后端数据库采用 SQLx ORM | 文件数据库已接入 SQLx SQLite pool，审计日志 total/list/chain/export、审计事件写入、工艺流程/步骤读写与应用标记、批次创建/结束、批次/产物结果 history、批次详情/报告读取、demo alarm 读取、AI 推荐输入/缓存/写入、产物结果写入、实时曲线/v1 history/批次报告样本、实时采集/外部 pipeline 样本写入、AINAS/MQTT 集成任务查询/创建/更新已由真实 API/MQTT 路径调用 SQLx；schema/migration 和部分保留兼容路径仍使用 `rusqlite` | 迁移中 | 已开始对齐 PRD 技术栈，但当前仍是混合数据库层；尚未获得全面 SQLx migration 封装和更广泛编译期 SQL 约束 | 继续把 schema migration 迁到 SQLx，随后收缩 `rusqlite` 到兼容/诊断工具路径 |
 | D3 | Modbus 后端库采用 `tokio-modbus` | `DeviceMode::Modbus` 的 RTU 主站读写已迁到 `tokio-modbus` + `tokio-serial`；Modbus TCP server 仍为自实现 MBAP/PDU 处理 | 部分迁移 | RTU 主站技术栈已对齐 PRD；TCP server 还需评估是否改用 `tokio-modbus` server feature 或保留现有 TLS/审计集成实现 | 补 STM32 实机 RTU 验收；评估 Modbus TCP server 是否迁到 `tokio-modbus` server feature；继续用 Modbus Poll/Slave、故障注入和 TLS 工具补足互操作证据 |
 | D4 | 本地 LoRA 推理、自训练、自进化、GGUF 转换 | `local_ai.rs` 只探测模型、adapter、脚本和资产路径；daemon 未执行真实推理/训练 | P0 未交付 | PRD P0 卖点未完成，不能宣称 M2/M3 完成 | 算法侧提供模型/adapter/训练脚本/RK 报告；上位机接入 llama.cpp HTTP 或等效推理服务 |
@@ -34,7 +34,7 @@
 
 ### 3.1 前端技术栈
 
-PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。`codex/prd-tech-stack-migration` 分支已经把 `frontend/` 从占位 TypeScript 页面推进为真实 Vue 应用：`App.vue` 承载工业 HMI shell，`router.ts` 映射 PRD 七大页面，`stores/plant.ts` 集中访问 `/health`、`/api/config/summary`、`/api/audit/logs`、`/api/modbus/registers` 和 `/api/recommendations/latest`，`MonitorView.vue` 使用 ECharts 绘制实时曲线，七个 Vue 页面已接入 Pinia 持久化中英切换，`ControlView.vue` 已接入 `/api/control/targets`、`/api/control/auto`、`/api/control/manual-lock`、`/api/control/emergency-stop` 和 reset 路径。当前已用 `npm run frontend:build` 验证单文件构建，并用 Playwright/Chromium 对 `/#/monitor`、`/#/control`、`/#/ai`、`/#/history`、`/#/audit`、`/#/modbus`、`/#/settings` 做中文/英文 DOM 字块检查；控制写入验证通过 engineer 登录、目标写入、后端 200 返回和页面回显。截图证据位于 `output/playwright/vue-i18n-monitor-zh.png`、`output/playwright/vue-i18n-monitor-en.png`、`output/playwright/vue-i18n-modbus-zh.png`、`output/playwright/vue-i18n-modbus-en.png` 和 `output/playwright/vue-control-write-en.png`。
+PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。`codex/prd-tech-stack-migration` 分支已经把 `frontend/` 从占位 TypeScript 页面推进为真实 Vue 应用：`App.vue` 承载工业 HMI shell，`router.ts` 映射 PRD 七大页面，`stores/plant.ts` 集中访问 `/health`、`/api/config/summary`、`/api/audit/logs`、`/api/modbus/registers` 和 `/api/recommendations/latest`，`MonitorView.vue` 使用 ECharts 绘制实时曲线，七个 Vue 页面已接入 Pinia 持久化中英切换，`ControlView.vue` 已接入 `/api/control/targets`、`/api/control/auto`、`/api/control/manual-lock`、`/api/control/emergency-stop` 和 reset 路径，`ModbusView.vue` 已接入 `/api/modbus/registers/:name/read` 和 admin-only `/write` 路径，并要求非空审计原因。当前已用 `npm run frontend:build` 验证单文件构建，并用 Playwright/Chromium 对 `/#/monitor`、`/#/control`、`/#/ai`、`/#/history`、`/#/audit`、`/#/modbus`、`/#/settings` 做中文/英文 DOM 字块检查；控制写入验证通过 engineer 登录、目标写入、后端 200 返回和页面回显；Modbus 写入验证通过 admin 登录、写入 `target_temperature_c=67`、后端返回 raw `670` 和页面读回。截图证据位于 `output/playwright/vue-i18n-monitor-zh.png`、`output/playwright/vue-i18n-monitor-en.png`、`output/playwright/vue-i18n-modbus-zh.png`、`output/playwright/vue-i18n-modbus-en.png`、`output/playwright/vue-control-write-en.png` 和 `output/playwright/vue-modbus-write-en.png`。
 
 当前生产 HMI 仍由 `static/index.html` 单文件原生实现提供，已覆盖实时监控、参数/工艺控制、AI、历史批次、物料/产品结果、报警、审计、Modbus、系统配置、中英切换和本地视觉验证。对外应表述为“PRD 前端技术栈迁移已进入可构建、可视觉验证、可执行基础安全控制的七页面 Vue 版本；生产 HMI 替换和完整功能 parity 验收待完成”，不能表述为“已按 PRD 前端栈完成生产交付”。
 
@@ -117,7 +117,7 @@ PRD 和团队分工写的是七大页面。当前 HMI 为 9 个 tab，是把部�
 | P1 | 生产安全 | `--safety-guard` 强制启用方案、watchdog、低权限用户、密钥轮换、安全扫描 |
 | P1 | 备份与擦除 | 数据库备份命令/计划任务、恢复演练、安全擦除 SOP |
 | P1 | 性能可靠性 | release/RK 资源采样、采集/控制延迟、RS485 丢包率、7x24 或 30 天报告 |
-| P1 | 前端组件化迁移 | Vue/Element Plus/ECharts/Pinia 已有七页面迁移版、中英切换视觉证据和控制写入验证；继续补齐工艺管理、审计导出、Modbus 写入和生产静态资源切换 |
+| P1 | 前端组件化迁移 | Vue/Element Plus/ECharts/Pinia 已有七页面迁移版、中英切换视觉证据、控制写入和 Modbus 写入验证；继续补齐工艺管理、审计导出和生产静态资源切换 |
 
 ## 6. 推荐对外说法
 

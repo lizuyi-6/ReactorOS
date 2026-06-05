@@ -1,11 +1,105 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { usePlantStore } from "../stores/plant";
+import type { ApiRecord } from "../stores/plant";
 import { arrayAt, textAt } from "./view-utils";
 
 const store = usePlantStore();
-const registers = computed(() => arrayAt(store.modbus, "registers"));
+const readRegisters = computed(() => arrayAt(store.modbus, "read_registers"));
+const writeRegisters = computed(() => arrayAt(store.modbus, "write_registers"));
+const registers = computed(() => [...readRegisters.value, ...writeRegisters.value]);
 const coils = computed(() => arrayAt(store.modbus, "coils"));
+const submitting = ref(false);
+const actionMessage = ref("");
+const readResult = ref<ApiRecord | null>(null);
+const writeResult = ref<ApiRecord | null>(null);
+const debugForm = reactive({
+  readRegister: "target_temperature_c",
+  writeRegister: "target_temperature_c",
+  value: 65,
+  reason: "Vue Modbus debug acceptance"
+});
+
+const writeOptions = computed(() =>
+  writeRegisters.value.map((register) => ({
+    label: `${textAt(register, "name")} @${textAt(register, "address")}`,
+    value: textAt(register, "name", "")
+  }))
+);
+
+const readOptions = computed(() =>
+  registers.value.map((register) => ({
+    label: `${textAt(register, "name")} @${textAt(register, "address")}`,
+    value: textAt(register, "name", "")
+  }))
+);
+
+watch(
+  writeOptions,
+  (options) => {
+    if (options.length && !options.some((option) => option.value === debugForm.writeRegister)) {
+      debugForm.writeRegister = options[0].value;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  readOptions,
+  (options) => {
+    if (options.length && !options.some((option) => option.value === debugForm.readRegister)) {
+      debugForm.readRegister = options[0].value;
+    }
+  },
+  { immediate: true }
+);
+
+function resultRows(result: ApiRecord | null): { label: string; value: string }[] {
+  if (!result) return [];
+  return [
+    { label: store.tr("寄存器", "Register"), value: textAt(result, "register") },
+    { label: store.tr("地址", "Address"), value: textAt(result, "address") },
+    { label: store.tr("数值", "Value"), value: textAt(result, "value", textAt(result, "applied_value")) },
+    { label: store.tr("原始值", "Raw"), value: textAt(result, "raw") },
+    { label: store.tr("来源", "Source"), value: textAt(result, "source", textAt(result, "requested_value")) }
+  ];
+}
+
+async function runModbusAction(action: () => Promise<void>, successMessage: string): Promise<void> {
+  submitting.value = true;
+  actionMessage.value = "";
+  store.error = null;
+  try {
+    await action();
+    actionMessage.value = successMessage;
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function readSelectedRegister(): Promise<void> {
+  await runModbusAction(
+    async () => {
+      readResult.value = await store.readModbusRegister(debugForm.readRegister);
+    },
+    store.tr("寄存器已读回", "Register read completed")
+  );
+}
+
+async function writeSelectedRegister(): Promise<void> {
+  await runModbusAction(
+    async () => {
+      writeResult.value = await store.writeModbusRegister(debugForm.writeRegister, {
+        value: debugForm.value,
+        reason: debugForm.reason
+      });
+      readResult.value = await store.readModbusRegister(debugForm.writeRegister);
+    },
+    store.tr("写入已通过安全链路和审计原因", "Write passed the safety path with audit reason")
+  );
+}
 </script>
 
 <template>
@@ -16,8 +110,65 @@ const coils = computed(() => arrayAt(store.modbus, "coils"));
         <h1>{{ store.tr("Modbus 调试", "Modbus Debug") }}</h1>
         <span>{{ store.tr("寄存器映射、调试权限和第三方接口验收", "Register map, debug permissions, and third-party interface acceptance") }}</span>
       </div>
-      <el-tag type="danger">{{ store.tr("仅管理员可写", "Admin writes only") }}</el-tag>
+      <el-tag :type="store.role === 'admin' ? 'success' : 'danger'">
+        {{ store.role === "admin" ? store.tr("管理员写入已解锁", "Admin writes unlocked") : store.tr("仅管理员可写", "Admin writes only") }}
+      </el-tag>
     </div>
+
+    <section class="panel modbus-debug-panel">
+      <div>
+        <h2>{{ store.tr("寄存器调试", "Register Debug") }}</h2>
+        <p>{{ store.tr("读操作可直接执行；写操作仅允许管理员，并且必须填写非空审计原因。", "Reads are available directly; writes require an admin session and a non-empty audit reason.") }}</p>
+      </div>
+      <el-form label-position="top" class="modbus-form">
+        <el-form-item :label="store.tr('读寄存器', 'Read register')">
+          <el-select v-model="debugForm.readRegister" filterable>
+            <el-option v-for="option in readOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="store.tr('写寄存器', 'Write register')">
+          <el-select v-model="debugForm.writeRegister" filterable>
+            <el-option v-for="option in writeOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="store.tr('写入值', 'Write value')">
+          <el-input-number v-model="debugForm.value" :step="1" controls-position="right" />
+        </el-form-item>
+        <el-form-item :label="store.tr('审计原因', 'Audit reason')" class="reason-field">
+          <el-input v-model="debugForm.reason" maxlength="160" show-word-limit />
+        </el-form-item>
+        <div class="control-actions">
+          <el-button :loading="submitting" @click="readSelectedRegister">{{ store.tr("读取寄存器", "Read Register") }}</el-button>
+          <el-button
+            type="danger"
+            :loading="submitting"
+            :disabled="store.role !== 'admin' || !debugForm.reason.trim()"
+            @click="writeSelectedRegister"
+          >
+            {{ store.tr("写入并读回", "Write and Read Back") }}
+          </el-button>
+        </div>
+      </el-form>
+    </section>
+
+    <section class="panel two-col">
+      <div>
+        <h2>{{ store.tr("调试结果", "Debug Result") }}</h2>
+        <p>{{ actionMessage || store.tr("写入结果展示 requested/applied/raw，读回结果展示 runtime 或传感器来源。", "Write results show requested/applied/raw values; read results show runtime or sensor source.") }}</p>
+      </div>
+      <div class="target-summary">
+        <div v-for="row in resultRows(writeResult)" :key="`write-${row.label}`">
+          <span>{{ row.label }}</span>
+          <strong>{{ row.value }}</strong>
+          <small>{{ store.tr("写入结果", "Write result") }}</small>
+        </div>
+        <div v-for="row in resultRows(readResult)" :key="`read-${row.label}`">
+          <span>{{ row.label }}</span>
+          <strong>{{ row.value }}</strong>
+          <small>{{ store.tr("读回结果", "Read result") }}</small>
+        </div>
+      </div>
+    </section>
 
     <section class="panel">
       <div class="panel-title">
@@ -31,6 +182,12 @@ const coils = computed(() => arrayAt(store.modbus, "coils"));
         <el-table-column prop="name" :label="store.tr('名称', 'Name')" />
         <el-table-column prop="access" :label="store.tr('访问', 'Access')" width="120" />
         <el-table-column prop="unit" :label="store.tr('单位', 'Unit')" width="110" />
+        <el-table-column :label="store.tr('当前值', 'Current value')" width="130">
+          <template #default="{ row }">{{ textAt(row, "value") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('原始值', 'Raw')" width="110">
+          <template #default="{ row }">{{ textAt(row, "raw") }}</template>
+        </el-table-column>
       </el-table>
     </section>
 

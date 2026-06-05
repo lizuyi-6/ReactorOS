@@ -12,6 +12,11 @@ export interface TargetUpdatePayload {
   shake_speed_cpm?: number;
 }
 
+export interface ModbusWritePayload {
+  value: number;
+  reason: string;
+}
+
 interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -244,6 +249,21 @@ export const usePlantStore = defineStore("plant", () => {
     await refreshLive();
   }
 
+  async function readModbusRegister(register: string): Promise<ApiRecord> {
+    return request<ApiRecord>(`/api/modbus/registers/${encodeURIComponent(register)}/read`);
+  }
+
+  async function writeModbusRegister(register: string, payload: ModbusWritePayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/modbus/registers/${encodeURIComponent(register)}/write`, {
+      method: "POST",
+      body: payload
+    });
+    const targets = response.targets;
+    if (targets && typeof targets === "object") mergeRuntimeFallback({ targets: targets as ApiRecord });
+    await refreshProtected();
+    return response;
+  }
+
   return {
     token,
     user,
@@ -274,6 +294,8 @@ export const usePlantStore = defineStore("plant", () => {
     setAutoEnabled,
     setManualLocked,
     triggerEmergencyStop,
-    resetEmergencyStop
+    resetEmergencyStop,
+    readModbusRegister,
+    writeModbusRegister
   };
 });
