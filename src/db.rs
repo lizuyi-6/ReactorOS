@@ -1375,6 +1375,32 @@ impl Db {
         Ok(())
     }
 
+    pub async fn insert_product_result_sqlx(&self, result: &ProductResult) -> Result<()> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_product_result(result);
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO product_results (batch_id, yield_percent, product_ratio, notes, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(batch_id) DO UPDATE SET
+                yield_percent = excluded.yield_percent,
+                product_ratio = excluded.product_ratio,
+                notes = excluded.notes,
+                created_at = excluded.created_at
+            "#,
+        )
+        .bind(result.batch_id)
+        .bind(result.yield_percent)
+        .bind(result.product_ratio)
+        .bind(&result.notes)
+        .bind(Utc::now().to_rfc3339())
+        .execute(pool)
+        .await
+        .context("failed to insert product result with SQLx")?;
+        Ok(())
+    }
+
     pub fn insert_recommendation(&self, recommendation: &Recommendation) -> Result<()> {
         let conn = self.write_conn()?;
         conn.execute(
@@ -1395,6 +1421,32 @@ impl Db {
                 Utc::now().to_rfc3339()
             ],
         )?;
+        Ok(())
+    }
+
+    pub async fn insert_recommendation_sqlx(&self, recommendation: &Recommendation) -> Result<()> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_recommendation(recommendation);
+        };
+        sqlx::query(
+            r#"
+            INSERT INTO ai_recommendations
+                (based_on_batch_count, target_temperature_c, target_stirrer_rpm,
+                 heating_minutes, stirring_minutes, expected_score, rationale, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(recommendation.based_on_batch_count)
+        .bind(recommendation.target_temperature_c)
+        .bind(recommendation.target_stirrer_rpm)
+        .bind(recommendation.heating_minutes)
+        .bind(recommendation.stirring_minutes)
+        .bind(recommendation.expected_score)
+        .bind(&recommendation.rationale)
+        .bind(Utc::now().to_rfc3339())
+        .execute(pool)
+        .await
+        .context("failed to insert AI recommendation with SQLx")?;
         Ok(())
     }
 

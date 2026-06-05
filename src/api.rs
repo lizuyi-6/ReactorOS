@@ -1502,7 +1502,7 @@ async fn ai_control(
         Some(recommendation) => Some(recommendation),
         None if allow_target_adjustment => {
             let recommendation = generate_recommendation(&state).await?;
-            state.db.insert_recommendation(&recommendation)?;
+            state.db.insert_recommendation_sqlx(&recommendation).await?;
             Some(recommendation)
         }
         None => None,
@@ -1722,7 +1722,7 @@ async fn ai_experiment_plan(
     State(state): State<AppState>,
 ) -> Result<Json<V1Envelope<ExperimentPlanResponse>>, AppError> {
     let recommendation = generate_recommendation(&state).await?;
-    state.db.insert_recommendation(&recommendation)?;
+    state.db.insert_recommendation_sqlx(&recommendation).await?;
     let plan = build_experiment_plan(&state, recommendation).await?;
     Ok(Json(success(plan)))
 }
@@ -2413,12 +2413,15 @@ async fn product_results(
             "product_ratio must be between 0 and 1",
         ));
     }
-    state.db.insert_product_result(&ProductResult {
-        batch_id: payload.batch_id,
-        yield_percent: round2(payload.yield_percent),
-        product_ratio: round2(payload.product_ratio),
-        notes: payload.notes.unwrap_or_default(),
-    })?;
+    state
+        .db
+        .insert_product_result_sqlx(&ProductResult {
+            batch_id: payload.batch_id,
+            yield_percent: round2(payload.yield_percent),
+            product_ratio: round2(payload.product_ratio),
+            notes: payload.notes.unwrap_or_default(),
+        })
+        .await?;
     state.db.insert_control_event(
         Some(payload.batch_id),
         "product_result_recorded",
@@ -2426,7 +2429,7 @@ async fn product_results(
         "product result saved; recommendation regeneration queued",
     )?;
     let recommendation = generate_recommendation(&state).await?;
-    state.db.insert_recommendation(&recommendation)?;
+    state.db.insert_recommendation_sqlx(&recommendation).await?;
     Ok(Json(recommendation_envelope(&state, recommendation).await))
 }
 
@@ -2568,7 +2571,7 @@ async fn generate_latest_recommendation(
     State(state): State<AppState>,
 ) -> Result<Json<Option<AiRecommendationEnvelope>>, AppError> {
     let recommendation = generate_recommendation(&state).await?;
-    state.db.insert_recommendation(&recommendation)?;
+    state.db.insert_recommendation_sqlx(&recommendation).await?;
     Ok(Json(Some(
         recommendation_envelope(&state, recommendation).await,
     )))

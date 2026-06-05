@@ -540,6 +540,61 @@ async fn async_file_database_latest_recommendation_uses_sqlx_pool() {
     assert_eq!(recommendation.rationale, "local latest");
 }
 
+#[tokio::test]
+async fn async_file_database_recommendation_writes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    db.insert_recommendation_sqlx(&reactor_edge_daemon::optimizer::Recommendation {
+        based_on_batch_count: 4,
+        target_temperature_c: 68.0,
+        target_stirrer_rpm: 360.0,
+        heating_minutes: 38.0,
+        stirring_minutes: 52.0,
+        expected_score: 84.5,
+        rationale: "sqlx recommendation write".to_string(),
+    })
+    .await
+    .unwrap();
+
+    let recommendation = db.latest_recommendation_sqlx().await.unwrap().unwrap();
+    assert_eq!(recommendation.based_on_batch_count, 4);
+    assert_eq!(recommendation.target_temperature_c, 68.0);
+    assert_eq!(recommendation.rationale, "sqlx recommendation write");
+}
+
+#[tokio::test]
+async fn async_file_database_product_result_writes_use_sqlx_pool() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+    let batch = db
+        .create_batch("sqlx outcome write", 77.0, 430.0, 41.0, 62.0)
+        .unwrap();
+
+    db.insert_product_result_sqlx(&ProductResult {
+        batch_id: batch.id,
+        yield_percent: 71.5,
+        product_ratio: 0.76,
+        notes: "first result".to_string(),
+    })
+    .await
+    .unwrap();
+    db.insert_product_result_sqlx(&ProductResult {
+        batch_id: batch.id,
+        yield_percent: 74.25,
+        product_ratio: 0.81,
+        notes: "updated result".to_string(),
+    })
+    .await
+    .unwrap();
+
+    let outcomes = db.batch_outcomes_sqlx().await.unwrap();
+    assert_eq!(outcomes.len(), 1);
+    assert_eq!(outcomes[0].batch_id, batch.id);
+    assert_eq!(outcomes[0].yield_percent, 74.25);
+    assert_eq!(outcomes[0].product_ratio, 0.81);
+}
+
 #[test]
 fn integration_task_payloads_encrypt_at_rest_when_key_is_configured() {
     let dir = tempfile::tempdir().unwrap();
