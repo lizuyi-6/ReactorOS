@@ -599,6 +599,43 @@ async fn async_file_database_integration_task_reads_use_sqlx_pool_with_encryptio
     assert!(!raw.0.contains("sqlx encrypted payload"));
 }
 
+#[tokio::test]
+async fn async_file_database_integration_task_writes_use_sqlx_pool_with_encryption() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reactor.sqlite3");
+    let db = Db::open_with_encryption_key(&path, [12_u8; 32]).unwrap();
+    let task = db
+        .create_integration_task_sqlx(
+            "mqtt",
+            Some("sqlx-write-001"),
+            "set_targets",
+            &json!({ "action": "set_targets", "reason": "sqlx write secret" }),
+        )
+        .await
+        .unwrap();
+    assert_eq!(task.status, "received");
+    assert_eq!(task.request["reason"], "sqlx write secret");
+    assert!(task.response.is_null());
+
+    let updated = db
+        .update_integration_task_sqlx(
+            task.id,
+            "executed",
+            &json!({ "code": 0, "message": "sqlx write response" }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated.status, "executed");
+    assert_eq!(updated.response["message"], "sqlx write response");
+
+    let raw = raw_task_payloads(&path, task.id);
+    assert!(raw.0.starts_with("xingshu:v1:aes256gcm:"));
+    assert!(raw.1.starts_with("xingshu:v1:aes256gcm:"));
+    assert!(!raw.0.contains("sqlx write secret"));
+    assert!(!raw.1.contains("sqlx write response"));
+}
+
 #[test]
 fn integration_task_reader_keeps_plaintext_rows_compatible() {
     let dir = tempfile::tempdir().unwrap();

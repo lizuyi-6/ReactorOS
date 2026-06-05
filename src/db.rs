@@ -1108,6 +1108,42 @@ impl Db {
             .ok_or_else(|| anyhow::anyhow!("integration task was not readable after insert"))
     }
 
+    pub async fn create_integration_task_sqlx(
+        &self,
+        source: &str,
+        external_task_id: Option<&str>,
+        action: &str,
+        request: &Value,
+    ) -> Result<IntegrationTask> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.create_integration_task(source, external_task_id, action, request);
+        };
+        let now = Utc::now().to_rfc3339();
+        let request_json = self.serialize_sensitive_json(request)?;
+        let response_json = self.serialize_sensitive_json(&Value::Null)?;
+        let result = sqlx::query(
+            r#"
+            INSERT INTO integration_tasks
+                (external_task_id, source, action, status, request_json, response_json, created_at, updated_at)
+            VALUES (?, ?, ?, 'received', ?, ?, ?, ?)
+            "#,
+        )
+        .bind(external_task_id)
+        .bind(source)
+        .bind(action)
+        .bind(request_json)
+        .bind(response_json)
+        .bind(&now)
+        .bind(&now)
+        .execute(pool)
+        .await
+        .context("failed to create integration task with SQLx")?;
+        let id = result.last_insert_rowid();
+        self.integration_task_sqlx(id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("integration task was not readable after SQLx insert"))
+    }
+
     pub fn update_integration_task(
         &self,
         id: i64,
@@ -1125,6 +1161,33 @@ impl Db {
             params![status, response_json, Utc::now().to_rfc3339(), id],
         )?;
         Ok(self.integration_task_by_id_conn(&conn, id)?)
+    }
+
+    pub async fn update_integration_task_sqlx(
+        &self,
+        id: i64,
+        status: &str,
+        response: &Value,
+    ) -> Result<Option<IntegrationTask>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.update_integration_task(id, status, response);
+        };
+        let response_json = self.serialize_sensitive_json(response)?;
+        sqlx::query(
+            r#"
+            UPDATE integration_tasks
+            SET status = ?, response_json = ?, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(status)
+        .bind(response_json)
+        .bind(Utc::now().to_rfc3339())
+        .bind(id)
+        .execute(pool)
+        .await
+        .context("failed to update integration task with SQLx")?;
+        self.integration_task_sqlx(id).await
     }
 
     pub fn integration_task(&self, id: i64) -> Result<Option<IntegrationTask>> {

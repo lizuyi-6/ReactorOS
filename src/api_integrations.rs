@@ -92,16 +92,17 @@ pub(crate) async fn execute_integration_task(
     let action = normalize_ainas_action(&payload.action)?;
     let external_task_id = clean_optional_text(payload.external_task_id.as_deref(), 120);
     let source = clean_optional_text(Some(source), 40).unwrap_or_else(|| "integration".to_string());
-    let task =
-        state
-            .db
-            .create_integration_task(&source, external_task_id.as_deref(), action, &request)?;
+    let task = state
+        .db
+        .create_integration_task_sqlx(&source, external_task_id.as_deref(), action, &request)
+        .await?;
 
     match execute_ainas_task(state, action, &payload).await {
         Ok(response) => {
             let Some(task) = state
                 .db
-                .update_integration_task(task.id, "executed", &response)?
+                .update_integration_task_sqlx(task.id, "executed", &response)
+                .await?
             else {
                 return Err(AppError::not_found("AINAS task not found after execution"));
             };
@@ -121,7 +122,8 @@ pub(crate) async fn execute_integration_task(
             });
             state
                 .db
-                .update_integration_task(task.id, status, &response)?;
+                .update_integration_task_sqlx(task.id, status, &response)
+                .await?;
             Err(err)
         }
     }
