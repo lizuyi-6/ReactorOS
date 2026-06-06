@@ -1,0 +1,43 @@
+[Unit]
+Description=Xingshu Reactor Edge Daemon
+Documentation=https://github.com/lizuyi-6/ReactorOS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xingshu
+Group=xingshu
+WorkingDirectory=/opt/xingshu
+EnvironmentFile=/etc/xingshu/daemon.env
+ExecStartPre=/usr/bin/test -f /opt/xingshu/config/safety.toml
+ExecStart=/opt/xingshu/bin/reactor-edge-daemon \
+  --config /opt/xingshu/config/device.toml \
+  --safety /opt/xingshu/config/safety.toml \
+  --memory /opt/xingshu/config/ai_memory.toml \
+  --integration /opt/xingshu/config/integration.toml \
+  --db /opt/xingshu/data/reactor.sqlite3 \
+  --assets auto \
+  --bind 0.0.0.0:8443
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+KillSignal=SIGTERM
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/xingshu/data /opt/xingshu/log /opt/xingshu/backups
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
