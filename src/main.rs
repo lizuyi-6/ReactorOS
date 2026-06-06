@@ -98,6 +98,13 @@ async fn main() -> Result<()> {
     let device = build_device(&device_config)?;
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
 
+    // Apply the same schema migration to the SQLx pool so the SQLx-only
+    // read/write paths see a consistent schema even on a fresh database
+    // where the rusqlite write connection has not yet been touched.
+    if let Err(err) = db.migrate_sqlx().await {
+        tracing::warn!("sqlx schema migration step skipped: {err}");
+    }
+
     let loop_state = Arc::clone(&runtime);
     let loop_db = db.clone();
     let loop_safety = Arc::clone(&safety);

@@ -503,6 +503,40 @@ impl Db {
         Ok(())
     }
 
+    /// Apply the same schema migration to the SQLx pool so SQLx-only callers
+    /// (audit inserts, process writes, batch lifecycle) can rely on the schema
+    /// being present even when the rusqlite write connection was bypassed.
+    /// Idempotent: every statement uses IF NOT EXISTS / IF EXISTS guards.
+    pub async fn migrate_sqlx(&self) -> Result<()> {
+        let Some(pool) = self.inner.sqlx_pool.as_ref() else {
+            return Ok(());
+        };
+        let statements: Vec<&str> = SCHEMA_SQL.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
+        for statement in statements {
+            sqlx::query(statement)
+                .execute(pool)
+                .await
+                .with_context(|| format!("sqlx schema migration step failed: {statement:.80}"))?;
+        }
+        for migration in COLUMN_MIGRATIONS {
+            let sql = format!(
+                "ALTER TABLE {} ADD COLUMN {} {}",
+                migration.0, migration.1, migration.2
+            );
+            // Use a swallow-and-continue for ALTER TABLE ADD COLUMN: sqlite
+            // raises a duplicate-column error when the column already exists,
+            // which is the expected steady state.
+            if let Err(err) = sqlx::query(&sql).execute(pool).await {
+                let message = err.to_string();
+                if !message.contains("duplicate column") && !message.contains("already exists") {
+                    return Err(anyhow::Error::from(err)
+                        .context(format!("sqlx column migration step failed: {sql}")));
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn demo_seed_exists(&self) -> Result<bool> {
         let conn = self.read_conn()?;
         let count: i64 = conn.query_row(
