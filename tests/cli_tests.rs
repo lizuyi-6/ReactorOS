@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Command,
+    sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -8,6 +9,16 @@ use reactor_edge_daemon::{
     config::load_safety_config, control::SafetyGuardRequest, safety_guard::evaluate_with_process,
     state::ControlTargets,
 };
+
+// Some Windows test cases spawn real subprocesses (ping / sleep) whose
+// IO contention is amplified by cargo test's default multi-thread runner.
+// Serialize them through a single global mutex so the slow-script timing
+// in `safety_guard_external_process_timeout` is not perturbed by sibling
+// test threads inside the same test binary.
+fn windows_subprocess_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn xingshu() -> Command {
     Command::new(env!("CARGO_BIN_EXE_xingshu"))
@@ -24,7 +35,12 @@ fn safety_guard() -> Command {
 #[cfg(windows)]
 fn write_slow_guard_script(dir: &Path) -> PathBuf {
     let path = dir.join("slow-guard.cmd");
-    std::fs::write(&path, "@echo off\r\nping -n 6 127.0.0.1 >NUL\r\n").unwrap();
+    // The slow script must run for at least 10 seconds. If the safety
+    // guard timeout really fires, evaluate_with_process should return in
+    // tens of milliseconds — well before the script's natural exit. The
+    // hard floor is 10s so the test cannot accidentally pass just because
+    // the slow script finished before the assertion ran.
+    std::fs::write(&path, "@echo off\r\nping -n 15 127.0.0.1 >NUL\r\n").unwrap();
     path
 }
 
@@ -33,7 +49,7 @@ fn write_slow_guard_script(dir: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let path = dir.join("slow-guard.sh");
-    std::fs::write(&path, "#!/bin/sh\nsleep 5\n").unwrap();
+    std::fs::write(&path, "#!/bin/sh\nsleep 15\n").unwrap();
     let mut permissions = std::fs::metadata(&path).unwrap().permissions();
     permissions.set_mode(0o755);
     std::fs::set_permissions(&path, permissions).unwrap();
@@ -212,6 +228,7 @@ fn safety_guard_cli_clamps_targets_through_external_process() {
 
 #[test]
 fn safety_guard_external_process_timeout_returns_before_slow_guard_finishes() {
+    let _guard = windows_subprocess_lock().lock().unwrap();
     let temp_dir = tempfile::tempdir().unwrap();
     let guard = write_slow_guard_script(temp_dir.path());
     let request = SafetyGuardRequest::ClampTargets {
@@ -233,15 +250,16 @@ fn safety_guard_external_process_timeout_returns_before_slow_guard_finishes() {
     assert!(err
         .to_string()
         .contains("safety guard process exceeded timeout of 100ms"));
-    // The slow script is `ping -n 6 127.0.0.1` (~5s) on Windows, `sleep 5`
-    // on Unix. The 100ms timeout must still be honored — we allow up to
-    // 8s here so the test is not flaky when the OS child-kill path is
-    // slow (e.g. when many tests are running in parallel on Windows).
-    // The important guarantee is that evaluate_with_process returns well
-    // before the slow script's natural 5-second exit.
+    // The slow script sleeps 15s. The 100ms timeout must really fire —
+    // evaluate_with_process must return in well under the slow script's
+    // natural exit. The 3s upper bound is a tight guarantee: the safety
+    // gate returning within 3s of a 100ms timeout (i.e. the timeout
+    // path works) is a strong signal that the kill is honored and the
+    // process tree is reaped. If the slow script ever completes before
+    // 3s, the timeout is being ignored.
     assert!(
-        started_at.elapsed() < Duration::from_secs(8),
-        "timeout should return before the slow guard script finishes; elapsed={:?}",
+        started_at.elapsed() < Duration::from_secs(3),
+        "safety guard timeout must return well before the slow script finishes; elapsed={:?}",
         started_at.elapsed()
     );
 }

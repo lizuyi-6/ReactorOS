@@ -192,11 +192,25 @@ foreach ($c in $rbacCases) {
     Step ("rbac " + $c.role + " " + $c.method + " " + $c.path) $(if ($ok) { "ok" } else { "fail" }) "status=$status"
     if (-not $ok) { $report.rbac_failed++ }
 }
-$report.findings = @(
-    "operator POST /api/integrations/ainas/tasks: a 5xx is a fail, not a deny. Tighten Permission::ApplyIntegrationTask to engineer/admin only and rerun; an expected deny must surface as 401/403.",
-    "operator POST /api/control/targets: 500 under load is a fail. Raise SQLite busy_timeout or move audit-event writes to a dedicated mutex; expected allow should land at 200.",
-    "engineer POST /api/modbus/registers/.../write correctly returns 403; only admin can write Modbus registers."
-)
+# Build findings dynamically from the actual cases that failed. Reports
+# must not carry stale recommendations from prior rewrites.
+$findings = New-Object System.Collections.Generic.List[string]
+foreach ($failed in ($report.cases | Where-Object { -not $_.ok })) {
+    $expected = if ($failed.expected_allow) { "allow" } else { "deny" }
+    $note = "role=" + $failed.role + " " + $failed.method + " " + $failed.path + " expected=" + $expected + " got status=" + $failed.status + "."
+    if ($failed.status -ge 500) {
+        $note += " 5xx is a fail, not a deny; expected deny must surface as 401/403, expected allow must land at 2xx."
+    } elseif ($failed.status -eq 0) {
+        $note += " network error / no response; the safety gate is unreachable."
+    } else {
+        $note += " role lacks or carries the wrong permission for this path; tighten Permission in src/api_auth.rs."
+    }
+    $findings.Add($note)
+}
+if ($report.concurrent_writes_failed) {
+    $findings.Add("concurrent target writes produced " + $server5xx + " 5xx responses out of " + $ConcurrentWriters + "; audit-event SQLx write contention under SQLite WAL busy_timeout. Raise the connection busy_timeout or move audit-event writes to a dedicated mutex.")
+}
+$report.findings = $findings.ToArray()
 
 $report.rbac_failed_count = ($report.cases | Where-Object { -not $_.ok }).Count
 $concurrentFailed = $report.concurrent_writes_failed -eq $true

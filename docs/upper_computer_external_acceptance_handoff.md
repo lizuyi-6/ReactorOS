@@ -84,8 +84,8 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 | Vue 字段读取返工（A/B） | `031ec56a` | `npm run frontend:build` + `cargo test` | READY |
 | 生产静态资源切换 | `e22052c3` | `cargo check` + `daemon --help` 显示 `--assets auto` | READY |
 | systemd unit + TLS 终端 | `031ec56a` | `deploy/reactor-edge-daemon.service` + `cargo check` | READY |
-| `xingshu ops backup/restore/wipe` CLI | `33c969ed` + `031ec56a` | `scripts/probe-cli-ops.ps1`（待 J3 升级为真 SQLite 测） | SCRIPT-ONLY（fs::copy 非 backup API；daemon 必须停机） |
-| `xingshu key generate` CLI | `031ec56a` | `scripts/probe-cli-ops.ps1`（待 J3 升级为真 SQLite 测） | PARTIAL（生成 key 文件已交付，重加密旧行未做） |
+| `xingshu ops backup/restore/wipe` CLI | `33c969ed` + `031ec56a` + `c7709402` | `scripts/probe-cli-ops.ps1` 端到端跑通：real SQLite → backup 含 sha256 → restore 拒非 SQLite → restore 接受真 snapshot → wipe 拒无 `--yes` → wipe 真删除 | SCRIPT-ONLY（fs::copy 非 backup API；daemon 必须停机） |
+| `xingshu key generate` CLI | `031ec56a` + `c7709402` | `scripts/probe-cli-ops.ps1` 端到端：real SQLite 写 `<db>.key` 0600，不打印密钥，输出仅提 `XINGSHU_DB_ENCRYPTION_KEY` env var 名 | PARTIAL（生成 key 文件已交付，重加密旧行未做） |
 | Modbus 故障代理 / TLS / AINAS-MQTT 自检 | `eb25fd15` | `scripts/modbus-fault-proxy.mjs` + `verify-modbus-tls.ps1` + `verify-ainas-mqtt.mjs` | READY |
 | 压测 / 禁区 / RBAC 验证 | `6aeaef00` + `031ec56a` | `scripts/verify-load-and-rbac.ps1`（已严格 RBAC 判定） | PARTIAL（operator→ainas 已稳定 403；modbus 写仍受 #14 限制） |
 | AINAS RBAC 真实修复（ApplyIntegrationTask） | 本提交 | `cargo test --test api_tests ainas` 2/2 通过 | READY |
