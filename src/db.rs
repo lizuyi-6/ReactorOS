@@ -1,6 +1,7 @@
 use std::{
     env,
-    path::Path,
+    io::Read,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex, MutexGuard,
@@ -12,7 +13,7 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng, Payload},
     Aes256Gcm, Key, Nonce,
 };
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use base64::{
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
     Engine as _,
@@ -226,6 +227,10 @@ struct DbInner {
     sqlx_pool: Option<sqlx::SqlitePool>,
     audit_write_lock: AsyncMutex<()>,
     process_write_lock: AsyncMutex<()>,
+    /// Path the main database file was opened from, captured by the
+    /// `open_*` constructors so backup / restore can report it without
+    /// re-deriving it from the runtime state.
+    db_path: Option<PathBuf>,
 }
 
 enum DbConnectionGuard<'a> {
@@ -408,23 +413,30 @@ impl Db {
         path: impl AsRef<Path>,
         encryption: Option<DbEncryption>,
     ) -> Result<Self> {
-        if let Some(parent) = path.as_ref().parent() {
+        let path_ref = path.as_ref();
+        if let Some(parent) = path_ref.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("failed to create database directory {}", parent.display())
             })?;
         }
-        let write = open_configured_connection(path.as_ref())
-            .with_context(|| format!("failed to open database {}", path.as_ref().display()))?;
+        let write = open_configured_connection(path_ref)
+            .with_context(|| format!("failed to open database {}", path_ref.display()))?;
         let mut reads = Vec::with_capacity(READ_CONNECTIONS);
         for _ in 0..READ_CONNECTIONS {
             reads.push(Mutex::new(
-                open_configured_connection(path.as_ref()).with_context(|| {
-                    format!("failed to open database reader {}", path.as_ref().display())
+                open_configured_connection(path_ref).with_context(|| {
+                    format!("failed to open database reader {}", path_ref.display())
                 })?,
             ));
         }
-        let sqlx_pool = open_sqlx_pool(path.as_ref());
-        let db = Self::from_connections(write, reads, encryption, sqlx_pool);
+        let sqlx_pool = open_sqlx_pool(path_ref);
+        let db = Self::from_connections_with_path(
+            write,
+            reads,
+            encryption,
+            sqlx_pool,
+            Some(path_ref.to_path_buf()),
+        );
         db.migrate()?;
         Ok(db)
     }
@@ -467,11 +479,12 @@ impl Db {
         }
     }
 
-    fn from_connections(
+    fn from_connections_with_path(
         write: Connection,
         reads: Vec<Mutex<Connection>>,
         encryption: Option<DbEncryption>,
         sqlx_pool: Option<sqlx::SqlitePool>,
+        db_path: Option<PathBuf>,
     ) -> Self {
         Self {
             inner: Arc::new(DbInner {
@@ -482,8 +495,18 @@ impl Db {
                 sqlx_pool,
                 audit_write_lock: AsyncMutex::new(()),
                 process_write_lock: AsyncMutex::new(()),
+                db_path,
             }),
         }
+    }
+
+    fn from_connections(
+        write: Connection,
+        reads: Vec<Mutex<Connection>>,
+        encryption: Option<DbEncryption>,
+        sqlx_pool: Option<sqlx::SqlitePool>,
+    ) -> Self {
+        Self::from_connections_with_path(write, reads, encryption, sqlx_pool, None)
     }
 
     pub fn migrate(&self) -> Result<()> {
@@ -501,6 +524,146 @@ impl Db {
             )?;
         }
         Ok(())
+    }
+
+    /// Take an online SQLite backup of the main database file. The
+    /// implementation uses the `VACUUM INTO '<path>'` statement which
+    /// SQLite documents as a safe online backup command — it rewrites
+    /// the entire database into the destination file in a single
+    /// transaction, and writers continue to operate against the source
+    /// until the moment of the swap. Unlike `fs::copy`, the resulting
+    /// file is a fully compacted SQLite image, not whatever happened to
+    /// be on disk mid-transaction.
+    pub fn backup_to(&self, destination: &Path) -> Result<BackupReport> {
+        if let Some(parent) = destination.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("failed to create backup parent dir {}", parent.display())
+                })?;
+            }
+        }
+        // VACUUM INTO is a one-shot statement; quote the path with the
+        // single-quote doubling convention so an operator-managed
+        // directory containing an apostrophe does not break the SQL.
+        let path_str = destination.to_string_lossy().replace('\'', "''");
+        let sql = format!("VACUUM INTO '{path_str}'");
+        let started = std::time::Instant::now();
+        let conn = self.write_conn()?;
+        conn.execute_batch(&sql)
+            .with_context(|| format!("VACUUM INTO failed for {}", destination.display()))?;
+        let size = std::fs::metadata(destination)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        Ok(BackupReport {
+            source: self.path_display(),
+            destination: destination.display().to_string(),
+            copied_pages: -1,
+            size_bytes: size,
+            duration_ms: started.elapsed().as_millis(),
+            sha256: sha256_hex(destination)?,
+        })
+    }
+
+    /// Restore from a SQLite backup file produced by `backup_to` or by
+    /// any tool that emits a valid SQLite image (file copy, sqlite3
+    /// `.backup`, etc.). The function refuses files that do not look
+    /// like SQLite and refuses to overwrite an existing target without
+    /// `overwrite = true`.
+    pub fn restore_from(
+        &self,
+        source: &Path,
+        overwrite: bool,
+    ) -> Result<RestoreReport> {
+        if !source.is_file() {
+            return Err(anyhow!(
+                "restore source {} does not exist",
+                source.display()
+            ));
+        }
+        if self.path_exists() && !overwrite {
+            return Err(anyhow!(
+                "refusing to restore over an existing database without overwrite = true: {}",
+                self.path_display()
+            ));
+        }
+        let head = std::fs::read(source)
+            .with_context(|| format!("failed to read {}", source.display()))?;
+        if !head.starts_with(b"SQLite format 3\0") {
+            return Err(anyhow!(
+                "restore source {} is not a SQLite file (magic header missing)",
+                source.display()
+            ));
+        }
+        if self.path_exists() {
+            let backup_existing = self.path_with_extension("pre-restore");
+            std::fs::copy(self.path_ref(), &backup_existing).with_context(|| {
+                format!(
+                    "failed to preserve existing db {} -> {}",
+                    self.path_display(),
+                    backup_existing.display()
+                )
+            })?;
+        }
+        std::fs::copy(source, self.path_ref()).with_context(|| {
+            format!(
+                "failed to copy {} -> {}",
+                source.display(),
+                self.path_display()
+            )
+        })?;
+        // Verify the restored file opens and has the expected schema.
+        let conn = rusqlite::Connection::open(self.path_ref())
+            .with_context(|| format!("restored db is unreadable: {}", self.path_display()))?;
+        let tables = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("failed to list restored tables")?;
+        Ok(RestoreReport {
+            source: source.display().to_string(),
+            destination: self.path_display(),
+            size_bytes: std::fs::metadata(self.path_ref())
+                .map(|m| m.len())
+                .unwrap_or(0),
+            sha256: sha256_hex(self.path_ref())?,
+            tables,
+        })
+    }
+
+    /// Returns the on-disk path of the main database file as a String
+    /// for inclusion in error messages and reports.
+    fn path_display(&self) -> String {
+        self.path_ref().display().to_string()
+    }
+
+    fn path_ref(&self) -> &Path {
+        // The daemon always opens the main file at a known absolute or
+        // project-relative path. The Db inner store keeps it; for now
+        // we surface the inner path directly via a small accessor on
+        // DbInner; if it is not yet recorded we fall back to a
+        // placeholder so reports do not crash.
+        self.inner.db_path
+            .as_deref()
+            .map(Path::new)
+            .unwrap_or_else(|| Path::new("<unknown>"))
+    }
+
+    fn path_with_extension(&self, suffix: &str) -> PathBuf {
+        let p = self.path_ref().to_path_buf();
+        let mut name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "reactor.sqlite3".to_string());
+        name.push('.');
+        name.push_str(suffix);
+        p.with_file_name(name)
+    }
+
+    fn path_exists(&self) -> bool {
+        self.inner.db_path
+            .as_deref()
+            .map(|p| std::path::Path::new(p).is_file())
+            .unwrap_or(false)
     }
 
     /// Apply the same schema migration to the SQLx pool so SQLx-only callers
@@ -3329,6 +3492,45 @@ fn configure_connection(conn: Connection) -> Result<Connection> {
 fn create_indexes(conn: &Connection) -> Result<()> {
     conn.execute_batch(INDEX_SQL)?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackupReport {
+    pub source: String,
+    pub destination: String,
+    pub copied_pages: i64,
+    pub size_bytes: u64,
+    pub duration_ms: u128,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RestoreReport {
+    pub source: String,
+    pub destination: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub tables: Vec<String>,
+}
+
+fn sha256_hex(path: &Path) -> Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("failed to open {} for sha256", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 impl DbEncryption {

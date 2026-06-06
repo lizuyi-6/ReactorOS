@@ -1755,20 +1755,111 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
     }
     if !yes {
         return Err(anyhow!(
-            "refusing to wipe without --yes (this overwrites and removes {})",
+            "refusing to wipe without --yes (this overwrites and removes the SQLite main file, WAL/SHM sidecars, the <db>.key file, and any *.backup/*.snapshot files in the backups/ subdirectory next to {})",
             db.display()
         ));
     }
     let original_size = fs::metadata(db).map(|m| m.len()).unwrap_or(0);
+    let mut rng = StdRng::from_entropy();
+    let mut scope = Vec::new();
+    let mut bytes_overwritten: u64 = 0;
+    let mut files_removed: u64 = 0;
+
+    // 1. SQLite main file.
+    bytes_overwritten += overwrite_file_with_random(db, &mut rng, original_size, 3)?;
+    fs::remove_file(db).with_context(|| format!("failed to remove {}", db.display()))?;
+    files_removed += 1;
+    scope.push("sqlite_main_file".to_string());
+
+    // 2. WAL/SHM sidecars.
+    for suffix in ["-wal", "-shm", "-journal"] {
+        let side = with_suffix(db, suffix);
+        if side.is_file() {
+            let size = fs::metadata(&side).map(|m| m.len()).unwrap_or(0);
+            bytes_overwritten += overwrite_file_with_random(&side, &mut rng, size, 1)?;
+            fs::remove_file(&side).ok();
+            files_removed += 1;
+            scope.push(format!("sqlite_{}", suffix.trim_start_matches('-')));
+        }
+    }
+
+    // 3. <db>.key file.
+    let key_path = with_extension(db, "key");
+    if key_path.is_file() {
+        let size = fs::metadata(&key_path).map(|m| m.len()).unwrap_or(0);
+        bytes_overwritten += overwrite_file_with_random(&key_path, &mut rng, size, 1)?;
+        fs::remove_file(&key_path).ok();
+        files_removed += 1;
+        scope.push("db_key_file".to_string());
+    }
+
+    // 4. Backup snapshots in <db parent>/backups/ matching the db stem.
+    if let Some(parent) = db.parent() {
+        let backup_dir = parent.join("backups");
+        if backup_dir.is_dir() {
+            if let Some(stem) = db.file_stem().map(|s| s.to_string_lossy().into_owned()) {
+                if let Ok(entries) = fs::read_dir(&backup_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        if !name.starts_with(&stem) {
+                            continue;
+                        }
+                        if path.is_file() {
+                            let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                            bytes_overwritten += overwrite_file_with_random(&path, &mut rng, size, 1)?;
+                            fs::remove_file(&path).ok();
+                            files_removed += 1;
+                            scope.push(format!("backup_snapshot:{}", name));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let human = format!(
+        "wipe complete\n  bytes_overwritten: {} (3 passes on main file, 1 pass on each sidecar/backup/key)\n  files_removed:        {}\n  scope:                 {}\n  physical_erase:        SSD/NVMe overwrite is NOT a physical erase. For physical retirement run blkdiscard /hdparm --security-erase after this command. See docs/upper_computer_production_operations.md.",
+        bytes_overwritten,
+        files_removed,
+        scope.join(", ")
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "wipe",
+            "path": db.to_string_lossy(),
+            "bytes_overwritten": bytes_overwritten,
+            "files_removed": files_removed,
+            "scope": scope,
+            "physical_erase_required": "blkdiscard or hdparm --security-erase for SSD/NVMe retirement"
+        }),
+    })
+}
+
+fn overwrite_file_with_random(
+    path: &Path,
+    rng: &mut StdRng,
+    size: u64,
+    passes: usize,
+) -> Result<u64> {
+    if size == 0 {
+        // Truncate to zero so the filesystem releases the inode.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .with_context(|| format!("failed to open {} for truncate", path.display()))?;
+        return Ok(0);
+    }
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(db)
-        .with_context(|| format!("failed to open {} for overwrite", db.display()))?;
-    let mut rng = StdRng::from_entropy();
-    for _ in 0..3 {
+        .open(path)
+        .with_context(|| format!("failed to open {} for overwrite", path.display()))?;
+    for _ in 0..passes {
         let mut buffer = vec![0u8; 64 * 1024];
-        let mut remaining = original_size as usize;
+        let mut remaining = size as usize;
         file.seek(SeekFrom::Start(0))?;
         while remaining > 0 {
             let chunk = remaining.min(buffer.len());
@@ -1779,33 +1870,32 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
         file.sync_all().ok();
     }
     file.set_len(0).ok();
-    drop(file);
-    fs::remove_file(db).with_context(|| format!("failed to remove {}", db.display()))?;
+    Ok(size * passes as u64)
+}
 
-    // Note for the operator: this command only touches the SQLite main file.
-    // It does not touch the WAL/SHM sidecars, backup files, the
-    // <db>.key file, or any out-of-band ciphertext the deployment may store
-    // next to the database. SSD/NVMe overwrite is NOT a physical erase; for
-    // retiring the device, run blkdiscard /hdparm --security-erase after
-    // this command. See docs/upper_computer_production_operations.md.
-    let human = format!(
-        "wipe complete\n  path:   {}\n  bytes:  {} (overwritten 3x, then removed)\n  scope:  ONLY the SQLite main file. WAL/SHM sidecars, backup snapshots under {}, and <db>.key are NOT touched. Run the deployment runbook to scrub those manually, then blkdiscard the block device before physical retirement.",
-        db.display(),
-        original_size,
-        out_dir_for_human(db)
-    );
-    Ok(CommandOutput {
-        human,
-        json: json!({
-            "action": "wipe",
-            "path": db.to_string_lossy(),
-            "bytes_overwritten": original_size,
-            "passes": 3,
-            "scope": ["sqlite_main_file"],
-            "not_touched": ["sqlite_wal", "sqlite_shm", "backup_snapshots", "db_key_file", "external_ciphertext"],
-            "physical_erase_required": "blkdiscard or hdparm --security-erase for SSD/NVMe retirement"
-        }),
-    })
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut p = path.to_path_buf();
+    let mut name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.push_str(suffix);
+    p.set_file_name(name);
+    p
+}
+
+fn with_extension(path: &Path, ext: &str) -> PathBuf {
+    let p = path.to_path_buf();
+    let mut name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if let Some(dot) = name.rfind('.') {
+        name.truncate(dot);
+    }
+    name.push('.');
+    name.push_str(ext);
+    p.with_file_name(name)
 }
 
 fn out_dir_for_human(db: &Path) -> String {
