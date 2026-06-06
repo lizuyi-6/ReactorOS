@@ -16,6 +16,7 @@ let chart: EChartsType | null = null;
 
 const sample = computed(() => latestSample(store.live));
 const samples = computed(() => recentSamples(store.live));
+const alarms = computed(() => (Array.isArray(store.live?.alarms) ? (store.live!.alarms as Record<string, unknown>[]) : []));
 const metrics = computed(() => [
   { label: "Temperature", zh: "温度", value: fixed(numberAt(sample.value, "temperature_c"), 1, " C") },
   { label: "Pressure", zh: "压力", value: fixed(numberAt(sample.value, "pressure_kpa"), 1, " kPa") },
@@ -106,6 +107,34 @@ onBeforeUnmount(() => {
         <span>{{ store.tr(`${samples.length} 条样本`, `${samples.length} samples`) }}</span>
       </div>
       <div ref="chartEl" class="chart"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("报警中心", "Alarm Center") }}</h2>
+        <el-tag :type="alarms.length > 0 ? 'warning' : 'success'">
+          {{ store.tr(`${alarms.length} 条`, `${alarms.length} active`) }}
+        </el-tag>
+      </div>
+      <el-table v-if="alarms.length > 0" :data="alarms" class="data-table" size="small">
+        <el-table-column :label="store.tr('级别', 'Level')" width="100">
+          <template #default="{ row }">
+            <el-tag :type="textAt(row, 'severity') === 'high' ? 'danger' : 'warning'" size="small">
+              {{ textAt(row, "severity") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="store.tr('类型', 'Type')" min-width="180">
+          <template #default="{ row }">{{ textAt(row, "code") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('说明', 'Message')" min-width="240">
+          <template #default="{ row }">{{ textAt(row, "message") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('触发值', 'Value')" width="120">
+          <template #default="{ row }">{{ textAt(row, "value") }}</template>
+        </el-table-column>
+      </el-table>
+      <p v-else class="muted">{{ store.tr("当前无报警。", "No active alarms.") }}</p>
     </section>
   </section>
 </template>

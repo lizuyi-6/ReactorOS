@@ -33,6 +33,15 @@ export interface ProcessStepPayload {
   cooling_mode: string;
 }
 
+export interface AiControlRequest {
+  dry_run: boolean;
+  allow_process_start?: boolean;
+  allow_process_stop?: boolean;
+  allow_component_control?: boolean;
+  allow_target_adjustment?: boolean;
+  intent?: string;
+}
+
 interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -341,6 +350,39 @@ export const usePlantStore = defineStore("plant", () => {
     return requestBlob(auditQueryPath("/api/audit/export.csv", { eventType }));
   }
 
+  async function generateRecommendation(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/recommendations/latest", { method: "POST" });
+    recommendation.value = response;
+    return response;
+  }
+
+  async function applyAiControl(payload: AiControlRequest): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/ai/control", {
+      method: "POST",
+      body: payload
+    });
+    await refreshLive();
+    return response;
+  }
+
+  async function loadExperimentPlan(): Promise<ApiRecord> {
+    return request<ApiRecord>("/api/ai/experiment-plan");
+  }
+
+  async function loadBatches(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/batches");
+    batches.value = response;
+    return response;
+  }
+
+  async function loadBatchDetail(batchId: number): Promise<ApiRecord> {
+    return request<ApiRecord>(`/api/batches/${batchId}`);
+  }
+
+  async function exportBatchReport(batchId: number): Promise<Blob> {
+    return requestBlob(`/api/batches/${batchId}/report.md`);
+  }
+
   async function loadProcesses(): Promise<ApiRecord[]> {
     const response = await request<ApiRecord[]>("/api/processes");
     processes.value = response;
@@ -440,6 +482,12 @@ export const usePlantStore = defineStore("plant", () => {
     writeModbusRegister,
     loadAudit,
     exportAuditCsv,
+    generateRecommendation,
+    applyAiControl,
+    loadExperimentPlan,
+    loadBatches,
+    loadBatchDetail,
+    exportBatchReport,
     loadProcesses,
     loadProcessDetail,
     createProcess,
