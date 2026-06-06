@@ -290,12 +290,75 @@ select {
 .modbus-form .el-select,
 .modbus-form .el-input,
 .audit-filter-form .el-input-number,
-.audit-filter-form .el-select {
+.audit-filter-form .el-select,
+.process-form .el-input-number,
+.process-form .el-select,
+.process-form .el-input,
+.process-form .el-textarea {
   width: 100%;
 }
 
 .modbus-form .reason-field {
   grid-column: span 2;
+}
+
+.process-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.process-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(420px, 1.15fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.process-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.process-form .el-form-item {
+  margin-bottom: 0;
+}
+
+.process-form .control-actions {
+  grid-column: 1 / -1;
+}
+
+.process-list,
+.process-steps {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.process-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.process-list-head small {
+  color: #94a3b8;
+}
+
+.process-empty {
+  padding: 14px;
+  border: 1px dashed #223142;
+  border-radius: 8px;
+  color: #94a3b8;
+  background: #0d141c;
+}
+
+.process-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.7fr) minmax(420px, 1.3fr);
+  gap: 18px;
+  align-items: start;
 }
 
 .control-actions {
@@ -434,6 +497,8 @@ select {
   .control-panel,
   .modbus-debug-panel,
   .audit-toolbar,
+  .process-grid,
+  .process-detail-grid,
   .two-col {
     display: block;
   }
@@ -459,6 +524,7 @@ select {
   .control-form,
   .modbus-form,
   .audit-filter-form,
+  .process-form,
   .switch-grid {
     grid-template-columns: 1fr;
   }

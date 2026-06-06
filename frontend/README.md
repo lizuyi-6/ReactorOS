@@ -38,7 +38,26 @@ new HMI has parity with `static/index.html`.
   shake speed through `/api/control/targets`, controls auto/manual-lock state,
   and exposes emergency stop/reset. When `/api/live` is unavailable because the
   pipeline sample is stale, the page still shows the last successful control
-  response so operators can see the clamped target acknowledgement.
+  response so operators can see the clamped target acknowledgement. The same
+  page now drives the full process / batch lifecycle slice: it lists existing
+  processes, lets an engineer/admin create a new process and add steps, starts
+  a selected process through `/api/processes/:id/start`, and stops the running
+  process through `/api/processes/current/stop`. The page also shows the
+  current active batch id, recent batches with outcomes, and the runtime flags
+  used for safety review.
+- `src/stores/plant.ts` exposes `loadProcesses`, `loadProcessDetail`,
+  `createProcess`, `addProcessStep`, `startProcess`, and `stopCurrentProcess`.
+  `refreshProtected()` fetches `/api/processes` and `/api/batches` together
+  with the existing config/audit/modbus/recommendation calls, and tolerates
+  per-endpoint failures so a single 5xx does not blank the rest of the page.
+  `mergeRuntimeFallback` now filters out `undefined` patches so the optimistic
+  runtime cache never picks up explicit `undefined` values after a successful
+  start or stop response.
+- `src/styles.css` adds `.process-panel`, `.process-form`, `.process-grid`,
+  `.process-list`, `.process-steps`, and `.process-detail-grid`. The process
+  panel, control panel, audit toolbar, and `two-col` containers collapse to a
+  single column at the existing 920px breakpoint so the layout never produces
+  horizontal overflow on tablets.
 - `src/views/ModbusView.vue` reads Modbus register payloads and performs
   admin-only debug writes with the required audit reason. The default read
   target is a runtime target register so the page remains verifiable without

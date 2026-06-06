@@ -17,6 +17,22 @@ export interface ModbusWritePayload {
   reason: string;
 }
 
+export interface CreateProcessPayload {
+  name: string;
+  description: string;
+}
+
+export interface ProcessStepPayload {
+  name: string;
+  target_temperature_c: number;
+  ramp_rate_c_min: number;
+  duration_minutes: number;
+  target_stirrer_rpm: number;
+  target_shake_speed_cpm: number;
+  target_pressure_mpa: number;
+  cooling_mode: string;
+}
+
 interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -89,6 +105,9 @@ export const usePlantStore = defineStore("plant", () => {
   const config = ref<ApiRecord | null>(null);
   const audit = ref<ApiRecord | null>(null);
   const modbus = ref<ApiRecord | null>(null);
+  const processes = ref<ApiRecord[]>([]);
+  const selectedProcess = ref<ApiRecord | null>(null);
+  const batches = ref<ApiRecord | null>(null);
   const recommendation = ref<ApiRecord | null>(null);
   const runtimeFallback = ref<ApiRecord | null>(null);
   const loading = ref(false);
@@ -113,10 +132,11 @@ export const usePlantStore = defineStore("plant", () => {
   }
 
   function mergeRuntimeFallback(patch: ApiRecord): void {
-    runtimeFallback.value = {
-      ...(runtimeFallback.value ?? {}),
-      ...patch
-    };
+    const next: ApiRecord = { ...(runtimeFallback.value ?? {}) };
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) next[key] = value;
+    }
+    runtimeFallback.value = next;
   }
 
   function runtimeFromLive(payload: ApiRecord | null): ApiRecord | null {
@@ -200,6 +220,9 @@ export const usePlantStore = defineStore("plant", () => {
     config.value = null;
     audit.value = null;
     modbus.value = null;
+    processes.value = [];
+    selectedProcess.value = null;
+    batches.value = null;
     recommendation.value = null;
     runtimeFallback.value = null;
     localStorage.removeItem(TOKEN_KEY);
@@ -222,16 +245,20 @@ export const usePlantStore = defineStore("plant", () => {
 
   async function refreshProtected(): Promise<void> {
     if (!token.value) return;
-    const [configPayload, auditPayload, modbusPayload, recommendationPayload] = await Promise.all([
+    const [configPayload, auditPayload, modbusPayload, processesPayload, batchesPayload, recommendationPayload] = await Promise.all([
       request<ApiRecord>("/api/config/summary"),
       request<ApiRecord>("/api/audit/logs?page=1&page_size=8"),
       request<ApiRecord>("/api/modbus/registers"),
-      request<ApiRecord>("/api/recommendations/latest")
+      request<ApiRecord[]>("/api/processes", { allowFailure: true }),
+      request<ApiRecord>("/api/batches", { allowFailure: true }),
+      request<ApiRecord>("/api/recommendations/latest", { allowFailure: true })
     ]);
     config.value = configPayload;
     audit.value = auditPayload;
     modbus.value = modbusPayload;
-    recommendation.value = recommendationPayload;
+    if (Array.isArray(processesPayload)) processes.value = processesPayload;
+    if (batchesPayload && typeof batchesPayload === "object") batches.value = batchesPayload;
+    if (recommendationPayload && typeof recommendationPayload === "object") recommendation.value = recommendationPayload;
   }
 
   async function refreshAll(): Promise<void> {
@@ -314,6 +341,67 @@ export const usePlantStore = defineStore("plant", () => {
     return requestBlob(auditQueryPath("/api/audit/export.csv", { eventType }));
   }
 
+  async function loadProcesses(): Promise<ApiRecord[]> {
+    const response = await request<ApiRecord[]>("/api/processes");
+    processes.value = response;
+    return response;
+  }
+
+  async function loadProcessDetail(processId: number): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}`);
+    selectedProcess.value = response;
+    return response;
+  }
+
+  async function createProcess(payload: CreateProcessPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/processes", {
+      method: "POST",
+      body: payload
+    });
+    await loadProcesses();
+    selectedProcess.value = { process: response, steps: [] };
+    return response;
+  }
+
+  async function addProcessStep(processId: number, payload: ProcessStepPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}/steps`, {
+      method: "POST",
+      body: payload
+    });
+    await loadProcessDetail(processId);
+    await loadProcesses();
+    return response;
+  }
+
+  async function startProcess(processId: number): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}/start`, { method: "POST" });
+    const targets = response.applied_targets;
+    const batch = response.batch;
+    if (targets && typeof targets === "object") {
+      mergeRuntimeFallback({
+        targets: targets as ApiRecord,
+        auto_enabled: true,
+        active_batch_id: batch && typeof batch === "object" ? (batch as ApiRecord).id : undefined
+      });
+    }
+    await refreshLive();
+    await refreshProtected();
+    return response;
+  }
+
+  async function stopCurrentProcess(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/processes/current/stop", { method: "POST" });
+    const targets = response.stopped_targets;
+    mergeRuntimeFallback({
+      targets: targets && typeof targets === "object" ? (targets as ApiRecord) : undefined,
+      auto_enabled: false,
+      active_batch_id: null
+    });
+    await refreshLive();
+    await refreshProtected();
+    return response;
+  }
+
   return {
     token,
     user,
@@ -326,6 +414,9 @@ export const usePlantStore = defineStore("plant", () => {
     config,
     audit,
     modbus,
+    processes,
+    selectedProcess,
+    batches,
     recommendation,
     runtimeFallback,
     loading,
@@ -348,6 +439,12 @@ export const usePlantStore = defineStore("plant", () => {
     readModbusRegister,
     writeModbusRegister,
     loadAudit,
-    exportAuditCsv
+    exportAuditCsv,
+    loadProcesses,
+    loadProcessDetail,
+    createProcess,
+    addProcessStep,
+    startProcess,
+    stopCurrentProcess
   };
 });
