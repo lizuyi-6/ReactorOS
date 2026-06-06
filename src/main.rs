@@ -20,6 +20,20 @@ use reactor_edge_daemon::{
 use tokio::{sync::RwLock, time::sleep};
 use tracing_subscriber::EnvFilter;
 
+fn resolve_assets_dir(requested: &PathBuf) -> PathBuf {
+    let requested_str = requested.to_string_lossy();
+    if requested_str != "auto" {
+        return requested.clone();
+    }
+    let candidates = [PathBuf::from("frontend/dist"), PathBuf::from("static")];
+    for candidate in candidates.iter() {
+        if candidate.join("index.html").is_file() {
+            return candidate.clone();
+        }
+    }
+    PathBuf::from("static")
+}
+
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long, default_value = "config/device.toml")]
@@ -32,7 +46,7 @@ struct Args {
     integration: PathBuf,
     #[arg(long, default_value = "data/reactor.sqlite3")]
     db: PathBuf,
-    #[arg(long, default_value = "static")]
+    #[arg(long, default_value = "auto")]
     assets: PathBuf,
     #[arg(long, default_value = "127.0.0.1:8000")]
     bind: SocketAddr,
@@ -55,6 +69,10 @@ async fn main() -> Result<()> {
         .init();
 
     let args = Args::parse();
+    let args = Args {
+        assets: resolve_assets_dir(&args.assets),
+        ..args
+    };
     let tls = match (args.tls_cert.clone(), args.tls_key.clone()) {
         (Some(cert), Some(key)) => Some(HttpTlsConfig { cert, key }),
         (None, None) => None,
