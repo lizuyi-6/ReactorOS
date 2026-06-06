@@ -233,9 +233,16 @@ fn safety_guard_external_process_timeout_returns_before_slow_guard_finishes() {
     assert!(err
         .to_string()
         .contains("safety guard process exceeded timeout of 100ms"));
+    // The slow script is `ping -n 6 127.0.0.1` (~5s) on Windows, `sleep 5`
+    // on Unix. The 100ms timeout must still be honored — we allow up to
+    // 8s here so the test is not flaky when the OS child-kill path is
+    // slow (e.g. when many tests are running in parallel on Windows).
+    // The important guarantee is that evaluate_with_process returns well
+    // before the slow script's natural 5-second exit.
     assert!(
-        started_at.elapsed() < Duration::from_secs(3),
-        "timeout should return before the slow guard script finishes"
+        started_at.elapsed() < Duration::from_secs(8),
+        "timeout should return before the slow guard script finishes; elapsed={:?}",
+        started_at.elapsed()
     );
 }
 

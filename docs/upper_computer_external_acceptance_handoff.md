@@ -21,10 +21,10 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 | 11 | 7x24 长稳态 | `xingshu perf smoke` 已能给 p50/p95 | 团队 | `xingshu perf smoke --iterations 1000` 跑 30 天 | PENDING-EXTERNAL (需长期跑) |
 | 12 | 生产密钥轮换 | `xingshu key generate` 已实现（生成 0600 权限的 `<db>.key` 文件并仅打印环境变量名；不重加密旧 ciphertext 行） | 团队 | `xingshu key generate --db /opt/xingshu/data/reactor.sqlite3 --yes` | PARTIAL (key material 生成已交付；re-encrypt 旧行未做，需离线脚本迁移) |
 | 13 | 备份/恢复 | `xingshu ops backup/restore/wipe` 已实现，但是 SQLite 文件 fs::copy（不是 backup API）；restore 校验 SQLite magic header | SRE | `xingshu ops backup ...` | SCRIPT-ONLY (脚本可用；声称的"tar.gz + backup API"不真实；daemon 必须停机跑) |
-| 14 | RBAC 真实登录 | `verify-load-and-rbac.ps1` 已验证 operator/engineer/admin 矩阵；`login` + `auth/me` 已暴露 | 团队 | `pwsh scripts/verify-load-and-rbac.ps1` | PARTIAL (脚本能跑通；operator→ainas 实际为 SQLx 锁竞争后 500，需修 RBAC 让其显式 403) |
+| 14 | RBAC 真实登录 | `Permission::ApplyIntegrationTask` 已新增并仅 engineer/admin 拥有；`create_ainas_task` 立即 require_permission(ApplyIntegrationTask) 后再做 action-specific 校验；operator 调 `/api/integrations/ainas/tasks` 稳定返回 403。`verify-load-and-rbac.ps1` 严格通过条件已收紧。`login` + `auth/me` 已暴露 | 团队 | `pwsh scripts/verify-load-and-rbac.ps1`（期望 operator→ainas = 401/403，否则脚本 exit 1） | PARTIAL (operator/engineer/admin 三角色基本矩阵 + AINAS 集成路径 403 已实装；modbus TCP / 系统配置 / 删除数据等细粒度权限矩阵仍待补齐) |
 | 15 | TLS 1.3 证书链 | `axum-server` + `rustls` 已用 | 团队 / CA | `openssl s_client -connect <ip>:8443 -tls1_3` | PENDING-EXTERNAL (需正式 CA 签发) |
 | 16 | STM32 Modbus 寄存器映射确认 | `docs/upper_computer_modbus_register_map.md` 草案已写 | 王天宇 | N/A | PENDING-EXTERNAL (需 STM32 手册最终版) |
-| 17 | 工艺探索 / 7 大页面 / 中英切换 | Vue + 静态双版本已交付，Playwright 中英+压测+RBAC 全过 | 团队 | `pwsh scripts/verify-vue-parity.mjs` + `pwsh scripts/verify-load-and-rbac.ps1` | READY (上位机交付) |
+| 17 | 工艺探索 / 7 大页面 / 中英切换 | Vue + 静态双版本已交付；`verify-vue-parity.mjs`（七页中英 + 横向溢出 + 缺文案必 fail）和 `verify-vue-process-lifecycle.mjs`（工艺生命周期）通过；`verify-load-and-rbac.ps1` 仍受 RBAC PARTIAL 项影响（见 #14） | 团队 | `node scripts/verify-vue-parity.mjs` + `node scripts/verify-vue-process-lifecycle.mjs` | PARTIAL (Vue 7 页面 + 中英 + 工艺 + Modbus 调试 + 审计已交付；历史 XLSX 导出 / 设置多卡视觉 / 物料页未到 PRD 完成度) |
 | 18 | 报告生成 | `xingshu data export / report` + Vue `/#/history` 已交付 | 团队 | `xingshu data export --out /tmp/batches.csv` | READY (上位机交付) |
 
 ## 2. 联调前置清单（上位机能直接提供什么）
@@ -77,16 +77,21 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 
 ## 3. 上位机侧已完成的工业级切片（避免重复实现）
 
-| 切片 | 提交 | 验收 |
-|---|---|---|
-| Vue 工艺生命周期 | `4707cf13` | `scripts/verify-vue-process-lifecycle.mjs` |
-| Vue AI/历史/设置/Monitor parity | `c9586ead` | `scripts/verify-vue-parity.mjs` |
-| 生产静态资源切换 | `e22052c3` | `cargo check` + `daemon --help` 显示 `--assets auto` |
-| `xingshu ops/key` CLI | `33c969ed` | `scripts/probe-cli-ops.ps1` |
-| Modbus 故障代理 / TLS / AINAS-MQTT 自检 | `eb25fd15` | 各自脚本 |
-| 压测 / 禁区 / RBAC 验证 | `6aeaef00` | `scripts/verify-load-and-rbac.ps1` 输出报告 |
-| SQLx schema migration | `13f47502` | `cargo test` 27 db + 50 api 通过 |
-| 部署与运维文档 | (本提交) | 文档审阅 |
+| 切片 | 提交 | 验收 | 完成度 |
+|---|---|---|---|
+| Vue 工艺生命周期 | `4707cf13` | `scripts/verify-vue-process-lifecycle.mjs`（已严格通过条件） | READY |
+| Vue AI/历史/设置/Monitor parity | `c9586ead` | `scripts/verify-vue-parity.mjs`（已严格通过条件） | READY |
+| Vue 字段读取返工（A/B） | `031ec56a` | `npm run frontend:build` + `cargo test` | READY |
+| 生产静态资源切换 | `e22052c3` | `cargo check` + `daemon --help` 显示 `--assets auto` | READY |
+| systemd unit + TLS 终端 | `031ec56a` | `deploy/reactor-edge-daemon.service` + `cargo check` | READY |
+| `xingshu ops backup/restore/wipe` CLI | `33c969ed` + `031ec56a` | `scripts/probe-cli-ops.ps1`（待 J3 升级为真 SQLite 测） | SCRIPT-ONLY（fs::copy 非 backup API；daemon 必须停机） |
+| `xingshu key generate` CLI | `031ec56a` | `scripts/probe-cli-ops.ps1`（待 J3 升级为真 SQLite 测） | PARTIAL（生成 key 文件已交付，重加密旧行未做） |
+| Modbus 故障代理 / TLS / AINAS-MQTT 自检 | `eb25fd15` | `scripts/modbus-fault-proxy.mjs` + `verify-modbus-tls.ps1` + `verify-ainas-mqtt.mjs` | READY |
+| 压测 / 禁区 / RBAC 验证 | `6aeaef00` + `031ec56a` | `scripts/verify-load-and-rbac.ps1`（已严格 RBAC 判定） | PARTIAL（operator→ainas 已稳定 403；modbus 写仍受 #14 限制） |
+| AINAS RBAC 真实修复（ApplyIntegrationTask） | 本提交 | `cargo test --test api_tests ainas` 2/2 通过 | READY |
+| SQLx schema migration | `13f47502` | `cargo test` 27 db + 50 api 通过 | PARTIAL（schema migration 字符串仍走 `rusqlite`） |
+| 部署与运维文档 | `8750d0f9` | `docs/upper_computer_production_operations.md` 审阅 | READY |
+| 外部联调前置清单 + 跟踪表 | `1b25c70b` | 本文件 + 跟踪表 | READY |
 
 ## 4. 下一阶段跟踪动作
 
@@ -121,17 +126,28 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 
 ## 5. 验收结论
 
-李祖祎这一侧的上位机工业级切片**全部完成**：
+李祖祎这一侧的上位机切片按工业级"完成度"分类如下。**所有"全部完成 / 工业级"的措辞必须按本节口径**，不要扩展到 PARTIAL / SCRIPT-ONLY 项。
 
-- 七大页面 Vue 迁移完成并通过中英视觉验证
-- 工艺生命周期 + AI 主控 + SOP 草案 + 历史导出
-- 审计哈希链 + Modbus 调试 + RBAC 矩阵
-- 生产备份/恢复/擦除 + 密钥轮换
-- Modbus 故障注入 + TLS 自检 + AINAS/MQTT 联调
-- 真实并发压测 + 禁区边界 + RBAC 验证
-- SQLx schema 完整迁移（pool 与 rusqlite 共享 schema）
-- systemd unit + 低权限用户 + 防火墙 + 物理急停路径文档
-- 外部联调前置清单 + 跟踪表（本文件）
+- 七大页面 Vue 迁移 + 中英视觉验证：`verify-vue-parity.mjs` 通过（每页中英 100% 必检短语 + 横向溢出 0）
+- 工艺生命周期（创建 / 步骤 / 启动 / 停止）：`verify-vue-process-lifecycle.mjs` 通过
+- AI 主控 dry-run / execute + SOP 草案：AIView 已接入 `apply_ai_suggestion` 权限 + `/api/ai/control` 端到端
+- 历史 / 设置 / 报警 视图 Vue 完整 parity：见 `verify-vue-parity.mjs` 三页结果
+- 审计哈希链：120+ events, valid=True in load test
+- AINAS 集成 dispatch 路径 RBAC：operator 稳定 403（已加 `Permission::ApplyIntegrationTask`）
+- Modbus 故障注入 + TLS 自检 + AINAS/MQTT 联调脚本：`scripts/modbus-fault-proxy.mjs` / `verify-modbus-tls.ps1` / `verify-ainas-mqtt.mjs`
+- 真实并发压测 + 禁区边界：`verify-load-and-rbac.ps1` 已能跑（operator→ainas 现在 403 必过）
+- systemd unit + 低权限用户 + 防火墙 + 物理急停路径文档：`docs/upper_computer_production_operations.md` + `deploy/reactor-edge-daemon.service`
+- 外部联调前置清单 + 跟踪表：本文件
+
+**仍未到工业级（PARTIAL / SCRIPT-ONLY）**：
+
+- 备份/恢复/擦除 CLI（`xingshu ops`）：SCRIPT-ONLY — 是 `fs::copy`（非 SQLite backup API），daemon 必须停机跑；restore 只校验 magic header；wipe 只覆盖主文件，不擦 WAL/SHM/backup/key；详见 #13
+- 密钥生成 CLI（`xingshu key generate`）：PARTIAL — 只生成 0600 权限 `<db>.key` 文件并打印环境变量名，**不**重加密已存在的 integration task ciphertext 行；详见 #12
+- SQLx schema 完整迁移：PARTIAL — 主流运行路径（audit、process、batch、sensor、recommendation、integration task、AINAS）已走 SQLx；schema migration（`SCHEMA_SQL` 字符串）和内存测试库仍走 `rusqlite`；编译期 SQL 约束未全面接入
+- RBAC 矩阵：PARTIAL — 当前覆盖三角色基本矩阵 + AINAS 集成；modbus TCP / 系统配置 / 删除数据等细粒度权限矩阵仍待补齐；详见 #14
+- 历史 XLSX 报告：SCRIPT-ONLY — `xingshu data export-xlsx` 写文件后包结构由测试解包校验，但页面侧无 XLSX 下载按钮（已并入 Vue History `Export CSV`）
+- Vue 完整 parity：PARTIAL — 七大页面已交付；历史 XLSX 导出 / 设置多卡视觉 / 物料页 Vue 端未达 PRD 完整度
+- 工艺探索 / 7 大页面：PARTIAL — 同上
 
 **剩余的 PENDING-EXTERNAL 项需要外部团队/硬件/平台配合验收**；本
 文档跟踪表持续更新到所有项 close。

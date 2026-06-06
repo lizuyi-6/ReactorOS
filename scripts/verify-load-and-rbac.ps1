@@ -132,6 +132,10 @@ if (($accepted + $rejected + $server5xx) -ne $ConcurrentWriters) {
     $report | ConvertTo-Json -Depth 8 | Set-Content $reportPath
     exit 1
 }
+# Per the rework checklist: a 5xx on any expected-allow path is a fail.
+# Surface this through the step counter so the report can never claim ok=true
+# while the safety gate is producing 5xx.
+$report.concurrent_writes_failed = ($server5xx -gt 0)
 
 # 2. Audit chain.
 $audit = Invoke-RestMethod -Method Get -Uri "${Base}/api/audit/logs?page=1&page_size=20" `
@@ -195,7 +199,8 @@ $report.findings = @(
 )
 
 $report.rbac_failed_count = ($report.cases | Where-Object { -not $_.ok }).Count
-if ($report.rbac_failed_count -gt 0) {
+$concurrentFailed = $report.concurrent_writes_failed -eq $true
+if ($report.rbac_failed_count -gt 0 -or $concurrentFailed) {
     $report.ok = $false
 } else {
     $report.ok = $true

@@ -2469,13 +2469,34 @@ async fn ainas_task_api_requires_auth_executes_targets_and_persists_task() {
         .unwrap();
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
 
-    let created = app
+    // Operator must NOT be able to dispatch AINAS tasks. The integration
+    // path is reserved for engineer/admin via Permission::ApplyIntegrationTask.
+    let operator_dispatch = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/integrations/ainas/tasks")
                 .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        operator_dispatch.status(),
+        StatusCode::FORBIDDEN,
+        "operator must not dispatch AINAS tasks"
+    );
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
                 .body(Body::from(payload.to_string()))
                 .unwrap(),
@@ -2551,13 +2572,42 @@ async fn ainas_task_api_can_start_and_stop_process_through_safety_lifecycle() {
         PathBuf::from("static"),
     );
 
-    let started = app
+    // Engineer has ApplyIntegrationTask; operator does not and must be
+    // rejected before reaching the lifecycle path. Verify operator is blocked
+    // first, then run the full start/stop cycle as engineer.
+    let operator_blocked = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/integrations/ainas/tasks")
                 .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "external_task_id": "ainas-operator-blocked",
+                        "action": "start_process",
+                        "process_id": process_id
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        operator_blocked.status(),
+        StatusCode::FORBIDDEN,
+        "operator must not start AINAS processes"
+    );
+
+    let started = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/integrations/ainas/tasks")
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({
@@ -2586,7 +2636,7 @@ async fn ainas_task_api_can_start_and_stop_process_through_safety_lifecycle() {
             Request::builder()
                 .method("POST")
                 .uri("/api/integrations/ainas/tasks")
-                .header("authorization", auth_header("operator"))
+                .header("authorization", auth_header("engineer"))
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({

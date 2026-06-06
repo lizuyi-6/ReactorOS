@@ -105,8 +105,9 @@ async fn main() -> Result<()> {
     // Migration failure aborts startup. Tolerating it would mean a running
     // daemon with broken SQLx paths that 500 at runtime, which is worse
     // than refusing to start. Operators who genuinely need a degraded
-    // boot can use `--allow-sqlx-migration-warning` (only logged as a
-    // warning instead of bailing out).
+    // boot can set the `XINGSHU_ALLOW_SQLX_MIGRATION_WARNING=1`
+    // environment variable so the failure is logged as a warning instead
+    // of bailing out.
     let allow_sqlx_warning = std::env::var("XINGSHU_ALLOW_SQLX_MIGRATION_WARNING")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);

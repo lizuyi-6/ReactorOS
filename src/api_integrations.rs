@@ -73,6 +73,13 @@ pub(super) async fn create_ainas_task(
     ApiJson(payload): ApiJson<AinasTaskRequest>,
 ) -> Result<Json<V1Envelope<IntegrationTask>>, AppError> {
     let action = normalize_ainas_action(&payload.action)?;
+    // Gate the integration dispatch path first. The integration path is
+    // reachable from AINAS remote clients and from MQTT, so it requires a
+    // separate permission that operator does NOT carry; otherwise operator
+    // would inherit SetSafeTargets / StartStopProcess and could push a
+    // remote action through /api/integrations/ainas/tasks. Engineer and
+    // admin are still subject to the action-specific check below.
+    require_permission(&headers, Permission::ApplyIntegrationTask)?;
     require_ainas_action_permission(&headers, action)?;
     Ok(Json(success(
         execute_integration_task(&state, "ainas", payload).await?,
