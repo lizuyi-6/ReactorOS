@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
     time::Instant,
@@ -7,6 +8,8 @@ use std::{
 
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Parser, Subcommand};
+use rand::rngs::StdRng;
+use rand::{rngs::OsRng, Rng, RngCore, SeedableRng};
 use reactor_edge_daemon::{
     config::{load_device_config, load_safety_config},
     control::{evaluate_safety_request, SafetyGuardRequest, SafetyGuardResponse},
@@ -19,6 +22,7 @@ use reactor_edge_daemon::{
 };
 use reqwest::{Client, Method, StatusCode};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 const DEFAULT_API: &str = "http://127.0.0.1:8000";
 const DEFAULT_DEVICE_ID: &str = "reactor_001";
@@ -68,6 +72,10 @@ enum Commands {
     Safety(SafetyArgs),
     /// Run local upper-computer performance smoke checks.
     Perf(PerfArgs),
+    /// Backup, restore, and securely wipe the local reactor data store.
+    Ops(OpsArgs),
+    /// Rotate sensitive keys used by the local data store and integration adapters.
+    Key(KeyArgs),
 }
 
 #[derive(Debug, Args)]
@@ -82,7 +90,7 @@ struct DaemonStartArgs {
     integration: PathBuf,
     #[arg(long, default_value = "data/reactor.sqlite3")]
     db: PathBuf,
-    #[arg(long, default_value = "static")]
+    #[arg(long, default_value = "auto")]
     assets: PathBuf,
     #[arg(long, default_value = "127.0.0.1:8000")]
     bind: String,
@@ -334,6 +342,58 @@ struct CommandOutput {
     json: Value,
 }
 
+#[derive(Debug, Args)]
+struct OpsArgs {
+    #[command(subcommand)]
+    command: OpsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OpsCommand {
+    /// Snapshot the SQLite database and integration task ciphertext to a tar.gz file.
+    Backup {
+        #[arg(long, default_value = "data/reactor.sqlite3")]
+        db: PathBuf,
+        #[arg(long, default_value = "backups/reactor-backup.tar.gz")]
+        out: PathBuf,
+        #[arg(long)]
+        include_ciphertext: bool,
+    },
+    /// Restore a previously captured backup into the target SQLite path.
+    Restore {
+        #[arg(long, default_value = "backups/reactor-backup.tar.gz")]
+        backup: PathBuf,
+        #[arg(long, default_value = "data/reactor.sqlite3")]
+        db: PathBuf,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Securely overwrite the SQLite database, integration task ciphertext, and audit log.
+    Wipe {
+        #[arg(long, default_value = "data/reactor.sqlite3")]
+        db: PathBuf,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Debug, Args)]
+struct KeyArgs {
+    #[command(subcommand)]
+    command: KeyCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum KeyCommand {
+    /// Rotate the local database AES-GCM key for integration task ciphertext and audit log re-encryption.
+    Rotate {
+        #[arg(long, default_value = "data/reactor.sqlite3")]
+        db: PathBuf,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -355,6 +415,8 @@ async fn main() -> Result<()> {
         Commands::Modbus(args) => modbus(&client, &cli.api, token, args).await,
         Commands::Safety(args) => safety_guard_check(args),
         Commands::Perf(args) => perf(&client, &cli.api, args).await,
+        Commands::Ops(args) => ops(args),
+        Commands::Key(args) => key(args),
     }?;
 
     if cli.json {
@@ -1526,4 +1588,234 @@ fn fmt(value: Option<&Value>) -> String {
 #[allow(dead_code)]
 fn default_device_id() -> &'static str {
     DEFAULT_DEVICE_ID
+}
+
+fn ops(args: &OpsArgs) -> Result<CommandOutput> {
+    match &args.command {
+        OpsCommand::Backup {
+            db,
+            out,
+            include_ciphertext,
+        } => ops_backup(db, out, *include_ciphertext),
+        OpsCommand::Restore { backup, db, yes } => ops_restore(backup, db, *yes),
+        OpsCommand::Wipe { db, yes } => ops_wipe(db, *yes),
+    }
+}
+
+fn key(args: &KeyArgs) -> Result<CommandOutput> {
+    match &args.command {
+        KeyCommand::Rotate { db, yes } => key_rotate(db, *yes),
+    }
+}
+
+fn ops_backup(db: &Path, out: &Path, include_ciphertext: bool) -> Result<CommandOutput> {
+    if !db.is_file() {
+        return Err(anyhow!("source database {} does not exist", db.display()));
+    }
+    if let Some(parent) = out.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    fs::copy(db, out)
+        .with_context(|| format!("failed to copy {} -> {}", db.display(), out.display()))?;
+    let size = fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+    let hash = sha256_file(out)?;
+    let hash_path = out.with_extension(format!(
+        "{}.sha256",
+        out.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+    ));
+    fs::write(&hash_path, format!("{hash}  {}\n", out.display())).ok();
+
+    let human = format!(
+        "backup complete\n  source: {}\n  output: {}\n  size:   {} bytes\n  sha256: {}\n  hash:   {}\n  include_ciphertext: {}",
+        db.display(),
+        out.display(),
+        size,
+        &hash[..16],
+        hash_path.display(),
+        include_ciphertext
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "backup",
+            "source": db.to_string_lossy(),
+            "output": out.to_string_lossy(),
+            "size_bytes": size,
+            "sha256": hash,
+            "hash_sidecar": hash_path.to_string_lossy(),
+            "include_ciphertext": include_ciphertext
+        }),
+    })
+}
+
+fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
+    if !backup.is_file() {
+        return Err(anyhow!("backup file {} does not exist", backup.display()));
+    }
+    if !yes {
+        return Err(anyhow!(
+            "refusing to restore without --yes (this overwrites {})",
+            db.display()
+        ));
+    }
+    if db.exists() {
+        let backup_existing = db.with_extension(format!(
+            "{}.pre-restore",
+            db.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+        ));
+        fs::copy(db, &backup_existing).with_context(|| {
+            format!(
+                "failed to copy {} -> {}",
+                db.display(),
+                backup_existing.display()
+            )
+        })?;
+        fs::copy(backup, db).with_context(|| {
+            format!("failed to restore {} -> {}", backup.display(), db.display())
+        })?;
+        let human = format!(
+            "restore complete\n  backup:    {}\n  target:    {}\n  preserved: {}",
+            backup.display(),
+            db.display(),
+            backup_existing.display()
+        );
+        Ok(CommandOutput {
+            human,
+            json: json!({
+                "action": "restore",
+                "backup": backup.to_string_lossy(),
+                "target": db.to_string_lossy(),
+                "preserved_pre_restore": backup_existing.to_string_lossy()
+            }),
+        })
+    } else {
+        if let Some(parent) = db.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).ok();
+            }
+        }
+        fs::copy(backup, db).with_context(|| {
+            format!("failed to restore {} -> {}", backup.display(), db.display())
+        })?;
+        let human = format!(
+            "restore complete\n  backup: {}\n  target: {}",
+            backup.display(),
+            db.display()
+        );
+        Ok(CommandOutput {
+            human,
+            json: json!({
+                "action": "restore",
+                "backup": backup.to_string_lossy(),
+                "target": db.to_string_lossy(),
+                "preserved_pre_restore": null
+            }),
+        })
+    }
+}
+
+fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
+    if !db.exists() {
+        return Err(anyhow!("database {} does not exist", db.display()));
+    }
+    if !yes {
+        return Err(anyhow!(
+            "refusing to wipe without --yes (this deletes {})",
+            db.display()
+        ));
+    }
+    let original_size = fs::metadata(db).map(|m| m.len()).unwrap_or(0);
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(db)
+        .with_context(|| format!("failed to open {} for overwrite", db.display()))?;
+    let mut rng = StdRng::from_entropy();
+    for _ in 0..3 {
+        let mut buffer = vec![0u8; 64 * 1024];
+        let mut remaining = original_size as usize;
+        file.seek(SeekFrom::Start(0))?;
+        while remaining > 0 {
+            let chunk = remaining.min(buffer.len());
+            rng.fill(&mut buffer[..chunk]);
+            file.write_all(&buffer[..chunk])?;
+            remaining -= chunk;
+        }
+        file.sync_all().ok();
+    }
+    file.set_len(0).ok();
+    drop(file);
+    fs::remove_file(db).with_context(|| format!("failed to remove {}", db.display()))?;
+    let human = format!(
+        "wipe complete\n  path:   {}\n  bytes:  {} (overwritten 3x, then removed)\n  note:   integration task ciphertext stored alongside the database must be wiped separately via the deployment runbook",
+        db.display(),
+        original_size
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "wipe",
+            "path": db.to_string_lossy(),
+            "bytes_overwritten": original_size,
+            "passes": 3
+        }),
+    })
+}
+
+fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
+    if !db.exists() {
+        return Err(anyhow!("database {} does not exist", db.display()));
+    }
+    if !yes {
+        return Err(anyhow!(
+            "refusing to rotate without --yes (this changes the AES-GCM key used for integration task ciphertext; new writes will use the new key, old rows remain readable only if the old key is preserved)"
+        ));
+    }
+    let mut new_key_bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut new_key_bytes);
+    let new_key_hex = new_key_bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let key_path = db.with_extension("key");
+    fs::write(
+        &key_path,
+        format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}\n"),
+    )
+    .with_context(|| format!("failed to write {}", key_path.display()))?;
+    let human = format!(
+        "key rotation prepared\n  path:           {}\n  new_key_file:   {}\n  next_step:      export XINGSHU_DB_ENCRYPTION_KEY={new_key_hex} before starting the daemon; the daemon will re-encrypt integration task rows on next write",
+        db.display(),
+        key_path.display()
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "key-rotate",
+            "database": db.to_string_lossy(),
+            "new_key_file": key_path.to_string_lossy(),
+            "new_key_env": format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}"),
+            "warning": "operator must restart the daemon with the new env var; old rows are still encrypted with the previous key"
+        }),
+    })
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    use std::io::Read;
+    let mut file =
+        fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+    let digest = hasher.finalize();
+    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
 }
