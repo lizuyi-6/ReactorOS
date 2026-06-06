@@ -11,6 +11,8 @@ Group=xingshu
 WorkingDirectory=/opt/xingshu
 EnvironmentFile=/etc/xingshu/daemon.env
 ExecStartPre=/usr/bin/test -f /opt/xingshu/config/safety.toml
+ExecStartPre=/usr/bin/test -f /etc/xingshu/tls/server.pem
+ExecStartPre=/usr/bin/test -f /etc/xingshu/tls/server-key.pem
 ExecStart=/opt/xingshu/bin/reactor-edge-daemon \
   --config /opt/xingshu/config/device.toml \
   --safety /opt/xingshu/config/safety.toml \
@@ -18,7 +20,9 @@ ExecStart=/opt/xingshu/bin/reactor-edge-daemon \
   --integration /opt/xingshu/config/integration.toml \
   --db /opt/xingshu/data/reactor.sqlite3 \
   --assets auto \
-  --bind 0.0.0.0:8443
+  --bind 0.0.0.0:8443 \
+  --tls-cert /etc/xingshu/tls/server.pem \
+  --tls-key /etc/xingshu/tls/server-key.pem
 Restart=always
 RestartSec=5
 TimeoutStopSec=20
@@ -29,6 +33,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/xingshu/data /opt/xingshu/log /opt/xingshu/backups
+ReadOnlyPaths=/etc/xingshu/tls
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectControlGroups=true

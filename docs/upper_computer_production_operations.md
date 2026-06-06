@@ -96,7 +96,7 @@ chmod 0640 /etc/xingshu/tls/*.pem
 ```bash
 RUST_LOG=info,reactor_edge_daemon=info
 RUST_BACKTRACE=1
-XINGSHU_DB_ENCRYPTION_KEY=<32-byte hex; rotation runs every 90 days>
+XINGSHU_DB_ENCRYPTION_KEY=<32-byte hex; the daemon only reads this at startup, so plan a restart window when running `xingshu key generate`>
 XINGSHU_STEPFUN_API_KEY=<optional, cloud provider integration>
 XINGSHU_AINAS_API_KEY=<optional, AINAS remote dispatch>
 ```
@@ -108,7 +108,7 @@ chown root:xingshu /etc/xingshu/daemon.env
 chmod 0640 /etc/xingshu/daemon.env
 ```
 
-密钥轮换：用 `xingshu ops key rotate`（见 `docs/upper_computer_security_key_lifecycle.md`）。
+密钥轮换：用 `xingshu key generate --db <path> --yes`（见 `docs/upper_computer_security_key_lifecycle.md`）。该命令只生成新的 `<db>.key` 文件并设权限 0600，不会重加密现有 ciphertext 行；操作员需在 daemon 停止期间重导出 `XINGSHU_DB_ENCRYPTION_KEY` 后再启动。
 
 ## 4. watchdog / 健康检查
 
@@ -139,7 +139,7 @@ daemon。daemon 在控制循环内检测到 `emergency_stop=true` 时立即停�
 
 ## 6. iptables / 防火墙
 
-上位机默认在 `0.0.0.0:8443`（HTTPS）。建议：
+上位机在 `0.0.0.0:8443` 监听 TLS（`systemd` unit 已传 `--tls-cert`/`--tls-key` 指向 `/etc/xingshu/tls/server.pem` 与 `server-key.pem`，并对证书目录设 `ReadOnlyPaths=/etc/xingshu/tls`）。如未启用 TLS，请把 daemon 改回 `127.0.0.1:8000` 并让 nginx / caddy / 工业网关在 8443 终止 TLS。建议：
 
 ```bash
 # 默认入站丢弃
@@ -176,18 +176,22 @@ netfilter-persistent save
 见 `docs/upper_computer_maintenance_manual.md` 和 `xingshu ops`：
 
 ```bash
-# 每日 02:00 cron 备份
+# 每日 02:00 cron 备份（须在 daemon 停止期间，或搭配维护窗口）
+# 注意：当前实现是 fs::copy，不是 SQLite backup API；运行中调用可能
+# 留下半事务状态。生产侧建议每周用 systemd 的 --quiet 停 5 分钟跑一次。
 xingshu ops backup --db /opt/xingshu/data/reactor.sqlite3 \
-  --out /opt/xingshu/backups/$(date +%Y%m%d).sqlite3.tar.gz
+  --out /opt/xingshu/backups/$(date +%Y%m%d).sqlite3.snapshot
 
 # 季度全量归档（脱机存储）
 xingshu ops backup --db /opt/xingshu/data/reactor.sqlite3 \
-  --out /mnt/nfs/xingshu-archive/$(date +%Y%m%d).sqlite3
+  --out /mnt/nfs/xingshu-archive/$(date +%Y%m%d).sqlite3.snapshot
 
-# 退役设备前安全擦除
+# 退役设备前安全擦除（只擦 SQLite 主文件；WAL/SHM/backup/key 需手动清）
 xingshu ops wipe --db /opt/xingshu/data/reactor.sqlite3 --yes
-shred -vzn 3 /opt/xingshu/backups/*.sqlite3
-blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM
+shred -vzn 3 /opt/xingshu/backups/*.snapshot
+rm -f /opt/xingshu/data/reactor.sqlite3-wal /opt/xingshu/data/reactor.sqlite3-shm
+rm -f /opt/xingshu/data/reactor.sqlite3.key
+blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM，物理擦除
 ```
 
 ## 8. 监控与告警
@@ -202,7 +206,7 @@ blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM
 
 ## 9. 升级与回滚
 
-- 升级前先 `xingshu ops backup` 一次完整备份。
+- 升级前先 `xingshu ops backup` 一次 SQLite 文件快照（daemon 必须停止）。
 - 部署新二进制到 `/opt/xingshu/bin/reactor-edge-daemon.new`，
   `chmod 0750`，`chown xingshu:xingshu`。
 - 切流：`systemctl stop reactor-edge-daemon && mv ...new ... && systemctl start`。
@@ -232,7 +236,7 @@ blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM
 1. daemon 崩溃 → systemd 自动重启 → 上位机自动恢复（30s 内）。
 2. 数据库被损坏 → `xingshu ops restore` 从备份恢复。
 3. 物理急停触发 → 急停信号到 UI 提示 ≤ 1s；复位流程验证。
-4. 密钥泄露 → `xingshu ops key rotate` → 重启 daemon → 验证新写入。
+4. 密钥泄露 → `xingshu key generate --db <path> --yes` → 重启 daemon → 验证新写入。注意旧 ciphertext 行将不可读，需离线脚本迁移。
 5. Modbus TCP 中断 → 上位机降级显示"PLC offline"。
 
 ## 13. 参考

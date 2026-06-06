@@ -6,13 +6,17 @@ import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
 const store = usePlantStore();
 const batches = computed(() => arrayAt(store.batches, "batches"));
 const outcomes = computed(() => arrayAt(store.batches, "outcomes"));
-const selectedBatch = ref<Record<string, unknown> | null>(null);
-const selectedOutcome = computed(() => {
-  if (!selectedBatch.value) return null;
-  const id = numberAt(selectedBatch.value, "id");
-  if (id === null) return null;
-  return outcomes.value.find((row) => numberAt(row, "batch_id") === id) ?? null;
-});
+// `loadBatchDetail` returns a wrapper object { batch, outcome, samples, events }
+// (see src/api.rs `get_batch_detail`). The previous code stored the wrapper
+// directly into `selectedBatch`, so the detail panel read fields like
+// `id`/`name` off the wrapper and rendered blank. The split below keeps the
+// raw response as `selectedBatchDetail` and exposes the inner `batch`,
+// `outcome`, `samples`, and `events` as separate computeds.
+const selectedBatchDetail = ref<Record<string, unknown> | null>(null);
+const selectedBatch = computed(() => objectAt(selectedBatchDetail.value, "batch"));
+const selectedOutcome = computed(() => objectAt(selectedBatchDetail.value, "outcome"));
+const selectedSamples = computed(() => arrayAt(selectedBatchDetail.value, "samples"));
+const selectedEvents = computed(() => arrayAt(selectedBatchDetail.value, "events"));
 const reportUrl = ref<string | null>(null);
 const reportBytes = ref<number | null>(null);
 const actionMessage = ref("");
@@ -54,13 +58,14 @@ async function refresh(): Promise<void> {
 
 async function selectBatch(id: number | null): Promise<void> {
   if (id === null) {
-    selectedBatch.value = null;
+    selectedBatchDetail.value = null;
     reportUrl.value = null;
     reportBytes.value = null;
     return;
   }
   try {
-    selectedBatch.value = await store.loadBatchDetail(id);
+    const detail = await store.loadBatchDetail(id);
+    selectedBatchDetail.value = detail as Record<string, unknown>;
   } catch (error) {
     store.error = error instanceof Error ? error.message : String(error);
   }
@@ -164,8 +169,10 @@ async function downloadReport(): Promise<void> {
             </el-descriptions-item>
             <el-descriptions-item :label="store.tr('开始', 'Started')">{{ textAt(selectedBatch, "started_at") }}</el-descriptions-item>
             <el-descriptions-item :label="store.tr('结束', 'Finished')">{{ textAt(selectedBatch, "finished_at") || "--" }}</el-descriptions-item>
-            <el-descriptions-item :label="store.tr('产品', 'Product')">{{ textAt(selectedOutcome, "product", store.tr("未填写", "n/a")) }}</el-descriptions-item>
-            <el-descriptions-item :label="store.tr('产率', 'Yield')">{{ textAt(selectedOutcome, "yield_percent", "--") }} %</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('产品', 'Product')">{{ selectedOutcome ? textAt(selectedOutcome, "product", store.tr("未填写", "n/a")) : store.tr("未填写", "n/a") }}</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('产率', 'Yield')">{{ selectedOutcome ? textAt(selectedOutcome, "yield_percent", "--") : "--" }} %</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('样本数', 'Sample count')">{{ selectedSamples.length }}</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('事件数', 'Event count')">{{ selectedEvents.length }}</el-descriptions-item>
           </el-descriptions>
           <div class="control-actions">
             <el-button type="primary" :disabled="!store.isAuthenticated" @click="downloadReport">

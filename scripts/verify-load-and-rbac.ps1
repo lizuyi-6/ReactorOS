@@ -162,19 +162,44 @@ $rbacCases = @(
     @{ role = "admin";    token = $adminToken;    method = "POST"; path = "/api/modbus/registers/target_temperature_c/write";            body = @{ value = 60; reason = "rbac" };                                      expect = $true },
     @{ role = "engineer"; token = $engineerToken; method = "POST"; path = "/api/modbus/registers/target_temperature_c/write";            body = @{ value = 60; reason = "rbac" };                                      expect = $false }
 )
+$report.rbac_failed = 0
 foreach ($c in $rbacCases) {
     $status = SendRequest $c.method $c.path $c.token $c.body
-    $ok = ($status -ge 200 -and $status -lt 300) -eq $c.expect
-    $case = @{ role = $c.role; method = $c.method; path = $c.path; expected = $c.expect; status = $status; ok = $ok }
+    $isAllow = $c.expect
+    $isAllowed = ($status -ge 200 -and $status -lt 300)
+    $isDenied = ($status -eq 401 -or $status -eq 403)
+    $isServerError = ($status -ge 500 -or $status -eq 0)
+    $ok = $false
+    if ($isAllow) {
+        $ok = $isAllowed
+    } else {
+        $ok = $isDenied
+    }
+    if ($isServerError) { $ok = $false }
+    $case = @{
+        role = $c.role
+        method = $c.method
+        path = $c.path
+        expected_allow = $isAllow
+        status = $status
+        ok = $ok
+    }
     $report.cases += $case
     Step ("rbac " + $c.role + " " + $c.method + " " + $c.path) $(if ($ok) { "ok" } else { "fail" }) "status=$status"
+    if (-not $ok) { $report.rbac_failed++ }
 }
 $report.findings = @(
-    "operator POST /api/integrations/ainas/tasks may currently return 200 because the audit-event write contention resolves before the RBAC check fires. Tighten Permission::ApplyIntegrationTask to engineer/admin only to align with PRD v2.2.",
-    "operator POST /api/control/targets returned 500 under load due to SQLite WAL write contention on the audit-event SQLx path. After raising busy_timeout or moving audit-event writes through a dedicated mutex, this case should land at 200.",
+    "operator POST /api/integrations/ainas/tasks: a 5xx is a fail, not a deny. Tighten Permission::ApplyIntegrationTask to engineer/admin only and rerun; an expected deny must surface as 401/403.",
+    "operator POST /api/control/targets: 500 under load is a fail. Raise SQLite busy_timeout or move audit-event writes to a dedicated mutex; expected allow should land at 200.",
     "engineer POST /api/modbus/registers/.../write correctly returns 403; only admin can write Modbus registers."
 )
 
-$report.ok = $true
+$report.rbac_failed_count = ($report.cases | Where-Object { -not $_.ok }).Count
+if ($report.rbac_failed_count -gt 0) {
+    $report.ok = $false
+} else {
+    $report.ok = $true
+}
 $report | ConvertTo-Json -Depth 8 | Set-Content $reportPath
 Write-Host "report -> $reportPath"
+if (-not $report.ok) { exit 1 }

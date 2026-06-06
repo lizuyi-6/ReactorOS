@@ -350,25 +350,33 @@ struct OpsArgs {
 
 #[derive(Debug, Subcommand)]
 enum OpsCommand {
-    /// Snapshot the SQLite database and integration task ciphertext to a tar.gz file.
+    /// Copy the SQLite database file to a snapshot. This is a file copy, not a
+    /// tar.gz archive; ciphertext is stored inside the same database file, so
+    /// copying the database is sufficient for restoring it on a fresh daemon.
+    /// The file copy does NOT use the SQLite backup API, so it must only be run
+    /// while the daemon is stopped, or with the daemon's write connection in
+    /// WAL checkpoint+lock mode (the daemon does not provide that today).
     Backup {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
-        #[arg(long, default_value = "backups/reactor-backup.tar.gz")]
+        #[arg(long, default_value = "backups/reactor.sqlite3.snapshot")]
         out: PathBuf,
-        #[arg(long)]
+        #[arg(long, default_value_t = false, hide = true)]
         include_ciphertext: bool,
     },
-    /// Restore a previously captured backup into the target SQLite path.
+    /// Restore a previously captured SQLite snapshot into the target database path.
     Restore {
-        #[arg(long, default_value = "backups/reactor-backup.tar.gz")]
+        #[arg(long, default_value = "backups/reactor.sqlite3.snapshot")]
         backup: PathBuf,
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
         #[arg(long)]
         yes: bool,
     },
-    /// Securely overwrite the SQLite database, integration task ciphertext, and audit log.
+    /// Securely overwrite the SQLite database file in place. Wipe does NOT touch
+    /// WAL/SHM siblings, integration task ciphertext stored outside the
+    /// database, or any operator-managed copies under backups/. Run this only
+    /// when the daemon is stopped.
     Wipe {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
@@ -385,8 +393,12 @@ struct KeyArgs {
 
 #[derive(Debug, Subcommand)]
 enum KeyCommand {
-    /// Rotate the local database AES-GCM key for integration task ciphertext and audit log re-encryption.
-    Rotate {
+    /// Generate a new AES-256 key into <db>.key (mode 0600) and print only the
+    /// environment variable name. This command does NOT re-encrypt existing
+    /// integration_tasks rows; the operator must restart the daemon with the
+    /// new env var and accept that previously encrypted rows become
+    /// unreadable until the old key is restored.
+    Generate {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
         #[arg(long)]
@@ -1604,11 +1616,11 @@ fn ops(args: &OpsArgs) -> Result<CommandOutput> {
 
 fn key(args: &KeyArgs) -> Result<CommandOutput> {
     match &args.command {
-        KeyCommand::Rotate { db, yes } => key_rotate(db, *yes),
+        KeyCommand::Generate { db, yes } => key_rotate(db, *yes),
     }
 }
 
-fn ops_backup(db: &Path, out: &Path, include_ciphertext: bool) -> Result<CommandOutput> {
+fn ops_backup(db: &Path, out: &Path, _include_ciphertext: bool) -> Result<CommandOutput> {
     if !db.is_file() {
         return Err(anyhow!("source database {} does not exist", db.display()));
     }
@@ -1618,6 +1630,11 @@ fn ops_backup(db: &Path, out: &Path, include_ciphertext: bool) -> Result<Command
                 .with_context(|| format!("failed to create {}", parent.display()))?;
         }
     }
+    // This is a plain fs::copy of the SQLite file. It is NOT a SQLite backup
+    // API call and it does NOT pause the daemon's writer, so the snapshot can
+    // drift if the daemon is still running. The docs require the operator to
+    // run this only while the daemon is stopped, or via the daemon's
+    // safe-stop hook (see docs/upper_computer_maintenance_manual.md).
     fs::copy(db, out)
         .with_context(|| format!("failed to copy {} -> {}", db.display(), out.display()))?;
     let size = fs::metadata(out).map(|m| m.len()).unwrap_or(0);
@@ -1629,24 +1646,24 @@ fn ops_backup(db: &Path, out: &Path, include_ciphertext: bool) -> Result<Command
     fs::write(&hash_path, format!("{hash}  {}\n", out.display())).ok();
 
     let human = format!(
-        "backup complete\n  source: {}\n  output: {}\n  size:   {} bytes\n  sha256: {}\n  hash:   {}\n  include_ciphertext: {}",
+        "snapshot complete (file copy, not SQLite backup API)\n  source: {}\n  output: {}\n  size:   {} bytes\n  sha256: {}\n  hash:   {}\n  caveat: stop the daemon before restoring, or accept that a running writer may have left the snapshot mid-transaction",
         db.display(),
         out.display(),
         size,
         &hash[..16],
-        hash_path.display(),
-        include_ciphertext
+        hash_path.display()
     );
     Ok(CommandOutput {
         human,
         json: json!({
             "action": "backup",
+            "kind": "sqlite_file_copy",
             "source": db.to_string_lossy(),
             "output": out.to_string_lossy(),
             "size_bytes": size,
             "sha256": hash,
             "hash_sidecar": hash_path.to_string_lossy(),
-            "include_ciphertext": include_ciphertext
+            "include_ciphertext": "no-op: ciphertext lives inside the SQLite file, so the file copy already captures it"
         }),
     })
 }
@@ -1659,6 +1676,19 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
         return Err(anyhow!(
             "refusing to restore without --yes (this overwrites {})",
             db.display()
+        ));
+    }
+    // The backup is a SQLite file copy, not an archive. We verify the
+    // SQLite magic header to refuse unrelated files; the daemon will then
+    // re-run schema migration on the restored file, so a wrong version would
+    // surface as a migration error rather than a silent corruption.
+    let backup_bytes = fs::read(backup)
+        .with_context(|| format!("failed to read {}", backup.display()))?;
+    let sqlite_magic = b"SQLite format 3\0";
+    if !backup_bytes.starts_with(sqlite_magic) {
+        return Err(anyhow!(
+            "refusing to restore {}: file does not start with the SQLite magic header",
+            backup.display()
         ));
     }
     if db.exists() {
@@ -1677,7 +1707,7 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
             format!("failed to restore {} -> {}", backup.display(), db.display())
         })?;
         let human = format!(
-            "restore complete\n  backup:    {}\n  target:    {}\n  preserved: {}",
+            "restore complete (file copy, no migration re-run)\n  backup:    {}\n  target:    {}\n  preserved: {}\n  caveat:   the daemon re-runs schema migration on next start; the snapshot was not taken with the SQLite backup API, so a running writer may have left the file mid-transaction",
             backup.display(),
             db.display(),
             backup_existing.display()
@@ -1688,7 +1718,8 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
                 "action": "restore",
                 "backup": backup.to_string_lossy(),
                 "target": db.to_string_lossy(),
-                "preserved_pre_restore": backup_existing.to_string_lossy()
+                "preserved_pre_restore": backup_existing.to_string_lossy(),
+                "validated": "sqlite_magic_header"
             }),
         })
     } else {
@@ -1701,7 +1732,7 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
             format!("failed to restore {} -> {}", backup.display(), db.display())
         })?;
         let human = format!(
-            "restore complete\n  backup: {}\n  target: {}",
+            "restore complete (file copy, no migration re-run)\n  backup: {}\n  target: {}",
             backup.display(),
             db.display()
         );
@@ -1711,7 +1742,8 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
                 "action": "restore",
                 "backup": backup.to_string_lossy(),
                 "target": db.to_string_lossy(),
-                "preserved_pre_restore": null
+                "preserved_pre_restore": null,
+                "validated": "sqlite_magic_header"
             }),
         })
     }
@@ -1723,7 +1755,7 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
     }
     if !yes {
         return Err(anyhow!(
-            "refusing to wipe without --yes (this deletes {})",
+            "refusing to wipe without --yes (this overwrites and removes {})",
             db.display()
         ));
     }
@@ -1741,7 +1773,7 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
         while remaining > 0 {
             let chunk = remaining.min(buffer.len());
             rng.fill(&mut buffer[..chunk]);
-            file.write_all(&buffer[..chunk])?;
+            file.write_all(&mut buffer[..chunk])?;
             remaining -= chunk;
         }
         file.sync_all().ok();
@@ -1749,10 +1781,18 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
     file.set_len(0).ok();
     drop(file);
     fs::remove_file(db).with_context(|| format!("failed to remove {}", db.display()))?;
+
+    // Note for the operator: this command only touches the SQLite main file.
+    // It does not touch the WAL/SHM sidecars, backup files, the
+    // <db>.key file, or any out-of-band ciphertext the deployment may store
+    // next to the database. SSD/NVMe overwrite is NOT a physical erase; for
+    // retiring the device, run blkdiscard /hdparm --security-erase after
+    // this command. See docs/upper_computer_production_operations.md.
     let human = format!(
-        "wipe complete\n  path:   {}\n  bytes:  {} (overwritten 3x, then removed)\n  note:   integration task ciphertext stored alongside the database must be wiped separately via the deployment runbook",
+        "wipe complete\n  path:   {}\n  bytes:  {} (overwritten 3x, then removed)\n  scope:  ONLY the SQLite main file. WAL/SHM sidecars, backup snapshots under {}, and <db>.key are NOT touched. Run the deployment runbook to scrub those manually, then blkdiscard the block device before physical retirement.",
         db.display(),
-        original_size
+        original_size,
+        out_dir_for_human(db)
     );
     Ok(CommandOutput {
         human,
@@ -1760,9 +1800,18 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
             "action": "wipe",
             "path": db.to_string_lossy(),
             "bytes_overwritten": original_size,
-            "passes": 3
+            "passes": 3,
+            "scope": ["sqlite_main_file"],
+            "not_touched": ["sqlite_wal", "sqlite_shm", "backup_snapshots", "db_key_file", "external_ciphertext"],
+            "physical_erase_required": "blkdiscard or hdparm --security-erase for SSD/NVMe retirement"
         }),
     })
+}
+
+fn out_dir_for_human(db: &Path) -> String {
+    db.parent()
+        .map(|p| p.join("backups").display().to_string())
+        .unwrap_or_else(|| "backups/".to_string())
 }
 
 fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
@@ -1771,7 +1820,7 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
     }
     if !yes {
         return Err(anyhow!(
-            "refusing to rotate without --yes (this changes the AES-GCM key used for integration task ciphertext; new writes will use the new key, old rows remain readable only if the old key is preserved)"
+            "refusing to generate a new key without --yes (this overwrites <db>.key and changes the AES-GCM key used for new integration task ciphertext; previously encrypted rows will become unreadable once the daemon is restarted with the new env var)"
         ));
     }
     let mut new_key_bytes = [0u8; 32];
@@ -1781,24 +1830,34 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let key_path = db.with_extension("key");
-    fs::write(
-        &key_path,
-        format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}\n"),
-    )
-    .with_context(|| format!("failed to write {}", key_path.display()))?;
+    fs::write(&key_path, format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}\n"))
+        .with_context(|| format!("failed to write {}", key_path.display()))?;
+    // Tighten permissions to 0600 on Unix. Windows ignores mode bits, so the
+    // NTFS ACL must be set out of band; the docs call this out.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&key_path, perms)
+            .with_context(|| format!("failed to chmod 0600 {}", key_path.display()))?;
+    }
+    // Print only the env var NAME, not the key value, on the human channel.
+    // The key lives in the file; the operator reads it themselves and
+    // exports it into the daemon's env. JSON intentionally omits the key
+    // material as well so logs do not leak the secret.
     let human = format!(
-        "key rotation prepared\n  path:           {}\n  new_key_file:   {}\n  next_step:      export XINGSHU_DB_ENCRYPTION_KEY={new_key_hex} before starting the daemon; the daemon will re-encrypt integration task rows on next write",
+        "key material generated (not printed)\n  path:           {}\n  new_key_file:   {}\n  next_step:      read the file with restricted permissions, then export XINGSHU_DB_ENCRYPTION_KEY before starting the daemon",
         db.display(),
         key_path.display()
     );
     Ok(CommandOutput {
         human,
         json: json!({
-            "action": "key-rotate",
+            "action": "key-generate",
             "database": db.to_string_lossy(),
             "new_key_file": key_path.to_string_lossy(),
-            "new_key_env": format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}"),
-            "warning": "operator must restart the daemon with the new env var; old rows are still encrypted with the previous key"
+            "new_key_env_var": "XINGSHU_DB_ENCRYPTION_KEY",
+            "warning": "operator must restart the daemon with the new env var; rows previously encrypted with the old key will become unreadable. Re-encryption of existing rows is NOT performed by this command."
         }),
     })
 }

@@ -19,9 +19,9 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 | 9 | 物理急停信号链路 | 上位机通过 Modbus / JSON bridge 接收 `emergency_stop=true` 样本；`safety.toml` 已配 `sensor_timeout_ms=6000` | 王天宇 | `xingshu control estop` (软件) + 万用表测硬件 (物理) | PENDING-EXTERNAL (需安全继电器 / 安全 PLC 接入) |
 | 10 | iptables / VPN 部署 | `upper_computer_production_operations.md` 已给配置模板 | SRE / 邓琪曦对接 | `iptables -L -n -v` | PENDING-EXTERNAL (需部署环境) |
 | 11 | 7x24 长稳态 | `xingshu perf smoke` 已能给 p50/p95 | 团队 | `xingshu perf smoke --iterations 1000` 跑 30 天 | PENDING-EXTERNAL (需长期跑) |
-| 12 | 生产密钥轮换 | `xingshu key rotate` 已实现 | 团队 | `xingshu key rotate --db /opt/xingshu/data/reactor.sqlite3 --yes` | READY (上位机交付) |
-| 13 | 备份/恢复 | `xingshu ops backup/restore/wipe` 已实现 | SRE | `xingshu ops backup ...` | READY (上位机交付) |
-| 14 | RBAC 真实登录 | `verify-load-and-rbac.ps1` 已验证 operator/engineer/admin 矩阵；`login` + `auth/me` 已暴露 | 团队 | `pwsh scripts/verify-load-and-rbac.ps1` | READY (上位机交付，已发现一处 operator/ainas 锁竞争需修) |
+| 12 | 生产密钥轮换 | `xingshu key generate` 已实现（生成 0600 权限的 `<db>.key` 文件并仅打印环境变量名；不重加密旧 ciphertext 行） | 团队 | `xingshu key generate --db /opt/xingshu/data/reactor.sqlite3 --yes` | PARTIAL (key material 生成已交付；re-encrypt 旧行未做，需离线脚本迁移) |
+| 13 | 备份/恢复 | `xingshu ops backup/restore/wipe` 已实现，但是 SQLite 文件 fs::copy（不是 backup API）；restore 校验 SQLite magic header | SRE | `xingshu ops backup ...` | SCRIPT-ONLY (脚本可用；声称的"tar.gz + backup API"不真实；daemon 必须停机跑) |
+| 14 | RBAC 真实登录 | `verify-load-and-rbac.ps1` 已验证 operator/engineer/admin 矩阵；`login` + `auth/me` 已暴露 | 团队 | `pwsh scripts/verify-load-and-rbac.ps1` | PARTIAL (脚本能跑通；operator→ainas 实际为 SQLx 锁竞争后 500，需修 RBAC 让其显式 403) |
 | 15 | TLS 1.3 证书链 | `axum-server` + `rustls` 已用 | 团队 / CA | `openssl s_client -connect <ip>:8443 -tls1_3` | PENDING-EXTERNAL (需正式 CA 签发) |
 | 16 | STM32 Modbus 寄存器映射确认 | `docs/upper_computer_modbus_register_map.md` 草案已写 | 王天宇 | N/A | PENDING-EXTERNAL (需 STM32 手册最终版) |
 | 17 | 工艺探索 / 7 大页面 / 中英切换 | Vue + 静态双版本已交付，Playwright 中英+压测+RBAC 全过 | 团队 | `pwsh scripts/verify-vue-parity.mjs` + `pwsh scripts/verify-load-and-rbac.ps1` | READY (上位机交付) |
@@ -49,7 +49,7 @@ handoff。每项 PENDING-EXTERNAL 任务都明确：上位机能提供什么、�
 - `xingshu safety ...`
 - `xingshu perf smoke`
 - `xingshu ops {backup,restore,wipe}`
-- `xingshu key rotate`
+- `xingshu key generate`
 
 ### 2.3 验证脚本
 

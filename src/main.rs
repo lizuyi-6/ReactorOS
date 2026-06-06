@@ -101,8 +101,22 @@ async fn main() -> Result<()> {
     // Apply the same schema migration to the SQLx pool so the SQLx-only
     // read/write paths see a consistent schema even on a fresh database
     // where the rusqlite write connection has not yet been touched.
+    //
+    // Migration failure aborts startup. Tolerating it would mean a running
+    // daemon with broken SQLx paths that 500 at runtime, which is worse
+    // than refusing to start. Operators who genuinely need a degraded
+    // boot can use `--allow-sqlx-migration-warning` (only logged as a
+    // warning instead of bailing out).
+    let allow_sqlx_warning = std::env::var("XINGSHU_ALLOW_SQLX_MIGRATION_WARNING")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
     if let Err(err) = db.migrate_sqlx().await {
-        tracing::warn!("sqlx schema migration step skipped: {err}");
+        if allow_sqlx_warning {
+            tracing::warn!("sqlx schema migration step skipped: {err}");
+        } else {
+            tracing::error!("sqlx schema migration failed: {err}");
+            return Err(err);
+        }
     }
 
     let loop_state = Arc::clone(&runtime);

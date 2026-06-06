@@ -14,16 +14,18 @@ mkdirSync(OUT_DIR, { recursive: true });
 const VUE_URL = process.env.VUE_URL || "http://127.0.0.1:5173/";
 const API_BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:8000";
 
+// Each phrase must be present on the Control page in the relevant language
+// under the conditions the script visits the page. Phrases that are only
+// rendered when a row / batch is selected (e.g. "Add Step" inside the
+// process detail panel, "Active batch" inside the current-run tag) are
+// excluded from the static list and asserted in the dedicated lifecycle
+// steps (create-process / add-step / start-process) instead.
 const ENGLISH_CHECKS = [
   "Process Control",
   "Process Recipes",
   "Process Detail",
   "Create Process",
-  "Add Step",
-  "Start",
-  "Stop Current Process",
   "Current Run",
-  "Active batch",
   "Recent Batches"
 ];
 
@@ -32,11 +34,7 @@ const CHINESE_CHECKS = [
   "工艺管理",
   "工艺详情",
   "创建工艺",
-  "添加步骤",
-  "启动",
-  "停止当前工艺",
   "当前运行",
-  "活动批次",
   "最近批次"
 ];
 
@@ -49,11 +47,14 @@ const result = {
   chineseChecks: CHINESE_CHECKS,
   englishFound: [],
   chineseFound: [],
+  englishMissing: [],
+  chineseMissing: [],
   processCreated: null,
   stepAdded: null,
   processStarted: null,
   processStopped: null,
   horizontalOverflow: null,
+  horizontalOverflowZh: null,
   screenshots: {
     en: "output/playwright/vue-process-lifecycle-en.png",
     zh: "output/playwright/vue-process-lifecycle-zh.png"
@@ -142,12 +143,11 @@ async function detectHorizontalOverflow(page) {
 
     // 2. EN: read English text blocks.
     const enBody = await page.locator("body").innerText();
-    const enMissing = [];
     for (const phrase of ENGLISH_CHECKS) {
       if (enBody.includes(phrase)) result.englishFound.push(phrase);
-      else enMissing.push(phrase);
+      else result.englishMissing.push(phrase);
     }
-    log("english-checks", "ok", `${result.englishFound.length}/${ENGLISH_CHECKS.length} found; missing: ${enMissing.join(", ") || "none"}`);
+    log("english-checks", "ok", `${result.englishFound.length}/${ENGLISH_CHECKS.length} found; missing: ${result.englishMissing.join(", ") || "none"}`);
 
     await page.screenshot({ path: resolve(ROOT, result.screenshots.en), fullPage: true });
 
@@ -259,12 +259,11 @@ async function detectHorizontalOverflow(page) {
       { timeout: 8_000 }
     );
     const zhBody = await page.locator("body").innerText();
-    const zhMissing = [];
     for (const phrase of CHINESE_CHECKS) {
       if (zhBody.includes(phrase)) result.chineseFound.push(phrase);
-      else zhMissing.push(phrase);
+      else result.chineseMissing.push(phrase);
     }
-    log("chinese-checks", "ok", `${result.chineseFound.length}/${CHINESE_CHECKS.length} found; missing: ${zhMissing.join(", ") || "none"}`);
+    log("chinese-checks", "ok", `${result.chineseFound.length}/${CHINESE_CHECKS.length} found; missing: ${result.chineseMissing.join(", ") || "none"}`);
     await page.screenshot({ path: resolve(ROOT, result.screenshots.zh), fullPage: true });
 
     const overflowZh = await detectHorizontalOverflow(page);
@@ -282,11 +281,16 @@ async function detectHorizontalOverflow(page) {
     };
     log("overflow-zh", result.horizontalOverflowZh.ok ? "ok" : "fail", JSON.stringify(overflowZh));
 
-    // 9. Final pass conditions.
-    const enOk = result.englishFound.length >= ENGLISH_CHECKS.length - 2;
-    const zhOk = result.chineseFound.length >= CHINESE_CHECKS.length - 2;
+    // 9. Final pass conditions: every required phrase must be present in both
+    //    languages, the lifecycle must complete end-to-end, and the page must
+    //    not overflow horizontally in either language.
+    const enOk = result.englishMissing.length === 0;
+    const zhOk = result.chineseMissing.length === 0;
     const lifecycleOk = Boolean(
-      result.processCreated?.id && result.stepAdded?.id && result.processStarted?.active_batch_id && result.processStopped?.active_batch_id === null
+      result.processCreated?.id &&
+        result.stepAdded?.id &&
+        result.processStarted?.active_batch_id &&
+        result.processStopped?.active_batch_id === null
     );
     const overflowOk = result.horizontalOverflow.ok && result.horizontalOverflowZh.ok;
     result.ok = enOk && zhOk && lifecycleOk && overflowOk;

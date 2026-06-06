@@ -1,19 +1,31 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
 import { usePlantStore } from "../stores/plant";
-import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
+import { numberAt, objectAt, textAt } from "./view-utils";
 import type { AiControlRequest } from "../stores/plant";
 
 const store = usePlantStore();
 const localAi = computed(() => objectAt(store.config, "local_ai"));
 const provider = computed(() => objectAt(store.recommendation, "provider"));
 const recommendation = computed(() => store.recommendation);
-const targets = computed(() => objectAt(recommendation.value, "targets"));
+// The backend Recommendation struct is a flat record (see src/optimizer.rs).
+// It does NOT wrap targets/reasons/alternatives/updated_at. Reading the
+// real fields keeps the page aligned with the API; reading fake keys would
+// show empty values that look like a healthy recommendation.
+const targetTempC = computed(() => textAt(recommendation.value, "target_temperature_c"));
+const targetStirrerRpm = computed(() => textAt(recommendation.value, "target_stirrer_rpm"));
+const heatingMinutes = computed(() => textAt(recommendation.value, "heating_minutes"));
+const stirringMinutes = computed(() => textAt(recommendation.value, "stirring_minutes"));
+const expectedScore = computed(() => textAt(recommendation.value, "expected_score"));
 const rationale = computed(() => textAt(recommendation.value, "rationale"));
-const reasons = computed(() => arrayAt(recommendation.value, "reasons"));
-const alternatives = computed(() => arrayAt(recommendation.value, "alternatives"));
 const basedOn = computed(() => numberAt(recommendation.value, "based_on_batch_count"));
-const updatedAt = computed(() => textAt(recommendation.value, "updated_at"));
+// shake_speed_cpm and target_pressure_mpa are not part of the current
+// Recommendation envelope; if the page ever needs them they must come from
+// runtime targets, not from a non-existent targets wrapper.
+const liveRuntime = computed(() => objectAt(store.live, "runtime") ?? store.runtimeFallback);
+const liveTargets = computed(() => objectAt(liveRuntime.value, "targets"));
+const currentShakeSpeed = computed(() => textAt(liveTargets.value, "shake_speed_cpm"));
+const currentPressure = computed(() => textAt(liveTargets.value, "target_pressure_mpa"));
 const dryRunPlan = ref<Record<string, unknown> | null>(null);
 const executeResult = ref<Record<string, unknown> | null>(null);
 const experimentPlan = ref<Record<string, unknown> | null>(null);
@@ -128,10 +140,6 @@ const safetyBlock = computed(() => {
         <p>{{ textAt(provider, "mode", store.tr("暂无缓存推荐", "No cached recommendation")) }}</p>
         <p class="muted">{{ textAt(provider, "fallback_reason", store.tr("等待 AI 推荐上下文。", "Waiting for AI recommendation context.")) }}</p>
         <p>
-          <strong>{{ store.tr("更新于", "Updated at") }}:</strong>
-          <span>{{ updatedAt || "--" }}</span>
-        </p>
-        <p>
           <strong>{{ store.tr("参考批次", "Reference batches") }}:</strong>
           <span>{{ basedOn ?? "--" }}</span>
         </p>
@@ -142,49 +150,38 @@ const safetyBlock = computed(() => {
       <div>
         <h2>{{ store.tr("推荐内容", "Recommendation Detail") }}</h2>
         <p>{{ rationale || store.tr("尚无可读推荐。点 “刷新推荐” 触发一次生成。", "No rationale yet. Press Refresh Recommendation to generate one.") }}</p>
-        <div v-if="reasons.length > 0" class="ai-reasons">
-          <span v-for="(reason, index) in reasons" :key="index" class="ai-reason">{{ textAt(reason, "label") }}</span>
-        </div>
       </div>
       <div class="target-summary">
         <div>
           <span>{{ store.tr("目标温度 C", "Target temperature C") }}</span>
-          <strong>{{ textAt(targets, "temperature_c") }}</strong>
+          <strong>{{ targetTempC }}</strong>
           <small>C</small>
         </div>
         <div>
-          <span>{{ store.tr("搅拌 rpm", "Stirrer rpm") }}</span>
-          <strong>{{ textAt(targets, "stirrer_rpm") }}</strong>
+          <span>{{ store.tr("目标搅拌 rpm", "Target stirrer rpm") }}</span>
+          <strong>{{ targetStirrerRpm }}</strong>
           <small>rpm</small>
         </div>
         <div>
-          <span>{{ store.tr("摇速 cpm", "Shake speed cpm") }}</span>
-          <strong>{{ textAt(targets, "shake_speed_cpm") }}</strong>
-          <small>cpm</small>
+          <span>{{ store.tr("加热时长 min", "Heating minutes") }}</span>
+          <strong>{{ heatingMinutes }}</strong>
+          <small>min</small>
         </div>
         <div>
-          <span>{{ store.tr("压力 MPa", "Pressure MPa") }}</span>
-          <strong>{{ textAt(targets, "target_pressure_mpa") }}</strong>
-          <small>MPa</small>
+          <span>{{ store.tr("搅拌时长 min", "Stirring minutes") }}</span>
+          <strong>{{ stirringMinutes }}</strong>
+          <small>min</small>
+        </div>
+        <div>
+          <span>{{ store.tr("预期分数", "Expected score") }}</span>
+          <strong>{{ expectedScore }}</strong>
+          <small>/100</small>
         </div>
       </div>
-      <el-table v-if="alternatives.length > 0" :data="alternatives" class="data-table" size="small">
-        <el-table-column :label="store.tr('候选', 'Candidate')" min-width="160">
-          <template #default="{ row }">{{ textAt(row, "label") }}</template>
-        </el-table-column>
-        <el-table-column :label="store.tr('温度', 'Temp')" width="80">
-          <template #default="{ row }">{{ textAt(row, "temperature_c") }}</template>
-        </el-table-column>
-        <el-table-column :label="store.tr('转速', 'RPM')" width="80">
-          <template #default="{ row }">{{ textAt(row, "stirrer_rpm") }}</template>
-        </el-table-column>
-        <el-table-column :label="store.tr('摇速', 'Shake')" width="80">
-          <template #default="{ row }">{{ textAt(row, "shake_speed_cpm") }}</template>
-        </el-table-column>
-        <el-table-column :label="store.tr('理由', 'Rationale')" min-width="200">
-          <template #default="{ row }">{{ textAt(row, "rationale") }}</template>
-        </el-table-column>
-      </el-table>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item :label="store.tr('当前摇速 cpm（来源：runtime）', 'Current shake speed cpm (from runtime)')">{{ currentShakeSpeed || "--" }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('当前压力 MPa（来源：runtime）', 'Current pressure MPa (from runtime)')">{{ currentPressure || "--" }}</el-descriptions-item>
+      </el-descriptions>
     </section>
 
     <section class="panel control-panel">

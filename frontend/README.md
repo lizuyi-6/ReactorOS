@@ -2,11 +2,18 @@
 
 This folder is the PRD-aligned Vue HMI migration workspace.
 
-The production board still serves `static/index.html`. Keep that file as the
-deployable single-file artifact until this Vue build reaches feature parity.
+The production daemon now serves the Vue build by default. The daemon's
+`--assets` option defaults to `auto`: when `X:\tianhks\frontend\dist\index.html`
+exists (after `npm run frontend:build`), the daemon hosts the Vue single-file
+bundle; otherwise it falls back to the legacy `X:\tianhks\static\index.html`.
+The legacy file is kept as a deployable single-file artifact for rolling back
+without rebuilding Vue. To force a specific assets path, pass
+`--assets X:\tianhks\frontend\dist` or `--assets X:\tianhks\static` to the
+daemon, and update the systemd unit's `ExecStart` line accordingly.
+
 New frontend work should be developed here with Vue 3, Vite, TypeScript,
-Element Plus, ECharts, Pinia, and Vue Router, then built back into a single HTML
-file before replacing the production artifact.
+Element Plus, ECharts, Pinia, and Vue Router, then built back into a single
+HTML file.
 
 ## Commands
 
@@ -15,9 +22,10 @@ npm run frontend:dev
 npm run frontend:build
 ```
 
-The build output goes to `frontend/dist/index.html` and is configured as a
-single-file bundle. Do not point the board service at `frontend/dist` until the
-new HMI has parity with `static/index.html`.
+The build output goes to `X:\tianhks\frontend\dist\index.html` and is
+configured as a single-file bundle. After `npm run frontend:build`, restart
+the daemon (or wait for the next service restart) so the new bundle is
+served by the auto-selected assets path.
 
 ## Current Migration Slice
 

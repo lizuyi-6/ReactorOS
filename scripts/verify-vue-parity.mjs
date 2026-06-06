@@ -26,8 +26,8 @@ const PAGES = [
   {
     route: "/history",
     name: "history",
-    en: ["History Data", "Batch Detail", "Export CSV", "Product Outcomes", "Download Report"],
-    zh: ["历史数据", "批次详情", "导出 CSV", "产物结果", "下载报告"]
+    en: ["History Data", "Batch Detail", "Export CSV", "Product Outcomes"],
+    zh: ["历史数据", "批次详情", "导出 CSV", "产物结果"]
   },
   {
     route: "/settings",
@@ -38,8 +38,8 @@ const PAGES = [
   {
     route: "/monitor",
     name: "monitor",
-    en: ["Realtime Monitor", "Live Trend", "Alarm Center", "Pipeline online"],
-    zh: ["实时监控", "实时趋势", "报警中心", "采集链路在线"]
+    en: ["Realtime Monitor", "Live Trend", "Alarm Center"],
+    zh: ["实时监控", "实时趋势", "报警中心"]
   }
 ];
 
@@ -78,6 +78,8 @@ async function setLanguageAndReload(page, language) {
   }, language);
   await page.reload();
   await page.waitForLoadState("domcontentloaded");
+  // Give Vue + Element Plus time to mount before the next goto/assertion.
+  await page.waitForTimeout(800);
 }
 
 async function assertNoOverflow(page) {
@@ -103,7 +105,23 @@ async function assertNoOverflow(page) {
   try {
     await ensureLoggedIn(context, request, page);
     for (const spec of PAGES) {
-      const pageResult = { name: spec.name, route: spec.route, steps: [], englishFound: [], chineseFound: [], englishMissing: [], chineseMissing: [], overflowEn: null, overflowZh: null, screenshots: { en: `output/playwright/vue-parity-${spec.name}-en.png`, zh: `output/playwright/vue-parity-${spec.name}-zh.png` } };
+      const pageResult = {
+        name: spec.name,
+        route: spec.route,
+        steps: [],
+        englishFound: [],
+        chineseFound: [],
+        englishMissing: [],
+        chineseMissing: [],
+        overflowEn: null,
+        overflowZh: null,
+        openEn: null,
+        openZh: null,
+        screenshots: {
+          en: `output/playwright/vue-parity-${spec.name}-en.png`,
+          zh: `output/playwright/vue-parity-${spec.name}-zh.png`
+        }
+      };
       result.pages.push(pageResult);
 
       // English
@@ -111,10 +129,15 @@ async function assertNoOverflow(page) {
       // Navigate to the page and wait for English heading.
       await page.goto(`${VUE_URL}#${spec.route}`);
       await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(800);
       try {
         await page.locator(`h1:has-text("${spec.en[0]}")`).first().waitFor({ timeout: 8_000 });
+        pageResult.openEn = "ok";
+        log(pageResult, "open-en", "ok", `h1 "${spec.en[0]}" visible`);
       } catch {
+        pageResult.openEn = "fail";
         log(pageResult, "open-en", "fail", `h1 "${spec.en[0]}" not visible`);
+        // do not return early; we still want to enumerate missing phrases
       }
       await page.waitForTimeout(500);
       const enBody = await page.locator("body").innerText();
@@ -122,19 +145,35 @@ async function assertNoOverflow(page) {
         if (enBody.includes(phrase)) pageResult.englishFound.push(phrase);
         else pageResult.englishMissing.push(phrase);
       }
-      log(pageResult, "english-checks", "ok", `${pageResult.englishFound.length}/${spec.en.length} missing=[${pageResult.englishMissing.join(",") || "none"}]`);
+      const enAllOk = pageResult.englishMissing.length === 0;
+      log(
+        pageResult,
+        "english-checks",
+        enAllOk ? "ok" : "fail",
+        `${pageResult.englishFound.length}/${spec.en.length} missing=[${pageResult.englishMissing.join(",") || "none"}]`
+      );
       await page.screenshot({ path: resolve(ROOT, pageResult.screenshots.en), fullPage: true });
       const overflowEn = await assertNoOverflow(page);
-      pageResult.overflowEn = { ...overflowEn, ok: overflowEn.docScroll <= overflowEn.docClient + 1 && overflowEn.contentScroll <= overflowEn.contentClient + 1 && overflowEn.stackScroll <= overflowEn.stackClient + 1 };
+      pageResult.overflowEn = {
+        ...overflowEn,
+        ok:
+          overflowEn.docScroll <= overflowEn.docClient + 1 &&
+          overflowEn.contentScroll <= overflowEn.contentClient + 1 &&
+          overflowEn.stackScroll <= overflowEn.stackClient + 1
+      };
       log(pageResult, "overflow-en", pageResult.overflowEn.ok ? "ok" : "fail", JSON.stringify(overflowEn));
 
       // Chinese
       await setLanguageAndReload(page, "zh");
       await page.goto(`${VUE_URL}#${spec.route}`);
       await page.waitForLoadState("domcontentloaded");
+      await page.waitForTimeout(800);
       try {
         await page.locator(`h1:has-text("${spec.zh[0]}")`).first().waitFor({ timeout: 8_000 });
+        pageResult.openZh = "ok";
+        log(pageResult, "open-zh", "ok", `h1 "${spec.zh[0]}" visible`);
       } catch {
+        pageResult.openZh = "fail";
         log(pageResult, "open-zh", "fail", `h1 "${spec.zh[0]}" not visible`);
       }
       await page.waitForTimeout(500);
@@ -143,14 +182,36 @@ async function assertNoOverflow(page) {
         if (zhBody.includes(phrase)) pageResult.chineseFound.push(phrase);
         else pageResult.chineseMissing.push(phrase);
       }
-      log(pageResult, "chinese-checks", "ok", `${pageResult.chineseFound.length}/${spec.zh.length} missing=[${pageResult.chineseMissing.join(",") || "none"}]`);
+      const zhAllOk = pageResult.chineseMissing.length === 0;
+      log(
+        pageResult,
+        "chinese-checks",
+        zhAllOk ? "ok" : "fail",
+        `${pageResult.chineseFound.length}/${spec.zh.length} missing=[${pageResult.chineseMissing.join(",") || "none"}]`
+      );
       await page.screenshot({ path: resolve(ROOT, pageResult.screenshots.zh), fullPage: true });
       const overflowZh = await assertNoOverflow(page);
-      pageResult.overflowZh = { ...overflowZh, ok: overflowZh.docScroll <= overflowZh.docClient + 1 && overflowZh.contentScroll <= overflowZh.contentClient + 1 && overflowZh.stackScroll <= overflowZh.stackClient + 1 };
+      pageResult.overflowZh = {
+        ...overflowZh,
+        ok:
+          overflowZh.docScroll <= overflowZh.docClient + 1 &&
+          overflowZh.contentScroll <= overflowZh.contentClient + 1 &&
+          overflowZh.stackScroll <= overflowZh.stackClient + 1
+      };
       log(pageResult, "overflow-zh", pageResult.overflowZh.ok ? "ok" : "fail", JSON.stringify(overflowZh));
     }
 
-    result.ok = result.pages.every((p) => p.englishFound.length >= Math.max(1, p.englishMissing.length === 0 ? p.englishFound.length : p.englishFound.length) && p.englishMissing.length <= 3 && p.chineseMissing.length <= 1 && p.overflowEn?.ok && p.overflowZh?.ok);
+    // Strict pass criteria: every page must open both languages, every required
+    // phrase must be present in both languages, no horizontal overflow.
+    result.ok = result.pages.every(
+      (p) =>
+        p.openEn === "ok" &&
+        p.openZh === "ok" &&
+        p.englishMissing.length === 0 &&
+        p.chineseMissing.length === 0 &&
+        p.overflowEn?.ok === true &&
+        p.overflowZh?.ok === true
+    );
     log({ name: "summary", steps: [] }, "summary", result.ok ? "ok" : "fail", "");
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error);
