@@ -1,10 +1,11 @@
 use std::{
     env,
-    io::Read,
+    io::{Read, Write},
+    net::TcpStream,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -46,6 +47,12 @@ struct LocalAiConfig {
     training_script: Option<PathBuf>,
     conversion_script: Option<PathBuf>,
     rk_report: Option<PathBuf>,
+    /// When set, run_inference / run_training POST to this llama.cpp
+    /// HTTP endpoint instead of spawning a local binary. Operators can
+    /// point the daemon at a `llama-server` instance elsewhere on the
+    /// network without rebuilding the model binaries.
+    http_endpoint: Option<String>,
+    http_train_endpoint: Option<String>,
 }
 
 pub struct LocalAiInferenceRequest {
@@ -100,6 +107,8 @@ impl LocalAiConfig {
             training_script: env_path("XINGSHU_LOCAL_AI_TRAIN_SCRIPT"),
             conversion_script: env_path("XINGSHU_LOCAL_AI_CONVERT_SCRIPT"),
             rk_report: env_path("XINGSHU_LOCAL_AI_RK_REPORT"),
+            http_endpoint: env::var("XINGSHU_LOCAL_AI_HTTP_URL").ok().filter(|s| !s.trim().is_empty()),
+            http_train_endpoint: env::var("XINGSHU_LOCAL_AI_TRAIN_URL").ok().filter(|s| !s.trim().is_empty()),
         }
     }
 
@@ -164,12 +173,15 @@ impl LocalAiConfig {
     }
 
     fn run_inference(&self, request: LocalAiInferenceRequest) -> Result<LocalAiCommandReport> {
-        let program = self.required_path("XINGSHU_LOCAL_AI_BIN", &self.inference_bin)?;
-        let model = self.required_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)?;
         self.ensure_enabled("local AI inference")?;
         if request.prompt.trim().is_empty() {
             return Err(anyhow!("local AI inference prompt must not be empty"));
         }
+        if let Some(endpoint) = self.http_endpoint.as_deref() {
+            return self.run_inference_http(endpoint, &request);
+        }
+        let program = self.required_path("XINGSHU_LOCAL_AI_BIN", &self.inference_bin)?;
+        let model = self.required_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)?;
         let mut args = vec![
             "-m".to_string(),
             model.display().to_string(),
@@ -187,6 +199,9 @@ impl LocalAiConfig {
 
     fn run_training(&self, request: LocalAiTrainingRequest) -> Result<LocalAiCommandReport> {
         self.ensure_enabled("local LoRA training")?;
+        if let Some(endpoint) = self.http_train_endpoint.as_deref() {
+            return self.run_training_http(endpoint, &request);
+        }
         let program = self.required_path("XINGSHU_LOCAL_AI_TRAIN_SCRIPT", &self.training_script)?;
         let model = self.required_path("XINGSHU_LOCAL_AI_GGUF", &self.gguf_model)?;
         let conversion =
@@ -298,6 +313,134 @@ impl LocalAiConfig {
                 "local AI assets are not ready; missing local AI asset: {name}"
             )),
         }
+    }
+
+    /// Talk to a llama.cpp HTTP server (e.g. `llama-server --model ...`).
+    /// Contract: POST {endpoint}/v1/chat/completions with an OpenAI-shaped
+    /// request body. The server may also expose /completion; we stick to
+    /// chat/completions because that is the documented public surface.
+    fn run_inference_http(
+        &self,
+        endpoint: &str,
+        request: &LocalAiInferenceRequest,
+    ) -> Result<LocalAiCommandReport> {
+        let url = format!("{}/v1/chat/completions", endpoint.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "model": self.model_family,
+            "messages": [
+                { "role": "user", "content": request.prompt }
+            ],
+            "max_tokens": request.max_tokens.max(1),
+            "stream": false
+        });
+        let body_bytes = serde_json::to_vec(&body).context("serialize llama.cpp request")?;
+        let started = Instant::now();
+        let response = self.http_post_json(&url, &body_bytes, request.timeout)?;
+        let elapsed = started.elapsed();
+        let parsed: Option<Value> = serde_json::from_slice(&response).ok();
+        let stdout = String::from_utf8_lossy(&response).into_owned();
+        let report = LocalAiCommandReport {
+            status: self.status(),
+            program: url.clone(),
+            args: vec![format!("max_tokens={}", request.max_tokens)],
+            exit_code: Some(0),
+            stdout,
+            stderr: String::new(),
+            parsed_stdout: parsed,
+        };
+        if elapsed > request.timeout {
+            return Err(anyhow!(
+                "llama.cpp HTTP inference at {url} exceeded timeout of {}ms (elapsed {}ms)",
+                request.timeout.as_millis(),
+                elapsed.as_millis()
+            ));
+        }
+        Ok(report)
+    }
+
+    /// Talk to a PEFT / training HTTP service. Contract: POST with
+    /// {dataset, output_dir, dry_run, base_model, lora_adapter} JSON. The
+    /// service is expected to return 200 + JSON {status, log_path}.
+    fn run_training_http(
+        &self,
+        endpoint: &str,
+        request: &LocalAiTrainingRequest,
+    ) -> Result<LocalAiCommandReport> {
+        let body = serde_json::json!({
+            "base_model": self.gguf_model.as_ref().map(|p| p.display().to_string()),
+            "lora_adapter": self.lora_adapter.as_ref().map(|p| p.display().to_string()),
+            "dataset": request.dataset.as_ref().map(|p| p.display().to_string()),
+            "output_dir": request.output_dir.as_ref().map(|p| p.display().to_string()),
+            "dry_run": request.dry_run,
+            "model_family": self.model_family
+        });
+        let body_bytes = serde_json::to_vec(&body).context("serialize training request")?;
+        let response = self.http_post_json(endpoint, &body_bytes, request.timeout)?;
+        let parsed: Option<Value> = serde_json::from_slice(&response).ok();
+        Ok(LocalAiCommandReport {
+            status: self.status(),
+            program: endpoint.to_string(),
+            args: vec![format!("dry_run={}", request.dry_run)],
+            exit_code: Some(0),
+            stdout: String::from_utf8_lossy(&response).into_owned(),
+            stderr: String::new(),
+            parsed_stdout: parsed,
+        })
+    }
+
+    /// Minimal blocking HTTP POST with a JSON body and a timeout. This
+    /// is intentionally tiny: llama.cpp's /v1/chat/completions is plain
+    /// HTTP/1.1 with chunked or content-length JSON; we read the response
+    /// fully before returning.
+    fn http_post_json(&self, url: &str, body: &[u8], timeout: Duration) -> Result<Vec<u8>> {
+        let (scheme, rest) = url.split_once("://").ok_or_else(|| {
+            anyhow!("llama.cpp endpoint must be http(s)://host:port/path; got {url}")
+        })?;
+        let (authority, path) = match rest.find('/') {
+            Some(idx) => (&rest[..idx], &rest[idx..]),
+            None => (rest, "/"),
+        };
+        let (host, port) = match authority.rfind(':') {
+            Some(idx) if !authority.starts_with('[') => (&authority[..idx], authority[idx + 1..].to_string()),
+            _ => (authority, if scheme == "https" { "443" } else { "80" }.to_string()),
+        };
+        let port: u16 = port.parse().with_context(|| format!("invalid port in {url}"))?;
+        let stream_addr = format!("{host}:{port}");
+        let started = Instant::now();
+        let mut stream = TcpStream::connect_timeout(&stream_addr.as_str().parse().unwrap(), timeout)
+            .with_context(|| format!("failed to connect to llama.cpp HTTP {stream_addr}"))?;
+        stream.set_read_timeout(Some(timeout)).ok();
+        stream.set_write_timeout(Some(timeout)).ok();
+        let path_query = if path.contains('?') { path.to_string() } else { path.to_string() };
+        let mut request = format!(
+            "POST {path_query} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream
+            .write_all(request.as_bytes())
+            .and_then(|_| stream.write_all(body))
+            .context("write llama.cpp request")?;
+        let mut raw = Vec::new();
+        stream
+            .read_to_end(&mut raw)
+            .context("read llama.cpp response")?;
+        if started.elapsed() > timeout {
+            return Err(anyhow!(
+                "llama.cpp HTTP at {stream_addr} exceeded timeout of {}ms",
+                timeout.as_millis()
+            ));
+        }
+        let text = String::from_utf8_lossy(&raw);
+        let header_end = text
+            .find("\r\n\r\n")
+            .ok_or_else(|| anyhow!("llama.cpp HTTP response had no header terminator"))?;
+        let status_line = &text[..text.find("\r\n").unwrap_or(header_end)];
+        if !status_line.contains(" 200 ") {
+            return Err(anyhow!(
+                "llama.cpp HTTP at {stream_addr} returned non-200: {status_line}"
+            ));
+        }
+        Ok(raw[header_end + 4..].to_vec())
     }
 
     fn ensure_enabled(&self, action: &str) -> Result<()> {
