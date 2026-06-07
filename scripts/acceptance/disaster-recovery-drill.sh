@@ -12,7 +12,7 @@
 #
 # Exit code is 0 if every step passes.
 
-set -uo pipefail
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -23,7 +23,52 @@ REPORT="$OUT_DIR/disaster-recovery-drill.md"
 LOG_DIR="$ROOT/output/acceptance/logs"
 mkdir -p "$LOG_DIR"
 
-DAEMON_BIN="$ROOT/target/debug/reactor-edge-daemon"
+resolve_daemon_bin() {
+  local native="$ROOT/target/debug/reactor-edge-daemon"
+  local windows="$ROOT/target/debug/reactor-edge-daemon.exe"
+  local cargo_bin=""
+  local kernel
+  kernel="$(uname -s 2>/dev/null || echo unknown)"
+  if [[ -x "$native" ]]; then
+    echo "$native"
+    return 0
+  fi
+  case "$kernel" in
+    MINGW*|MSYS*|CYGWIN*)
+      if [[ -f "$windows" ]]; then
+        echo "$windows"
+        return 0
+      fi
+      ;;
+  esac
+  if command -v cargo >/dev/null 2>&1; then
+    cargo_bin="cargo"
+  elif [[ -x "$HOME/.cargo/bin/cargo" ]]; then
+    cargo_bin="$HOME/.cargo/bin/cargo"
+  fi
+  if [[ -n "$cargo_bin" && "${XINGSHU_ACCEPTANCE_BUILD_NATIVE:-0}" == "1" ]]; then
+    echo "native daemon binary missing for ${kernel}; building with current cargo..." >&2
+    CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}" "$cargo_bin" build --bin reactor-edge-daemon >&2 || return 1
+  fi
+  if [[ -x "$native" ]]; then
+    echo "$native"
+    return 0
+  fi
+  case "$kernel" in
+    MINGW*|MSYS*|CYGWIN*)
+      if [[ -f "$windows" ]]; then
+        echo "$windows"
+        return 0
+      fi
+      ;;
+  esac
+  if [[ "$kernel" == Linux* && -f "$windows" ]]; then
+    echo "found Windows daemon binary but this Bash runtime cannot execute it; run the drill from a native shell or set XINGSHU_ACCEPTANCE_BUILD_NATIVE=1 after installing a working Linux linker" >&2
+  fi
+  return 1
+}
+
+DAEMON_BIN="$(resolve_daemon_bin || true)"
 if [[ ! -x "$DAEMON_BIN" ]]; then
   echo "daemon binary missing; run cargo build --bin reactor-edge-daemon first" >&2
   exit 1
@@ -76,30 +121,40 @@ count_before=$(curl -s -H "Authorization: Bearer $TOKEN" \
   "http://127.0.0.1:18400/api/audit/logs?page=1&page_size=1" \
   | python -c "import sys,json; print(json.load(sys.stdin)['data']['total'])")
 
-# Snapshot the database with xingshu ops backup.
-powershell -NoProfile -File "$ROOT/scripts/probe-cli-ops.ps1" > "$LOG_DIR/drill-probe.log" 2>&1 || true
-mkdir -p "$ROOT/data"
-cp "$WORK_DB" "$WORK_BACKUP"
+# Build / locate the xingshu CLI used for the actual backup, wipe, and restore.
+xingshu_bin="/c/tmp/xingshu-target-v3/debug/xingshu.exe"
+if [[ ! -x "$xingshu_bin" ]]; then
+  powershell -NoProfile -File "$ROOT/scripts/build-xingshu.ps1" > "$LOG_DIR/drill-build.log" 2>&1
+fi
+if [[ ! -x "$xingshu_bin" ]]; then
+  echo "xingshu CLI missing after build; expected $xingshu_bin" >&2
+  exit 1
+fi
+
+# Snapshot the database with xingshu ops backup while the daemon is live.
+"$xingshu_bin" ops backup --db "$WORK_DB" --out "$WORK_BACKUP" \
+  > "$LOG_DIR/drill-backup.log" 2>&1
+if [[ ! -s "$WORK_BACKUP" ]]; then
+  echo "backup did not create a non-empty file: $WORK_BACKUP" >&2
+  exit 1
+fi
 
 # Stop the daemon and wipe the database.
 kill $DAEMON_PID 2>/dev/null
 wait $DAEMON_PID 2>/dev/null
 sleep 1
-xingshu_bin="C:\\tmp\\xingshu-target-v3\\debug\\xingshu.exe"
-if [[ ! -x "/c/tmp/xingshu-target-v3/debug/xingshu.exe" ]]; then
-  # Build it on the fly if not present.
-  powershell -NoProfile -File "$ROOT/scripts/build-xingshu.ps1" > "$LOG_DIR/drill-build.log" 2>&1
-fi
-if [[ -x "/c/tmp/xingshu-target-v3/debug/xingshu.exe" ]]; then
-  /c/tmp/xingshu-target-v3/debug/xingshu.exe ops wipe --db "$WORK_DB" --yes \
-    > "$LOG_DIR/drill-wipe.log" 2>&1 || true
+"$xingshu_bin" ops wipe --db "$WORK_DB" --yes > "$LOG_DIR/drill-wipe.log" 2>&1
+if [[ -e "$WORK_DB" ]]; then
+  echo "wipe did not remove database: $WORK_DB" >&2
+  exit 1
 fi
 
-# Restore from the backup by re-copying (the workhorse here is
-# xingshu ops restore, which validates the SQLite magic header).
-if [[ -x "/c/tmp/xingshu-target-v3/debug/xingshu.exe" ]]; then
-  /c/tmp/xingshu-target-v3/debug/xingshu.exe ops restore --backup "$WORK_BACKUP" --db "$WORK_DB" --yes \
-    > "$LOG_DIR/drill-restore.log" 2>&1 || true
+# Restore from the backup with xingshu ops restore.
+"$xingshu_bin" ops restore --backup "$WORK_BACKUP" --db "$WORK_DB" --yes \
+  > "$LOG_DIR/drill-restore.log" 2>&1
+if [[ ! -s "$WORK_DB" ]]; then
+  echo "restore did not recreate database: $WORK_DB" >&2
+  exit 1
 fi
 
 # Bring the daemon back up.

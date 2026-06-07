@@ -23,7 +23,7 @@ const child = spawn(
     "-e",
     "bash",
     "-lc",
-    `cd /mnt/x/tianhks && exec ./scripts/run-lubancat2-qemu.sh --bind ${bind} --assets static`,
+    `cd /mnt/x/tianhks && exec ./scripts/run-lubancat2-qemu.sh --bind ${bind}`,
   ],
   { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
 );

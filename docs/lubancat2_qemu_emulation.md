@@ -6,7 +6,8 @@ the ARM64 ReactorOS package on the PC.
 
 This is not full board emulation. It does not emulate RK3568 peripherals, GPU,
 touch hardware, UART electrical timing, or the vendor desktop image. It does
-validate the ARM64 Linux binary, Debian 10 glibc baseline, HTTP API, static HMI,
+validate the ARM64 Linux binary, Debian 10 glibc baseline, HTTP API, Vue HMI
+assets with legacy static fallback,
 JSON bridge state/control files, device discovery, and component control flow.
 
 ## Install WSL Dependencies

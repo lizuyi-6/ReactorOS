@@ -6,6 +6,21 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
+Push-Location $repo
+try {
+    Write-Host "Building Vue HMI on this PC..."
+    & npm run frontend:build
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm run frontend:build failed with exit code $LASTEXITCODE"
+    }
+    if (-not (Test-Path (Join-Path $repo "frontend\dist\index.html"))) {
+        throw "frontend\dist\index.html missing after npm run frontend:build"
+    }
+}
+finally {
+    Pop-Location
+}
+
 Write-Host "Building LubanCat 2 Debian 10 builder image on this PC..."
 docker build `
     -f (Join-Path $repo "scripts/Dockerfile.a55-debian10") `

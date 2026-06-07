@@ -127,14 +127,24 @@ sudo ./install.sh
 This installs:
 
 - `/opt/reactor-edge/bin/reactor-edge-daemon`
+- `/opt/reactor-edge/bin/reactor-safety-guard`
+- `/opt/reactor-edge/bin/xingshu`
+- `/opt/reactor-edge/backup.sh`
+- `/opt/reactor-edge/frontend`
 - `/opt/reactor-edge/static`
 - `/opt/reactor-edge/kiosk`
+- `/var/lib/reactor-edge/backups`
 - `/etc/reactor-edge/*.toml`
 - `/etc/systemd/system/reactor-edge.service`
+- `/etc/systemd/system/reactor-edge-backup.service`
+- `/etc/systemd/system/reactor-edge-backup.timer`
 - `/etc/systemd/system/reactor-os-chromium.service`
 
-It also creates `/project` for `state.json/control.json`, enables both systemd
-services, and starts them immediately.
+It also creates `/project` for `state.json/control.json`, enables the backend
+service, the daily backup timer, and the kiosk service, and starts them
+immediately. The backend service launches `reactor-safety-guard` through
+`--safety-guard` by default. The backup timer calls `/opt/reactor-edge/backup.sh`
+to generate SQLite online snapshots in `/var/lib/reactor-edge/backups`.
 
 Install board runtime dependencies at the same time:
 
@@ -158,8 +168,11 @@ Status and logs:
 
 ```bash
 systemctl status reactor-edge
+systemctl status reactor-edge-backup.timer
+systemctl list-timers reactor-edge-backup.timer
 systemctl status reactor-os-chromium
 journalctl -u reactor-edge -f
+journalctl -u reactor-edge-backup.service --no-pager -n 50
 journalctl -u reactor-os-chromium -f
 ```
 
@@ -213,15 +226,17 @@ for custom images:
 The LubanCat 2 package generates unit files for default display user `cat`:
 
 ```bash
-sudo mkdir -p /opt/reactor-edge /etc/reactor-edge /var/lib/reactor-edge /project
+sudo mkdir -p /opt/reactor-edge /etc/reactor-edge /var/lib/reactor-edge/backups /project
 sudo chown cat:cat /project
 
-sudo cp -r bin static kiosk /opt/reactor-edge/
+sudo cp -r bin static frontend kiosk /opt/reactor-edge/
+sudo cp backup.sh /opt/reactor-edge/
 sudo cp config/*.toml /etc/reactor-edge/
-sudo cp deploy/reactor-edge.service deploy/reactor-os-chromium.service /etc/systemd/system/
+sudo cp deploy/reactor-edge.service deploy/reactor-edge-backup.service deploy/reactor-edge-backup.timer deploy/reactor-os-chromium.service /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now reactor-edge
+sudo systemctl enable --now reactor-edge-backup.timer
 sudo systemctl enable --now reactor-os-chromium
 ```
 

@@ -1754,9 +1754,19 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
     );
     assert!(body["data"]["local_ai"]["model_family"].is_string());
     assert!(body["data"]["local_ai"]["runtime"].is_string());
+    assert!(body["data"]["local_ai"]["mode"].is_string());
+    assert_eq!(body["data"]["local_ai"]["ready_for_base_inference"], false);
+    assert_eq!(body["data"]["local_ai"]["ready_for_lora_inference"], false);
     assert!(body["data"]["local_ai"]["ready_for_inference"].is_boolean());
+    assert_eq!(
+        body["data"]["local_ai"]["ready_for_inference"],
+        body["data"]["local_ai"]["ready_for_lora_inference"]
+    );
     assert!(body["data"]["local_ai"]["ready_for_training"].is_boolean());
+    assert_eq!(body["data"]["local_ai"]["ready_for_prd_lora"], false);
     assert!(body["data"]["local_ai"]["inference"]["detail"].is_string());
+    assert!(body["data"]["local_ai"]["lora_adapter"]["detail"].is_string());
+    assert!(body["data"]["local_ai"]["rk_validation"]["detail"].is_string());
     assert!(body["data"]["local_ai"]["missing"].is_array());
 
     let modbus_map_response = app

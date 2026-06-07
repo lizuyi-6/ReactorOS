@@ -1,0 +1,20 @@
+﻿[mqtt]
+enabled = false
+host = "127.0.0.1"
+port = 1883
+use_tls = false
+client_id = "xingshu-restore-drill"
+keep_alive_s = 30
+queue_capacity = 100
+status_topic = "xingshu/restore/status"
+task_topic = "xingshu/restore/tasks"
+receipt_topic = "xingshu/restore/task_receipts"
+alert_topic = "xingshu/restore/alerts"
+alert_interval_s = 5
+
+[modbus_tcp]
+enabled = false
+bind = "127.0.0.1:0"
+require_tls = false
+unit_id = 1
+max_pdu_bytes = 260

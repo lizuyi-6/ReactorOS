@@ -1846,8 +1846,12 @@ async fn build_experiment_plan(
             )
         })
         .unwrap_or_else(|| " No finished product-result batch is available beyond the current recommendation context.".to_string());
-    let lora_note = if local_ai.ready_for_inference && local_ai.ready_for_training {
-        "Local Qwen LoRA assets are ready for inference/training boundary checks.".to_string()
+    let lora_note = if local_ai.ready_for_prd_lora {
+        "Local Qwen LoRA/RK evidence boundary is complete.".to_string()
+    } else if local_ai.ready_for_lora_inference && local_ai.ready_for_training {
+        "Local Qwen LoRA inference/training boundary is present, but RK validation is still missing.".to_string()
+    } else if local_ai.ready_for_base_inference {
+        "Local base-model inference is configured, but LoRA adapter/training/RK evidence is still missing.".to_string()
     } else {
         format!(
             "Local Qwen LoRA is not executable yet; missing assets: {}.",

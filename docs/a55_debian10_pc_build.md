@@ -31,10 +31,14 @@ dist/latest-a55-debian10-package.txt
 The package contains:
 
 - `bin/reactor-edge-daemon`: ARM64 backend binary.
-- `static/`: production HTML/CSS/JavaScript HMI.
+- `bin/reactor-safety-guard`: isolated safety guard binary used by `run.sh` and systemd.
+- `bin/xingshu`: CLI used for production maintenance tasks such as SQLite online backup.
+- `frontend/dist/`: default Vue production HMI.
+- `static/`: legacy HTML/CSS/JavaScript HMI fallback.
 - `config/`: device, safety, and AI memory config files.
 - `kiosk/`: Chromium kiosk launcher.
-- `deploy/`: systemd unit templates.
+- `backup.sh`: daily SQLite `VACUUM INTO` snapshot helper.
+- `deploy/`: systemd unit templates, including `reactor-edge-backup.service` and `reactor-edge-backup.timer`.
 - `install.sh`: one-command board installer and boot autostart setup.
 - `docs/`: JSON bridge and Chromium kiosk notes.
 
@@ -85,7 +89,8 @@ sudo ./install.sh
 
 This enables boot autostart for:
 
-- `reactor-edge`: backend, API, database, safety control loop, static HMI.
+- `reactor-edge`: backend, API, database, safety control loop with isolated safety guard, Vue HMI with legacy static fallback.
+- `reactor-edge-backup.timer`: daily online SQLite snapshot schedule writing `/var/lib/reactor-edge/backups`.
 - `reactor-os-chromium`: Chromium kiosk opening `http://127.0.0.1:8000/`.
 
 Install runtime apt dependencies at the same time:
@@ -110,6 +115,8 @@ Check status:
 
 ```bash
 systemctl status reactor-edge
+systemctl status reactor-edge-backup.timer
+systemctl list-timers reactor-edge-backup.timer
 systemctl status reactor-os-chromium
 curl http://127.0.0.1:8000/health
 ```

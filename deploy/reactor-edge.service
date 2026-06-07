@@ -13,7 +13,8 @@ ExecStart=/opt/reactor-edge/bin/reactor-edge-daemon \
   --safety /etc/reactor-edge/safety.toml \
   --memory /etc/reactor-edge/ai_memory.toml \
   --db /var/lib/reactor-edge/reactor.sqlite3 \
-  --assets /opt/reactor-edge/static \
+  --assets auto \
+  --safety-guard /opt/reactor-edge/bin/reactor-safety-guard \
   --bind 0.0.0.0:8000
 Restart=always
 RestartSec=3

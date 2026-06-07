@@ -98,6 +98,39 @@ async function getJson(request, path, token) {
   return { status: res.status(), body: json.data ?? json };
 }
 
+async function seedFreshNormalSample(request) {
+  const res = await request.post(`${API_BASE}/api/v1/reactor/reactor_001/samples`, {
+    data: {
+      temperature_c: 60.2,
+      pressure_mpa: 0.55,
+      stirrer_rpm: 300,
+      shake_speed_cpm: 0,
+      tilt_state: 0,
+      flow_rate_l_min: 2.2,
+      product_concentration_percent: 12.4,
+      ph: 6.8
+    }
+  });
+  if (!res.ok()) {
+    throw new Error(`failed to seed lifecycle sample: ${res.status()} ${await res.text()}`);
+  }
+}
+
+async function describeResponse(response) {
+  try {
+    const text = await response.text();
+    return {
+      status: response.status(),
+      body: text.slice(0, 400)
+    };
+  } catch (error) {
+    return {
+      status: response.status(),
+      body: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 async function detectHorizontalOverflow(page) {
   return page.evaluate(() => {
     const content = document.querySelector(".content") || document.body;
@@ -113,6 +146,42 @@ async function detectHorizontalOverflow(page) {
   });
 }
 
+async function selectProcessInUi(page, processName, processId) {
+  const deadline = Date.now() + 12_000;
+  let lastError = "";
+  while (Date.now() < deadline) {
+    try {
+      const row = page.locator(".process-list .el-table__row", { hasText: processName }).first();
+      if ((await row.count()) > 0) {
+        await row.scrollIntoViewIfNeeded();
+        const viewButton = row.locator("button", { hasText: "View" }).first();
+        if ((await viewButton.count()) > 0) {
+          await viewButton.click();
+        } else {
+          await row.click();
+        }
+        await page.locator("button", { hasText: "Add Step" }).waitFor({ timeout: 4_000 });
+        await page.waitForFunction(
+          (id) => document.body.innerText.includes(`Selected ID: ${id}`),
+          processId,
+          { timeout: 4_000 }
+        );
+        return;
+      }
+      lastError = `row for ${processName} not rendered yet`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    const refreshButton = page.locator("button", { hasText: "Refresh Recipes" }).first();
+    if ((await refreshButton.count()) > 0) {
+      await refreshButton.click().catch(() => {});
+    }
+    await page.waitForTimeout(300);
+  }
+  throw new Error(`created process was not selectable in Vue UI: ${lastError}`);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -124,6 +193,8 @@ async function detectHorizontalOverflow(page) {
     const loginBody = await login(page, request);
     const token = loginBody.token;
     log("login-engineer", "ok", JSON.stringify({ role: loginBody.user.role }));
+    await seedFreshNormalSample(request);
+    log("seed-fresh-sample", "ok");
 
     // Inject the bearer token into localStorage so Vue reads it.
     await page.goto(`${VUE_URL}#/control`);
@@ -172,7 +243,13 @@ async function detectHorizontalOverflow(page) {
     result.processCreated = { id: created.id, name: created.name };
     log("create-process", "ok", JSON.stringify(result.processCreated));
 
-    // 4. The process becomes the selected one; fill the step form and add a step.
+    // 4. Select the created row in the real Vue table before filling the
+    //    detail form. The store updates asynchronously after creation, so this
+    //    avoids racing the detail panel.
+    await selectProcessInUi(page, processName, created.id);
+    log("select-created-process", "ok", JSON.stringify({ id: created.id, name: processName }));
+
+    // 5. Fill the step form and add a step.
     const stepName = `Step-${Date.now()}`;
     const stepInputs = page.locator('input[maxlength="80"]');
     const stepInputCount = await stepInputs.count();
@@ -183,23 +260,62 @@ async function detectHorizontalOverflow(page) {
     const addStepBtn = page.locator("button", { hasText: "Add Step" });
     await addStepBtn.waitFor({ timeout: 5_000 });
     await addStepBtn.click();
-    const stepDeadline = Date.now() + 10_000;
+    const stepDeadline = Date.now() + 15_000;
     let added = null;
+    let lastStepLookup = "";
     while (Date.now() < stepDeadline) {
       const detail = await getJson(request, `/api/processes/${created.id}`, token);
-      const steps = Array.isArray(detail.body?.steps) ? detail.body.steps : [];
-      added = steps.find((s) => s.name === stepName);
-      if (added) break;
-      await page.waitForTimeout(300);
+      if (detail.status === 200) {
+        const steps = Array.isArray(detail.body?.steps) ? detail.body.steps : [];
+        added = steps.find((s) => s.name === stepName);
+        lastStepLookup = `steps=${steps.map((s) => s.name).join(",") || "none"}`;
+        if (added) break;
+      } else {
+        lastStepLookup = `status=${detail.status} body=${String(detail.body).slice(0, 160)}`;
+      }
+      await page.waitForTimeout(500);
     }
-    if (!added) throw new Error("added step not found in /api/processes/:id detail");
+    if (!added) throw new Error(`added step not found in /api/processes/:id detail; ${lastStepLookup}`);
     result.stepAdded = { id: added.id, name: added.name };
     log("add-step", "ok", JSON.stringify(result.stepAdded));
 
-    // 5. Start the process through Vue.
-    const startBtn = page.locator("button", { hasText: "Start" }).first();
+    // 6. Start the process through Vue.
+    // Keep this immediately before Start. The production safety gate rejects
+    // starts when the latest pipeline sample is older than sensor_timeout_ms,
+    // and the acceptance suite can spend several seconds creating rows on slow
+    // Windows SQLite runs.
+    await seedFreshNormalSample(request);
+    log("seed-fresh-sample-before-start", "ok");
+
+    const startRow = page.locator(".process-list .el-table__row", { hasText: processName }).first();
+    await startRow.waitFor({ timeout: 8_000 });
+    const startBtn = startRow.locator("button", { hasText: "Start" }).first();
     await startBtn.waitFor({ timeout: 5_000 });
+    const startResponsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes(`/api/processes/${created.id}/start`) &&
+          response.request().method() === "POST",
+        { timeout: 8_000 }
+      )
+      .catch((error) => ({ error }));
     await startBtn.click();
+    const startResponse = await startResponsePromise;
+    if ("error" in startResponse) {
+      throw new Error(
+        `Vue did not send /api/processes/${created.id}/start after clicking Start: ${
+          startResponse.error instanceof Error ? startResponse.error.message : String(startResponse.error)
+        }`
+      );
+    }
+    const startSummary = await describeResponse(startResponse);
+    if (startSummary.status < 200 || startSummary.status >= 300) {
+      throw new Error(
+        `/api/processes/${created.id}/start failed after clicking Start: ${startSummary.status} ${startSummary.body}`
+      );
+    }
+    log("start-api-response", "ok", JSON.stringify({ status: startSummary.status }));
+
     const startDeadline = Date.now() + 12_000;
     let liveAfterStart = null;
     while (Date.now() < startDeadline) {
@@ -214,7 +330,7 @@ async function detectHorizontalOverflow(page) {
     result.processStarted = { active_batch_id: liveAfterStart.active_batch_id, auto_enabled: liveAfterStart.auto_enabled };
     log("start-process", "ok", JSON.stringify(result.processStarted));
 
-    // 6. Stop the running process.
+    // 7. Stop the running process.
     const stopBtn = page.locator("button", { hasText: "Stop Current Process" });
     await stopBtn.waitFor({ timeout: 5_000 });
     await stopBtn.click();
@@ -232,7 +348,7 @@ async function detectHorizontalOverflow(page) {
     result.processStopped = { auto_enabled: liveAfterStop.auto_enabled, active_batch_id: liveAfterStop.active_batch_id };
     log("stop-process", "ok", JSON.stringify(result.processStopped));
 
-    // 7. Horizontal overflow sanity check.
+    // 8. Horizontal overflow sanity check.
     const overflow = await detectHorizontalOverflow(page);
     result.horizontalOverflow = {
       docScroll: overflow.docScroll,
@@ -248,7 +364,7 @@ async function detectHorizontalOverflow(page) {
     };
     log("overflow-en", result.horizontalOverflow.ok ? "ok" : "fail", JSON.stringify(overflow));
 
-    // 8. Switch to Chinese and re-check.
+    // 9. Switch to Chinese and re-check.
     // The language switch is an el-segmented with two options: 中文 and EN.
     const zhSeg = page.locator(".el-segmented .el-segmented__item", { hasText: "中文" });
     await zhSeg.waitFor({ timeout: 5_000 });
@@ -281,7 +397,7 @@ async function detectHorizontalOverflow(page) {
     };
     log("overflow-zh", result.horizontalOverflowZh.ok ? "ok" : "fail", JSON.stringify(overflowZh));
 
-    // 9. Final pass conditions: every required phrase must be present in both
+    // 10. Final pass conditions: every required phrase must be present in both
     //    languages, the lifecycle must complete end-to-end, and the page must
     //    not overflow horizontally in either language.
     const enOk = result.englishMissing.length === 0;

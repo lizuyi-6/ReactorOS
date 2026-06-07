@@ -28,6 +28,17 @@ echo "==> Formatting and testing host code"
 cargo fmt --check
 CARGO_TARGET_DIR="${HOST_TARGET_DIR:-/tmp/reactor-host-target}" cargo test
 
+echo "==> Verifying Vue HMI build artifact"
+if [[ ! -f "frontend/dist/index.html" ]]; then
+  cat >&2 <<'EOF'
+Missing frontend/dist/index.html.
+
+Run npm run frontend:build on the host before packaging so the ARM64 release
+serves the PRD Vue / Element Plus / ECharts / Pinia HMI by default.
+EOF
+  exit 1
+fi
+
 echo "==> Cross-compiling ReactorOS for ${TARGET} on Debian 10 sysroot"
 PKG_CONFIG_ALLOW_CROSS=1 \
 PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig" \
@@ -37,9 +48,19 @@ CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
 RUSTFLAGS="${A55_RUSTFLAGS}" \
 cargo build --locked --release --target "${TARGET}" --target-dir "${TARGET_DIR}"
 
-BIN="${TARGET_DIR}/${TARGET}/${PROFILE}/reactor-edge-daemon"
-if [[ ! -x "${BIN}" ]]; then
-  echo "Missing binary: ${BIN}" >&2
+DAEMON_BIN="${TARGET_DIR}/${TARGET}/${PROFILE}/reactor-edge-daemon"
+SAFETY_GUARD_BIN="${TARGET_DIR}/${TARGET}/${PROFILE}/reactor-safety-guard"
+XINGSHU_BIN="${TARGET_DIR}/${TARGET}/${PROFILE}/xingshu"
+if [[ ! -x "${DAEMON_BIN}" ]]; then
+  echo "Missing binary: ${DAEMON_BIN}" >&2
+  exit 1
+fi
+if [[ ! -x "${SAFETY_GUARD_BIN}" ]]; then
+  echo "Missing binary: ${SAFETY_GUARD_BIN}" >&2
+  exit 1
+fi
+if [[ ! -x "${XINGSHU_BIN}" ]]; then
+  echo "Missing binary: ${XINGSHU_BIN}" >&2
   exit 1
 fi
 
@@ -56,18 +77,25 @@ mkdir -p \
   "${PACKAGE_DIR}/data" \
   "${PACKAGE_DIR}/deploy" \
   "${PACKAGE_DIR}/docs" \
+  "${PACKAGE_DIR}/frontend" \
   "${PACKAGE_DIR}/kiosk" \
   "${PACKAGE_DIR}/static"
 
-cp "${BIN}" "${PACKAGE_DIR}/bin/reactor-edge-daemon"
+cp "${DAEMON_BIN}" "${PACKAGE_DIR}/bin/reactor-edge-daemon"
+cp "${SAFETY_GUARD_BIN}" "${PACKAGE_DIR}/bin/reactor-safety-guard"
+cp "${XINGSHU_BIN}" "${PACKAGE_DIR}/bin/xingshu"
 cp config/*.toml "${PACKAGE_DIR}/config/"
 cp -r static/. "${PACKAGE_DIR}/static/"
+cp -r frontend/dist "${PACKAGE_DIR}/frontend/"
 cp kiosk/run-chromium-kiosk.sh "${PACKAGE_DIR}/kiosk/"
 cp deploy/reactor-edge.service "${PACKAGE_DIR}/deploy/"
+cp deploy/reactor-edge-backup.service "${PACKAGE_DIR}/deploy/"
+cp deploy/reactor-edge-backup.timer "${PACKAGE_DIR}/deploy/"
 cp deploy/reactor-os-chromium.service "${PACKAGE_DIR}/deploy/"
 cp deploy/install-board.sh "${PACKAGE_DIR}/install.sh"
 cp deploy/uninstall-board.sh "${PACKAGE_DIR}/uninstall.sh"
 cp deploy/board-health.sh "${PACKAGE_DIR}/health-check.sh"
+cp deploy/reactor-edge-backup.sh "${PACKAGE_DIR}/backup.sh"
 cp docs/json_bridge_protocol.md "${PACKAGE_DIR}/docs/"
 cp docs/chromium_kiosk.md "${PACKAGE_DIR}/docs/"
 
@@ -84,9 +112,11 @@ EOF
 sed -i \
   -e "s/^User=.*/User=${SERVICE_USER}/" \
   -e "s/^Group=.*/Group=${SERVICE_GROUP}/" \
+  -e "s|-o pi -g pi|-o ${SERVICE_USER} -g ${SERVICE_GROUP}|g" \
   -e "s|/home/pi/.Xauthority|${SERVICE_HOME}/.Xauthority|g" \
   -e "s|--config /etc/reactor-edge/device.toml|--config /etc/reactor-edge/${CONFIG_NAME}|g" \
   "${PACKAGE_DIR}/deploy/reactor-edge.service" \
+  "${PACKAGE_DIR}/deploy/reactor-edge-backup.service" \
   "${PACKAGE_DIR}/deploy/reactor-os-chromium.service"
 
 cat >"${PACKAGE_DIR}/run.sh" <<'EOF'
@@ -101,7 +131,8 @@ exec "${ROOT}/bin/reactor-edge-daemon" \
   --safety "${ROOT}/config/safety.toml" \
   --memory "${ROOT}/config/ai_memory.toml" \
   --db "${ROOT}/data/reactor.sqlite3" \
-  --assets "${ROOT}/static" \
+  --assets auto \
+  --safety-guard "${ROOT}/bin/reactor-safety-guard" \
   --bind "${REACTOR_OS_BIND:-0.0.0.0:8000}" \
   ${REACTOR_OS_EXTRA_ARGS:-}
 EOF
@@ -110,7 +141,10 @@ chmod +x \
   "${PACKAGE_DIR}/install.sh" \
   "${PACKAGE_DIR}/uninstall.sh" \
   "${PACKAGE_DIR}/health-check.sh" \
+  "${PACKAGE_DIR}/backup.sh" \
   "${PACKAGE_DIR}/bin/reactor-edge-daemon" \
+  "${PACKAGE_DIR}/bin/reactor-safety-guard" \
+  "${PACKAGE_DIR}/bin/xingshu" \
   "${PACKAGE_DIR}/kiosk/run-chromium-kiosk.sh"
 
 cat >"${PACKAGE_DIR}/README-A55-CHROMIUM.md" <<EOF
@@ -178,6 +212,11 @@ error state.
 
 ## JSON Bridge
 
+Default HMI assets:
+
+- \`frontend/dist/index.html\`: Vue 3 + Element Plus + ECharts + Pinia production HMI.
+- \`static/index.html\`: legacy HMI fallback. The daemon is launched with \`--assets auto\` and prefers \`frontend/dist\` when present.
+
 Default paths in \`config/device.json_bridge.toml\`:
 
 \`\`\`text
@@ -216,13 +255,15 @@ Manual equivalent:
 
 \`\`\`bash
 sudo mkdir -p /opt/reactor-edge /etc/reactor-edge /var/lib/reactor-edge
-sudo cp -r bin static kiosk /opt/reactor-edge/
+sudo cp -r bin static frontend kiosk /opt/reactor-edge/
 sudo cp health-check.sh /opt/reactor-edge/
+sudo cp backup.sh /opt/reactor-edge/
 sudo cp config/*.toml /etc/reactor-edge/
 sudo cp config/reactor-edge.env /etc/reactor-edge/
-sudo cp deploy/reactor-edge.service deploy/reactor-os-chromium.service /etc/systemd/system/
+sudo cp deploy/reactor-edge.service deploy/reactor-edge-backup.service deploy/reactor-edge-backup.timer deploy/reactor-os-chromium.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now reactor-edge
+sudo systemctl enable --now reactor-edge-backup.timer
 sudo systemctl enable --now reactor-os-chromium
 \`\`\`
 

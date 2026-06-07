@@ -3,26 +3,30 @@ use std::{
     io::{Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, Context, Result};
+use base64::{
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+    Engine as _,
+};
 use clap::{Args, Parser, Subcommand};
 use rand::rngs::StdRng;
 use rand::{rngs::OsRng, Rng, RngCore, SeedableRng};
 use reactor_edge_daemon::{
     config::{load_device_config, load_safety_config},
     control::{evaluate_safety_request, SafetyGuardRequest, SafetyGuardResponse},
-    db::Db,
-    local_ai::LocalAiStatus,
+    db::{parse_encryption_key, Db, DbEncryption, DB_ENCRYPTION_KEY_ENV, ENCRYPTED_JSON_PREFIX},
+    local_ai::{run_training_from_env, LocalAiTrainingRequest},
     mqtt::load_integration_config,
     number::{round1, round2, round3},
     safety_guard::evaluate_with_process,
     state::ControlTargets,
 };
 use reqwest::{Client, Method, StatusCode};
+use rusqlite::{params, Connection};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 const DEFAULT_API: &str = "http://127.0.0.1:8000";
 const DEFAULT_DEVICE_ID: &str = "reactor_001";
@@ -240,8 +244,42 @@ enum AiCommand {
     Plan,
     /// Show active AI provider and memory profile.
     Model,
-    /// Check whether local LoRA training is available.
-    Train,
+    /// Export local experiment data and optionally invoke the LoRA training entrypoint.
+    Train {
+        /// Write the generated JSONL dataset here. Defaults to output/local-ai/lora-training-dataset.jsonl.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Directory passed through to the configured LoRA training entrypoint.
+        #[arg(long)]
+        output_dir: Option<PathBuf>,
+        /// Write the training manifest here. Defaults beside the dataset as *.manifest.json.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// Number of completed product-result batches to include.
+        #[arg(long, default_value_t = 50)]
+        max_batches: usize,
+        /// Maximum sensor samples per batch included in each JSONL row.
+        #[arg(long, default_value_t = 128)]
+        sample_limit: usize,
+        /// Maximum control/audit events per batch included in each JSONL row.
+        #[arg(long, default_value_t = 64)]
+        event_limit: usize,
+        /// Only export the training dataset; do not require or invoke model assets.
+        #[arg(long)]
+        export_only: bool,
+        /// Pass --dry-run through to the configured training entrypoint.
+        #[arg(long)]
+        dry_run: bool,
+        /// Promote a passing candidate adapter into XINGSHU_LOCAL_AI_LORA.
+        #[arg(long)]
+        promote: bool,
+        /// Minimum evaluation score required for --promote.
+        #[arg(long, default_value_t = 0.0)]
+        min_eval_score: f64,
+        /// Training command timeout in seconds.
+        #[arg(long, default_value_t = 1800)]
+        timeout_s: u64,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -350,12 +388,27 @@ struct OpsArgs {
 
 #[derive(Debug, Subcommand)]
 enum OpsCommand {
-    /// Copy the SQLite database file to a snapshot. This is a file copy, not a
-    /// tar.gz archive; ciphertext is stored inside the same database file, so
-    /// copying the database is sufficient for restoring it on a fresh daemon.
-    /// The file copy does NOT use the SQLite backup API, so it must only be run
-    /// while the daemon is stopped, or with the daemon's write connection in
-    /// WAL checkpoint+lock mode (the daemon does not provide that today).
+    /// Run production-readiness checks for secrets, TLS paths, and backup timer files.
+    Preflight {
+        #[arg(long, default_value = "config/device.toml")]
+        config: PathBuf,
+        #[arg(long, default_value = "config/safety.toml")]
+        safety: PathBuf,
+        #[arg(long, default_value = "config/integration.toml")]
+        integration: PathBuf,
+        #[arg(long, default_value = "deploy/reactor-edge-backup.service")]
+        backup_service: PathBuf,
+        #[arg(long, default_value = "deploy/reactor-edge-backup.timer")]
+        backup_timer: PathBuf,
+        #[arg(long, default_value = "deploy/reactor-edge-backup.sh")]
+        backup_script: PathBuf,
+        /// Treat fail-level findings as errors. Keep disabled for local audits.
+        #[arg(long)]
+        production: bool,
+    },
+    /// Take a SQLite online snapshot using VACUUM INTO. Ciphertext is stored
+    /// inside the same database file, so the snapshot is sufficient for
+    /// restoring encrypted rows when the matching key is available.
     Backup {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
@@ -373,10 +426,9 @@ enum OpsCommand {
         #[arg(long)]
         yes: bool,
     },
-    /// Securely overwrite the SQLite database file in place. Wipe does NOT touch
-    /// WAL/SHM siblings, integration task ciphertext stored outside the
-    /// database, or any operator-managed copies under backups/. Run this only
-    /// when the daemon is stopped.
+    /// Securely overwrite and remove the SQLite database, WAL/SHM/JOURNAL
+    /// sidecars, <db>.key, and matching snapshots under the sibling backups/
+    /// directory. Run this only when the daemon is stopped.
     Wipe {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
@@ -394,13 +446,30 @@ struct KeyArgs {
 #[derive(Debug, Subcommand)]
 enum KeyCommand {
     /// Generate a new AES-256 key into <db>.key (mode 0600) and print only the
-    /// environment variable name. This command does NOT re-encrypt existing
-    /// integration_tasks rows; the operator must restart the daemon with the
-    /// new env var and accept that previously encrypted rows become
-    /// unreadable until the old key is restored.
+    /// environment variable name. Run `rekey-integration-tasks` before
+    /// switching the daemon to the new key when existing encrypted rows must
+    /// remain readable.
     Generate {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Re-encrypt integration_tasks.request_json/response_json with a new
+    /// AES-256 key. Run this offline while the daemon is stopped.
+    RekeyIntegrationTasks {
+        #[arg(long, default_value = "data/reactor.sqlite3")]
+        db: PathBuf,
+        #[arg(long)]
+        old_key: Option<String>,
+        #[arg(long)]
+        old_key_file: Option<PathBuf>,
+        #[arg(long)]
+        new_key: Option<String>,
+        #[arg(long)]
+        new_key_file: Option<PathBuf>,
+        #[arg(long)]
+        dry_run: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -422,7 +491,7 @@ async fn main() -> Result<()> {
         Commands::Auth(args) => auth(&client, &cli.api, token, args).await,
         Commands::Data(args) => data(&client, &cli.api, token, &cli.db, args).await,
         Commands::Control(args) => control(&client, &cli.api, token, args).await,
-        Commands::Ai(args) => ai(&client, &cli.api, token, args).await,
+        Commands::Ai(args) => ai(&client, &cli.api, token, &cli.db, args).await,
         Commands::Audit(args) => audit(&client, &cli.api, token, args).await,
         Commands::Modbus(args) => modbus(&client, &cli.api, token, args).await,
         Commands::Safety(args) => safety_guard_check(args),
@@ -899,6 +968,7 @@ async fn ai(
     client: &Client,
     api: &str,
     _token: Option<&str>,
+    db_path: &Path,
     args: &AiArgs,
 ) -> Result<CommandOutput> {
     match &args.command {
@@ -993,18 +1063,507 @@ async fn ai(
                 json: json!({ "provider": provider, "local_ai": local_ai, "memory": memory }),
             })
         }
-        AiCommand::Train => {
-            let status = LocalAiStatus::from_env();
-            let missing = if status.missing.is_empty() {
-                "daemon training endpoint".to_string()
-            } else {
-                status.missing.join(", ")
-            };
-            Err(anyhow!(
-                "local LoRA training is not exposed by the current daemon API yet; missing local AI assets: {missing}"
-            ))
+        AiCommand::Train {
+            dataset,
+            output_dir,
+            manifest,
+            max_batches,
+            sample_limit,
+            event_limit,
+            export_only,
+            dry_run,
+            promote,
+            min_eval_score,
+            timeout_s,
+        } => ai_train(
+            db_path,
+            dataset.as_deref(),
+            output_dir.as_deref(),
+            manifest.as_deref(),
+            *max_batches,
+            *sample_limit,
+            *event_limit,
+            *export_only,
+            *dry_run,
+            *promote,
+            *min_eval_score,
+            *timeout_s,
+        ),
+    }
+}
+
+fn ai_train(
+    db_path: &Path,
+    dataset: Option<&Path>,
+    output_dir: Option<&Path>,
+    manifest: Option<&Path>,
+    max_batches: usize,
+    sample_limit: usize,
+    event_limit: usize,
+    export_only: bool,
+    dry_run: bool,
+    promote: bool,
+    min_eval_score: f64,
+    timeout_s: u64,
+) -> Result<CommandOutput> {
+    let dataset_path = dataset
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("output/local-ai/lora-training-dataset.jsonl"));
+    let db = Db::open(db_path).with_context(|| {
+        format!(
+            "failed to open local SQLite database for LoRA dataset export: {}",
+            db_path.display()
+        )
+    })?;
+    let export = export_lora_training_dataset(
+        &db,
+        &dataset_path,
+        max_batches.max(1),
+        sample_limit.max(1),
+        event_limit.max(1),
+    )?;
+    if export_only {
+        return Ok(CommandOutput {
+            human: format!(
+                "local LoRA dataset exported\n  dataset: {}\n  rows:    {}\n  mode:    export-only",
+                export.dataset.display(),
+                export.rows
+            ),
+            json: json!({
+                "action": "local-ai-train",
+                "mode": "export_only",
+                "dataset": export.dataset.display().to_string(),
+                "rows": export.rows
+            }),
+        });
+    }
+
+    let report = run_training_from_env(LocalAiTrainingRequest {
+        dataset: Some(export.dataset.clone()),
+        output_dir: output_dir.map(PathBuf::from),
+        dry_run,
+        timeout: Duration::from_secs(timeout_s.max(1)),
+    })
+    .with_context(|| {
+        format!(
+            "local LoRA dataset was exported to {}, but training could not start",
+            export.dataset.display()
+        )
+    })?;
+    let manifest_path = manifest
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_training_manifest_path(&export.dataset));
+    let manifest_doc =
+        write_training_manifest(&manifest_path, &export, &report, promote, min_eval_score)?;
+    if promote
+        && !manifest_doc["promotion"]["promoted"]
+            .as_bool()
+            .unwrap_or(false)
+    {
+        return Err(anyhow!(
+            "local LoRA promotion requested but not performed: {} (manifest: {})",
+            manifest_doc["promotion"]["reason"]
+                .as_str()
+                .unwrap_or("see manifest"),
+            manifest_path.display()
+        ));
+    }
+    Ok(CommandOutput {
+        human: format!(
+            "local LoRA training command completed\n  dataset:  {}\n  rows:     {}\n  manifest: {}\n  program:  {}\n  exit:     {}",
+            export.dataset.display(),
+            export.rows,
+            manifest_path.display(),
+            report.program,
+            report.exit_code.unwrap_or_default()
+        ),
+        json: json!({
+            "action": "local-ai-train",
+            "mode": "train",
+            "dataset": export.dataset.display().to_string(),
+            "rows": export.rows,
+            "manifest": manifest_path.display().to_string(),
+            "evaluation": manifest_doc["evaluation"].clone(),
+            "promotion": manifest_doc["promotion"].clone(),
+            "training": report
+        }),
+    })
+}
+
+struct LoraDatasetExport {
+    dataset: PathBuf,
+    rows: usize,
+}
+
+fn default_training_manifest_path(dataset: &Path) -> PathBuf {
+    let mut path = dataset.to_path_buf();
+    let extension = dataset
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| format!("{ext}.manifest.json"))
+        .unwrap_or_else(|| "manifest.json".to_string());
+    path.set_extension(extension);
+    path
+}
+
+fn write_training_manifest(
+    manifest_path: &Path,
+    export: &LoraDatasetExport,
+    report: &reactor_edge_daemon::local_ai::LocalAiCommandReport,
+    promote: bool,
+    min_eval_score: f64,
+) -> Result<Value> {
+    if let Some(parent) = manifest_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
         }
     }
+    let parsed = report.parsed_stdout.as_ref();
+    let evaluation_score = parsed.and_then(extract_evaluation_score);
+    let candidate_adapter = parsed
+        .and_then(extract_candidate_adapter)
+        .map(PathBuf::from);
+    let promotion = maybe_promote_lora_adapter(
+        promote,
+        min_eval_score,
+        evaluation_score,
+        candidate_adapter.as_deref(),
+    )?;
+    let manifest = json!({
+        "schema": "xingshu.local_ai.training_manifest.v1",
+        "created_at": chrono::Utc::now(),
+        "dataset": export.dataset.display().to_string(),
+        "rows": export.rows,
+        "training": {
+            "program": report.program.clone(),
+            "args": report.args.clone(),
+            "exit_code": report.exit_code,
+            "stdout_bytes": report.stdout.len(),
+            "stderr_bytes": report.stderr.len(),
+            "parsed_stdout": report.parsed_stdout.clone(),
+        },
+        "evaluation": {
+            "score": evaluation_score,
+            "min_score_for_promotion": min_eval_score,
+            "metrics": parsed.and_then(extract_metrics).cloned(),
+            "candidate_adapter": candidate_adapter.as_ref().map(|path| path.display().to_string()),
+        },
+        "promotion": promotion,
+        "audit": {
+            "decision": if promote { "promotion_requested" } else { "manifest_only" },
+            "note": "Promotion only copies a candidate adapter into XINGSHU_LOCAL_AI_LORA after explicit --promote and a passing evaluation score."
+        }
+    });
+    fs::write(manifest_path, serde_json::to_string_pretty(&manifest)?)
+        .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+    Ok(manifest)
+}
+
+fn extract_evaluation_score(value: &Value) -> Option<f64> {
+    for path in [
+        &["evaluation", "score"][..],
+        &["eval", "score"][..],
+        &["metrics", "eval_score"][..],
+        &["metrics", "score"][..],
+        &["score"][..],
+    ] {
+        if let Some(score) = json_path(value, path).and_then(Value::as_f64) {
+            return Some(score);
+        }
+    }
+    None
+}
+
+fn extract_candidate_adapter(value: &Value) -> Option<String> {
+    for path in [
+        &["candidate_adapter"][..],
+        &["adapter"][..],
+        &["adapter_path"][..],
+        &["artifacts", "adapter"][..],
+        &["artifacts", "adapter_path"][..],
+        &["artifacts", "lora_adapter"][..],
+        &["output", "adapter"][..],
+    ] {
+        if let Some(adapter) = json_path(value, path)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            return Some(adapter.to_string());
+        }
+    }
+    None
+}
+
+fn extract_metrics(value: &Value) -> Option<&Value> {
+    json_path(value, &["metrics"])
+        .or_else(|| json_path(value, &["evaluation", "metrics"]))
+        .or_else(|| json_path(value, &["eval", "metrics"]))
+}
+
+fn json_path<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    let mut current = value;
+    for segment in path {
+        current = current.get(*segment)?;
+    }
+    Some(current)
+}
+
+fn maybe_promote_lora_adapter(
+    promote: bool,
+    min_eval_score: f64,
+    evaluation_score: Option<f64>,
+    candidate_adapter: Option<&Path>,
+) -> Result<Value> {
+    if !promote {
+        return Ok(json!({
+            "requested": false,
+            "promoted": false,
+            "reason": "promotion not requested"
+        }));
+    }
+    let Some(score) = evaluation_score else {
+        return Ok(json!({
+            "requested": true,
+            "promoted": false,
+            "reason": "training output did not include an evaluation score"
+        }));
+    };
+    if score < min_eval_score {
+        return Ok(json!({
+            "requested": true,
+            "promoted": false,
+            "reason": format!("evaluation score {score:.4} is below required {min_eval_score:.4}"),
+            "score": score,
+            "min_score": min_eval_score
+        }));
+    }
+    let Some(candidate_adapter) = candidate_adapter else {
+        return Ok(json!({
+            "requested": true,
+            "promoted": false,
+            "reason": "training output did not include a candidate adapter path",
+            "score": score,
+            "min_score": min_eval_score
+        }));
+    };
+    if !candidate_adapter.is_file() {
+        return Ok(json!({
+            "requested": true,
+            "promoted": false,
+            "reason": format!("candidate adapter is not a readable file: {}", candidate_adapter.display()),
+            "score": score,
+            "min_score": min_eval_score
+        }));
+    }
+    let target = env::var("XINGSHU_LOCAL_AI_LORA")
+        .ok()
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty());
+    let Some(target) = target else {
+        return Ok(json!({
+            "requested": true,
+            "promoted": false,
+            "reason": "XINGSHU_LOCAL_AI_LORA is not configured as a promotion target",
+            "score": score,
+            "min_score": min_eval_score
+        }));
+    };
+    if let Some(parent) = target.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+    let backup = if target.is_file() {
+        let backup = promoted_backup_path(&target);
+        fs::copy(&target, &backup).with_context(|| {
+            format!(
+                "failed to preserve existing LoRA adapter {} as {}",
+                target.display(),
+                backup.display()
+            )
+        })?;
+        Some(backup)
+    } else {
+        None
+    };
+    fs::copy(candidate_adapter, &target).with_context(|| {
+        format!(
+            "failed to promote candidate adapter {} to {}",
+            candidate_adapter.display(),
+            target.display()
+        )
+    })?;
+    Ok(json!({
+        "requested": true,
+        "promoted": true,
+        "reason": "candidate adapter promoted",
+        "score": score,
+        "min_score": min_eval_score,
+        "source": candidate_adapter.display().to_string(),
+        "target": target.display().to_string(),
+        "backup": backup.map(|path| path.display().to_string())
+    }))
+}
+
+fn promoted_backup_path(target: &Path) -> PathBuf {
+    let stamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
+    let file_name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("adapter.gguf");
+    target.with_file_name(format!("{file_name}.pre-promote-{stamp}.bak"))
+}
+
+fn export_lora_training_dataset(
+    db: &Db,
+    dataset: &Path,
+    max_batches: usize,
+    sample_limit: usize,
+    event_limit: usize,
+) -> Result<LoraDatasetExport> {
+    let mut outcomes = db.batch_outcomes()?;
+    if outcomes.len() > max_batches {
+        outcomes = outcomes[outcomes.len() - max_batches..].to_vec();
+    }
+    if outcomes.is_empty() {
+        return Err(anyhow!(
+            "no completed product-result batches are available for local LoRA training export"
+        ));
+    }
+    if let Some(parent) = dataset.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+    }
+
+    let mut rows = Vec::new();
+    for outcome in outcomes {
+        let batch = db.batch_by_id(outcome.batch_id)?.ok_or_else(|| {
+            anyhow!(
+                "batch {} disappeared during dataset export",
+                outcome.batch_id
+            )
+        })?;
+        let samples = db.sample_records_for_batch(outcome.batch_id, sample_limit)?;
+        let events = db.control_events_for_batch(outcome.batch_id, event_limit)?;
+        let sample_summary = summarize_samples(&samples);
+        let event_summary = events
+            .iter()
+            .map(|event| {
+                json!({
+                    "id": event.id,
+                    "event_type": event.event_type,
+                    "target_temperature_c": event.target_temperature_c,
+                    "target_stirrer_rpm": event.target_stirrer_rpm,
+                    "target_shake_speed_cpm": event.target_shake_speed_cpm,
+                    "reason": event.reason,
+                    "created_at": event.created_at
+                })
+            })
+            .collect::<Vec<_>>();
+        let prompt = format!(
+            "Given reactor batch history, recommend safe next parameters. Batch name: {}. Product yield: {:.2}%. Product ratio: {:.4}. Recent sample count: {}.",
+            batch.name,
+            outcome.yield_percent,
+            outcome.product_ratio,
+            samples.len()
+        );
+        let completion = json!({
+            "target_temperature_c": outcome.target_temperature_c,
+            "target_stirrer_rpm": outcome.target_stirrer_rpm,
+            "heating_minutes": outcome.heating_minutes,
+            "stirring_minutes": outcome.stirring_minutes,
+            "expected_yield_percent": outcome.yield_percent,
+            "expected_product_ratio": outcome.product_ratio,
+            "rationale": "Supervised target reconstructed from a completed batch with recorded product result."
+        });
+        rows.push(json!({
+            "schema": "xingshu.local_ai.lora_dataset.v1",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are the Xingshu intelligent reactor local Qwen LoRA assistant. Return safe, auditable reactor parameter suggestions as JSON."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                },
+                {
+                    "role": "assistant",
+                    "content": completion.to_string()
+                }
+            ],
+            "input": {
+                "batch": {
+                    "id": batch.id,
+                    "name": batch.name,
+                    "started_at": batch.started_at,
+                    "finished_at": batch.finished_at,
+                    "target_temperature_c": batch.target_temperature_c,
+                    "target_stirrer_rpm": batch.target_stirrer_rpm,
+                    "heating_minutes": batch.heating_minutes,
+                    "stirring_minutes": batch.stirring_minutes
+                },
+                "samples": samples.iter().map(|sample| json!({
+                    "temperature_c": sample.sample.temperature_c,
+                    "pressure_mpa": sample.sample.pressure_mpa,
+                    "stirrer_rpm": sample.sample.stirrer_rpm,
+                    "shake_speed_cpm": sample.sample.shake_speed_cpm,
+                    "flow_rate_l_min": sample.sample.flow_rate_l_min,
+                    "product_concentration_percent": sample.sample.product_concentration_percent,
+                    "ph": sample.sample.ph,
+                    "captured_at": sample.sample.captured_at
+                })).collect::<Vec<_>>(),
+                "sample_summary": sample_summary,
+                "control_events": event_summary
+            },
+            "output": completion,
+            "metadata": {
+                "batch_id": outcome.batch_id,
+                "source": "sqlite",
+                "created_by": "xingshu ai train",
+                "dataset_role": "supervised_parameter_recommendation"
+            }
+        }));
+    }
+
+    let mut data = String::new();
+    for row in &rows {
+        data.push_str(&serde_json::to_string(row)?);
+        data.push('\n');
+    }
+    fs::write(dataset, data).with_context(|| format!("failed to write {}", dataset.display()))?;
+    Ok(LoraDatasetExport {
+        dataset: dataset.to_path_buf(),
+        rows: rows.len(),
+    })
+}
+
+fn summarize_samples(samples: &[reactor_edge_daemon::db::SensorSampleRecord]) -> Value {
+    fn avg(values: impl Iterator<Item = f64>) -> Option<f64> {
+        let mut count = 0usize;
+        let mut sum = 0.0;
+        for value in values {
+            count += 1;
+            sum += value;
+        }
+        (count > 0).then_some(sum / count as f64)
+    }
+
+    json!({
+        "count": samples.len(),
+        "temperature_c_avg": avg(samples.iter().map(|sample| sample.sample.temperature_c)).map(round2),
+        "pressure_mpa_avg": avg(samples.iter().map(|sample| sample.sample.pressure_mpa)).map(round3),
+        "stirrer_rpm_avg": avg(samples.iter().map(|sample| sample.sample.stirrer_rpm)).map(round1),
+        "flow_rate_l_min_avg": avg(samples.iter().map(|sample| sample.sample.flow_rate_l_min)).map(round2),
+        "product_concentration_percent_avg": avg(samples.iter().map(|sample| sample.sample.product_concentration_percent)).map(round2),
+        "ph_avg": avg(samples.iter().map(|sample| sample.sample.ph)).map(round2)
+    })
 }
 
 async fn audit(
@@ -1604,6 +2163,23 @@ fn default_device_id() -> &'static str {
 
 fn ops(args: &OpsArgs) -> Result<CommandOutput> {
     match &args.command {
+        OpsCommand::Preflight {
+            config,
+            safety,
+            integration,
+            backup_service,
+            backup_timer,
+            backup_script,
+            production,
+        } => ops_preflight(
+            config,
+            safety,
+            integration,
+            backup_service,
+            backup_timer,
+            backup_script,
+            *production,
+        ),
         OpsCommand::Backup {
             db,
             out,
@@ -1614,9 +2190,570 @@ fn ops(args: &OpsArgs) -> Result<CommandOutput> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreflightLevel {
+    Pass,
+    Warn,
+    Fail,
+}
+
+impl PreflightLevel {
+    fn as_str(self) -> &'static str {
+        match self {
+            PreflightLevel::Pass => "pass",
+            PreflightLevel::Warn => "warn",
+            PreflightLevel::Fail => "fail",
+        }
+    }
+}
+
+struct PreflightFinding {
+    level: PreflightLevel,
+    check: &'static str,
+    detail: String,
+}
+
+impl PreflightFinding {
+    fn pass(check: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            level: PreflightLevel::Pass,
+            check,
+            detail: detail.into(),
+        }
+    }
+
+    fn warn(check: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            level: PreflightLevel::Warn,
+            check,
+            detail: detail.into(),
+        }
+    }
+
+    fn fail(check: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            level: PreflightLevel::Fail,
+            check,
+            detail: detail.into(),
+        }
+    }
+}
+
+fn ops_preflight(
+    config_path: &Path,
+    safety_path: &Path,
+    integration_path: &Path,
+    backup_service: &Path,
+    backup_timer: &Path,
+    backup_script: &Path,
+    production: bool,
+) -> Result<CommandOutput> {
+    let mut findings = Vec::new();
+
+    let device_config = match load_device_config(config_path) {
+        Ok(config) => {
+            findings.push(PreflightFinding::pass(
+                "device_config",
+                format!("parsed {}", config_path.display()),
+            ));
+            Some(config)
+        }
+        Err(err) => {
+            findings.push(PreflightFinding::fail(
+                "device_config",
+                format!("{}: {err}", config_path.display()),
+            ));
+            None
+        }
+    };
+
+    match load_safety_config(safety_path) {
+        Ok(safety) => {
+            if safety.control.safety_guard_timeout_ms == 0 {
+                findings.push(PreflightFinding::fail(
+                    "safety_config",
+                    "safety_guard_timeout_ms must be greater than 0",
+                ));
+            } else {
+                findings.push(PreflightFinding::pass(
+                    "safety_config",
+                    format!("parsed {}", safety_path.display()),
+                ));
+            }
+        }
+        Err(err) => findings.push(PreflightFinding::fail(
+            "safety_config",
+            format!("{}: {err}", safety_path.display()),
+        )),
+    }
+
+    let integration = if !integration_path.is_file() {
+        findings.push(PreflightFinding::fail(
+            "integration_config",
+            format!("{} does not exist", integration_path.display()),
+        ));
+        None
+    } else {
+        match load_integration_config(integration_path) {
+            Ok(config) => {
+                findings.push(PreflightFinding::pass(
+                    "integration_config",
+                    format!("parsed {}", integration_path.display()),
+                ));
+                Some(config)
+            }
+            Err(err) => {
+                findings.push(PreflightFinding::fail(
+                    "integration_config",
+                    format!("{}: {err}", integration_path.display()),
+                ));
+                None
+            }
+        }
+    };
+
+    if let Some(device) = device_config.as_ref() {
+        if matches!(
+            device.mode,
+            reactor_edge_daemon::config::DeviceMode::Pipeline
+        ) {
+            findings.push(PreflightFinding::warn(
+                "device_mode",
+                "device mode is pipeline; production hardware should use modbus, esp32_serial, or json_bridge with real input",
+            ));
+        } else {
+            findings.push(PreflightFinding::pass(
+                "device_mode",
+                format!("device mode is {:?}", device.mode),
+            ));
+        }
+    }
+
+    check_secret_env(
+        &mut findings,
+        "auth_secret",
+        "XINGSHU_AUTH_SECRET",
+        "xingshu-local-rbac-session-secret",
+        32,
+    );
+    check_password_env(
+        &mut findings,
+        "operator_password",
+        "XINGSHU_OPERATOR_PASSWORD",
+        "operator123",
+    );
+    check_password_env(
+        &mut findings,
+        "engineer_password",
+        "XINGSHU_ENGINEER_PASSWORD",
+        "engineer123",
+    );
+    check_password_env(
+        &mut findings,
+        "admin_password",
+        "XINGSHU_ADMIN_PASSWORD",
+        "admin123",
+    );
+    check_db_key_env(&mut findings);
+
+    if let Some(integration) = integration.as_ref() {
+        check_mqtt_preflight(&mut findings, &integration.mqtt);
+        check_modbus_tcp_preflight(&mut findings, &integration.modbus_tcp);
+    }
+
+    check_required_file(
+        &mut findings,
+        "backup_service",
+        backup_service,
+        "systemd backup service is missing from the release path",
+    );
+    check_required_file(
+        &mut findings,
+        "backup_timer",
+        backup_timer,
+        "systemd backup timer is missing from the release path",
+    );
+    check_required_file(
+        &mut findings,
+        "backup_script",
+        backup_script,
+        "backup helper script is missing from the release path",
+    );
+
+    let fail_count = findings
+        .iter()
+        .filter(|finding| finding.level == PreflightLevel::Fail)
+        .count();
+    let warn_count = findings
+        .iter()
+        .filter(|finding| finding.level == PreflightLevel::Warn)
+        .count();
+    let pass_count = findings
+        .iter()
+        .filter(|finding| finding.level == PreflightLevel::Pass)
+        .count();
+    let status = if fail_count > 0 {
+        "fail"
+    } else if warn_count > 0 {
+        "warn"
+    } else {
+        "ok"
+    };
+
+    let mut human = format!(
+        "production preflight {status}\n  pass: {pass_count}\n  warn: {warn_count}\n  fail: {fail_count}\n"
+    );
+    for finding in &findings {
+        human.push_str(&format!(
+            "  [{}] {}: {}\n",
+            finding.level.as_str(),
+            finding.check,
+            finding.detail
+        ));
+    }
+    if production && fail_count > 0 {
+        human.push_str("  result: refusing production preflight with fail-level findings");
+    } else if production && warn_count > 0 {
+        human.push_str("  result: production preflight passed with warnings to review");
+    } else {
+        human.push_str("  result: preflight completed");
+    }
+
+    let json_findings = findings
+        .iter()
+        .map(|finding| {
+            json!({
+                "level": finding.level.as_str(),
+                "check": finding.check,
+                "detail": finding.detail,
+            })
+        })
+        .collect::<Vec<_>>();
+    let output = CommandOutput {
+        human,
+        json: json!({
+            "action": "production-preflight",
+            "status": status,
+            "production": production,
+            "counts": {
+                "pass": pass_count,
+                "warn": warn_count,
+                "fail": fail_count
+            },
+            "findings": json_findings
+        }),
+    };
+    if production && fail_count > 0 {
+        return Err(anyhow!(output.human));
+    }
+    Ok(output)
+}
+
+fn check_secret_env(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    name: &'static str,
+    default_value: &'static str,
+    min_chars: usize,
+) {
+    match env::var(name) {
+        Ok(value) if value.trim().is_empty() => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is set but empty"),
+        )),
+        Ok(value) if value == default_value => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} still uses the documented local default"),
+        )),
+        Ok(value) if value.chars().count() < min_chars => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is shorter than {min_chars} characters"),
+        )),
+        Ok(_) => findings.push(PreflightFinding::pass(
+            check,
+            format!("{name} is configured"),
+        )),
+        Err(env::VarError::NotPresent) => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is not set; daemon would use the local default"),
+        )),
+        Err(env::VarError::NotUnicode(_)) => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is not valid unicode"),
+        )),
+    }
+}
+
+fn check_password_env(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    name: &'static str,
+    default_value: &'static str,
+) {
+    match env::var(name) {
+        Ok(value) if value.trim().is_empty() => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is set but empty"),
+        )),
+        Ok(value) if value == default_value => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} still uses the documented local default"),
+        )),
+        Ok(value) if value.chars().count() < 12 => findings.push(PreflightFinding::warn(
+            check,
+            format!("{name} is configured but shorter than 12 characters"),
+        )),
+        Ok(_) => findings.push(PreflightFinding::pass(
+            check,
+            format!("{name} is configured"),
+        )),
+        Err(env::VarError::NotPresent) => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is not set; daemon would use the local default"),
+        )),
+        Err(env::VarError::NotUnicode(_)) => findings.push(PreflightFinding::fail(
+            check,
+            format!("{name} is not valid unicode"),
+        )),
+    }
+}
+
+fn check_db_key_env(findings: &mut Vec<PreflightFinding>) {
+    match env::var("XINGSHU_DB_ENCRYPTION_KEY") {
+        Ok(value) if valid_db_key_value(&value) => findings.push(PreflightFinding::pass(
+            "db_encryption_key",
+            "XINGSHU_DB_ENCRYPTION_KEY is configured with a valid length/encoding",
+        )),
+        Ok(_) => findings.push(PreflightFinding::fail(
+            "db_encryption_key",
+            "XINGSHU_DB_ENCRYPTION_KEY must be 32 raw bytes, 64 hex chars, or base64-encoded 32 bytes",
+        )),
+        Err(env::VarError::NotPresent) => findings.push(PreflightFinding::fail(
+            "db_encryption_key",
+            "XINGSHU_DB_ENCRYPTION_KEY is not set; integration task payloads would be stored without AES-GCM encryption",
+        )),
+        Err(env::VarError::NotUnicode(_)) => findings.push(PreflightFinding::fail(
+            "db_encryption_key",
+            "XINGSHU_DB_ENCRYPTION_KEY is not valid unicode",
+        )),
+    }
+}
+
+fn valid_db_key_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.len() == 32
+        || (trimmed.len() == 64
+            && trimmed
+                .as_bytes()
+                .iter()
+                .all(|byte| byte.is_ascii_hexdigit()))
+        || STANDARD
+            .decode(trimmed)
+            .or_else(|_| STANDARD_NO_PAD.decode(trimmed))
+            .is_ok_and(|bytes| bytes.len() == 32)
+}
+
+fn check_mqtt_preflight(
+    findings: &mut Vec<PreflightFinding>,
+    config: &reactor_edge_daemon::mqtt::MqttBridgeConfig,
+) {
+    if !config.enabled {
+        findings.push(PreflightFinding::warn(
+            "mqtt_enabled",
+            "MQTT bridge is disabled; skip only if the site does not require broker integration yet",
+        ));
+        return;
+    }
+    if config.use_tls {
+        check_optional_cert_file(
+            findings,
+            "mqtt_ca_cert",
+            &config.ca_cert,
+            "MQTT TLS is enabled but ca_cert is missing",
+        );
+        match (&config.client_cert, &config.client_key) {
+            (Some(cert), Some(key)) => {
+                check_required_cert_file(
+                    findings,
+                    "mqtt_client_cert",
+                    cert,
+                    "MQTT client certificate file is missing",
+                );
+                check_required_key_file(
+                    findings,
+                    "mqtt_client_key",
+                    key,
+                    "MQTT client key file is missing",
+                );
+            }
+            (None, None) => findings.push(PreflightFinding::warn(
+                "mqtt_client_auth",
+                "MQTT TLS has no client certificate/key; broker must explicitly allow username/password or anonymous client auth",
+            )),
+            _ => findings.push(PreflightFinding::fail(
+                "mqtt_client_auth",
+                "MQTT client_cert and client_key must be configured together",
+            )),
+        }
+    } else {
+        findings.push(PreflightFinding::fail(
+            "mqtt_tls",
+            "MQTT bridge is enabled without TLS",
+        ));
+    }
+    if config.username.is_none() && config.client_cert.is_none() {
+        findings.push(PreflightFinding::warn(
+            "mqtt_auth",
+            "MQTT bridge has neither username nor client certificate configured",
+        ));
+    }
+}
+
+fn check_modbus_tcp_preflight(
+    findings: &mut Vec<PreflightFinding>,
+    config: &reactor_edge_daemon::modbus_tcp::ModbusTcpConfig,
+) {
+    if !config.enabled {
+        findings.push(PreflightFinding::warn(
+            "modbus_tcp_enabled",
+            "Modbus TCP server is disabled; skip only if external Modbus TCP is out of scope for this deployment",
+        ));
+        return;
+    }
+    if config.require_tls {
+        match (&config.tls_cert, &config.tls_key) {
+            (Some(cert), Some(key)) => {
+                check_required_cert_file(
+                    findings,
+                    "modbus_tcp_tls_cert",
+                    cert,
+                    "Modbus TCP TLS certificate file is missing",
+                );
+                check_required_key_file(
+                    findings,
+                    "modbus_tcp_tls_key",
+                    key,
+                    "Modbus TCP TLS key file is missing",
+                );
+            }
+            _ => findings.push(PreflightFinding::fail(
+                "modbus_tcp_tls",
+                "Modbus TCP require_tls=true but tls_cert/tls_key are not both configured",
+            )),
+        }
+    } else {
+        findings.push(PreflightFinding::fail(
+            "modbus_tcp_tls",
+            "Modbus TCP server is enabled without require_tls=true",
+        ));
+    }
+}
+
+fn check_optional_cert_file(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    path: &Option<PathBuf>,
+    missing: &'static str,
+) {
+    match path {
+        Some(path) => check_required_cert_file(findings, check, path, missing),
+        None => findings.push(PreflightFinding::fail(check, missing)),
+    }
+}
+
+fn check_required_cert_file(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    path: &Path,
+    missing: &'static str,
+) {
+    if !path.is_file() {
+        findings.push(PreflightFinding::fail(
+            check,
+            format!("{missing}: {}", path.display()),
+        ));
+        return;
+    }
+    match reactor_edge_daemon::tls::load_cert_chain(path) {
+        Ok(certs) => findings.push(PreflightFinding::pass(
+            check,
+            format!(
+                "parsed {} certificate(s) from {}",
+                certs.len(),
+                path.display()
+            ),
+        )),
+        Err(err) => findings.push(PreflightFinding::fail(
+            check,
+            format!("failed to parse certificate {}: {err}", path.display()),
+        )),
+    }
+}
+
+fn check_required_key_file(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    path: &Path,
+    missing: &'static str,
+) {
+    if !path.is_file() {
+        findings.push(PreflightFinding::fail(
+            check,
+            format!("{missing}: {}", path.display()),
+        ));
+        return;
+    }
+    match reactor_edge_daemon::tls::load_private_key(path) {
+        Ok(_) => findings.push(PreflightFinding::pass(
+            check,
+            format!("parsed private key {}", path.display()),
+        )),
+        Err(err) => findings.push(PreflightFinding::fail(
+            check,
+            format!("failed to parse private key {}: {err}", path.display()),
+        )),
+    }
+}
+
+fn check_required_file(
+    findings: &mut Vec<PreflightFinding>,
+    check: &'static str,
+    path: &Path,
+    missing: &'static str,
+) {
+    if path.is_file() {
+        findings.push(PreflightFinding::pass(
+            check,
+            format!("found {}", path.display()),
+        ));
+    } else {
+        findings.push(PreflightFinding::fail(
+            check,
+            format!("{missing}: {}", path.display()),
+        ));
+    }
+}
+
 fn key(args: &KeyArgs) -> Result<CommandOutput> {
     match &args.command {
         KeyCommand::Generate { db, yes } => key_rotate(db, *yes),
+        KeyCommand::RekeyIntegrationTasks {
+            db,
+            old_key,
+            old_key_file,
+            new_key,
+            new_key_file,
+            dry_run,
+            yes,
+        } => key_rekey_integration_tasks(
+            db,
+            old_key.as_deref(),
+            old_key_file.as_deref(),
+            new_key.as_deref(),
+            new_key_file.as_deref(),
+            *dry_run,
+            *yes,
+        ),
     }
 }
 
@@ -1624,46 +2761,40 @@ fn ops_backup(db: &Path, out: &Path, _include_ciphertext: bool) -> Result<Comman
     if !db.is_file() {
         return Err(anyhow!("source database {} does not exist", db.display()));
     }
-    if let Some(parent) = out.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
-        }
-    }
-    // This is a plain fs::copy of the SQLite file. It is NOT a SQLite backup
-    // API call and it does NOT pause the daemon's writer, so the snapshot can
-    // drift if the daemon is still running. The docs require the operator to
-    // run this only while the daemon is stopped, or via the daemon's
-    // safe-stop hook (see docs/upper_computer_maintenance_manual.md).
-    fs::copy(db, out)
-        .with_context(|| format!("failed to copy {} -> {}", db.display(), out.display()))?;
-    let size = fs::metadata(out).map(|m| m.len()).unwrap_or(0);
-    let hash = sha256_file(out)?;
+    let store =
+        Db::open(db).with_context(|| format!("failed to open source database {}", db.display()))?;
+    let report = store.backup_to(out)?;
     let hash_path = out.with_extension(format!(
         "{}.sha256",
         out.extension().and_then(|s| s.to_str()).unwrap_or("bin")
     ));
-    fs::write(&hash_path, format!("{hash}  {}\n", out.display())).ok();
+    fs::write(
+        &hash_path,
+        format!("{}  {}\n", report.sha256, out.display()),
+    )
+    .ok();
 
     let human = format!(
-        "snapshot complete (file copy, not SQLite backup API)\n  source: {}\n  output: {}\n  size:   {} bytes\n  sha256: {}\n  hash:   {}\n  caveat: stop the daemon before restoring, or accept that a running writer may have left the snapshot mid-transaction",
-        db.display(),
-        out.display(),
-        size,
-        &hash[..16],
-        hash_path.display()
+        "backup complete (SQLite VACUUM INTO online snapshot)\n  source:      {}\n  output:      {}\n  size:        {} bytes\n  sha256:      {}\n  hash:        {}\n  duration_ms: {}\n  note:        VACUUM INTO creates a compact SQLite image; restore still requires the daemon to be stopped before replacing the live database file.",
+        report.source,
+        report.destination,
+        report.size_bytes,
+        &report.sha256[..16],
+        hash_path.display(),
+        report.duration_ms
     );
     Ok(CommandOutput {
         human,
         json: json!({
             "action": "backup",
-            "kind": "sqlite_file_copy",
-            "source": db.to_string_lossy(),
-            "output": out.to_string_lossy(),
-            "size_bytes": size,
-            "sha256": hash,
+            "kind": "sqlite_vacuum_into",
+            "source": report.source,
+            "output": report.destination,
+            "size_bytes": report.size_bytes,
+            "duration_ms": report.duration_ms,
+            "sha256": report.sha256,
             "hash_sidecar": hash_path.to_string_lossy(),
-            "include_ciphertext": "no-op: ciphertext lives inside the SQLite file, so the file copy already captures it"
+            "include_ciphertext": "no-op: ciphertext lives inside the SQLite file; VACUUM INTO captures the encrypted rows"
         }),
     })
 }
@@ -1678,75 +2809,37 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
             db.display()
         ));
     }
-    // The backup is a SQLite file copy, not an archive. We verify the
-    // SQLite magic header to refuse unrelated files; the daemon will then
-    // re-run schema migration on the restored file, so a wrong version would
-    // surface as a migration error rather than a silent corruption.
-    let backup_bytes = fs::read(backup)
-        .with_context(|| format!("failed to read {}", backup.display()))?;
-    let sqlite_magic = b"SQLite format 3\0";
-    if !backup_bytes.starts_with(sqlite_magic) {
-        return Err(anyhow!(
-            "refusing to restore {}: file does not start with the SQLite magic header",
-            backup.display()
-        ));
-    }
-    if db.exists() {
-        let backup_existing = db.with_extension(format!(
-            "{}.pre-restore",
-            db.extension().and_then(|s| s.to_str()).unwrap_or("bin")
-        ));
-        fs::copy(db, &backup_existing).with_context(|| {
-            format!(
-                "failed to copy {} -> {}",
-                db.display(),
-                backup_existing.display()
-            )
-        })?;
-        fs::copy(backup, db).with_context(|| {
-            format!("failed to restore {} -> {}", backup.display(), db.display())
-        })?;
-        let human = format!(
-            "restore complete (file copy, no migration re-run)\n  backup:    {}\n  target:    {}\n  preserved: {}\n  caveat:   the daemon re-runs schema migration on next start; the snapshot was not taken with the SQLite backup API, so a running writer may have left the file mid-transaction",
-            backup.display(),
-            db.display(),
-            backup_existing.display()
-        );
-        Ok(CommandOutput {
-            human,
-            json: json!({
-                "action": "restore",
-                "backup": backup.to_string_lossy(),
-                "target": db.to_string_lossy(),
-                "preserved_pre_restore": backup_existing.to_string_lossy(),
-                "validated": "sqlite_magic_header"
-            }),
-        })
-    } else {
-        if let Some(parent) = db.parent() {
-            if !parent.as_os_str().is_empty() {
-                fs::create_dir_all(parent).ok();
-            }
-        }
-        fs::copy(backup, db).with_context(|| {
-            format!("failed to restore {} -> {}", backup.display(), db.display())
-        })?;
-        let human = format!(
-            "restore complete (file copy, no migration re-run)\n  backup: {}\n  target: {}",
-            backup.display(),
-            db.display()
-        );
-        Ok(CommandOutput {
-            human,
-            json: json!({
-                "action": "restore",
-                "backup": backup.to_string_lossy(),
-                "target": db.to_string_lossy(),
-                "preserved_pre_restore": null,
-                "validated": "sqlite_magic_header"
-            }),
-        })
-    }
+    let report = Db::restore_file(backup, db, true)?;
+    let human = format!(
+        "restore complete (validated SQLite image)\n  backup:     {}\n  target:     {}\n  preserved:  {}\n  sidecars:   {}\n  integrity:  {}\n  size:       {} bytes\n  sha256:     {}\n  tables:     {}\n  note:       run this only while the daemon is stopped; restart daemon after restore so migrations and pools reopen cleanly.",
+        report.source,
+        report.destination,
+        report.preserved_existing.as_deref().unwrap_or("none"),
+        if report.removed_sidecars.is_empty() {
+            "none".to_string()
+        } else {
+            report.removed_sidecars.join(", ")
+        },
+        report.integrity_check,
+        report.size_bytes,
+        &report.sha256[..16],
+        report.tables.join(", ")
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "restore",
+            "backup": report.source,
+            "target": report.destination,
+            "preserved_pre_restore": report.preserved_existing,
+            "removed_sidecars": report.removed_sidecars,
+            "integrity_check": report.integrity_check,
+            "size_bytes": report.size_bytes,
+            "sha256": report.sha256,
+            "tables": report.tables,
+            "validated": "sqlite_magic_header_and_schema_open"
+        }),
+    })
 }
 
 fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
@@ -1807,7 +2900,8 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
                         }
                         if path.is_file() {
                             let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                            bytes_overwritten += overwrite_file_with_random(&path, &mut rng, size, 1)?;
+                            bytes_overwritten +=
+                                overwrite_file_with_random(&path, &mut rng, size, 1)?;
                             fs::remove_file(&path).ok();
                             files_removed += 1;
                             scope.push(format!("backup_snapshot:{}", name));
@@ -1898,12 +2992,6 @@ fn with_extension(path: &Path, ext: &str) -> PathBuf {
     p.with_file_name(name)
 }
 
-fn out_dir_for_human(db: &Path) -> String {
-    db.parent()
-        .map(|p| p.join("backups").display().to_string())
-        .unwrap_or_else(|| "backups/".to_string())
-}
-
 fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
     if !db.exists() {
         return Err(anyhow!("database {} does not exist", db.display()));
@@ -1920,8 +3008,11 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
         .map(|b| format!("{b:02x}"))
         .collect::<String>();
     let key_path = db.with_extension("key");
-    fs::write(&key_path, format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}\n"))
-        .with_context(|| format!("failed to write {}", key_path.display()))?;
+    fs::write(
+        &key_path,
+        format!("XINGSHU_DB_ENCRYPTION_KEY={new_key_hex}\n"),
+    )
+    .with_context(|| format!("failed to write {}", key_path.display()))?;
     // Tighten permissions to 0600 on Unix. Windows ignores mode bits, so the
     // NTFS ACL must be set out of band; the docs call this out.
     #[cfg(unix)]
@@ -1952,19 +3043,244 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
     })
 }
 
-fn sha256_file(path: &Path) -> Result<String> {
-    use std::io::Read;
-    let mut file =
-        fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let n = file.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
+#[derive(Debug, Default)]
+struct RekeyIntegrationReport {
+    rows_scanned: usize,
+    fields_scanned: usize,
+    encrypted_fields_seen: usize,
+    plaintext_fields_seen: usize,
+    fields_reencrypted: usize,
+    plaintext_fields_encrypted: usize,
+    fields_changed: usize,
+}
+
+fn key_rekey_integration_tasks(
+    db: &Path,
+    old_key_arg: Option<&str>,
+    old_key_file: Option<&Path>,
+    new_key_arg: Option<&str>,
+    new_key_file: Option<&Path>,
+    dry_run: bool,
+    yes: bool,
+) -> Result<CommandOutput> {
+    if !db.is_file() {
+        return Err(anyhow!("database {} does not exist", db.display()));
     }
-    let digest = hasher.finalize();
-    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+    if !dry_run && !yes {
+        return Err(anyhow!(
+            "refusing to re-encrypt integration task payloads without --yes (run with --dry-run first, then stop the daemon and rerun with --yes)"
+        ));
+    }
+
+    let old_key = load_cli_key("old", old_key_arg, old_key_file, true)?;
+    let new_key = load_cli_key("new", new_key_arg, new_key_file, false)?;
+    if old_key == new_key {
+        return Err(anyhow!(
+            "old and new encryption keys are identical; refusing no-op rekey"
+        ));
+    }
+    let old_cipher = DbEncryption::from_key(old_key, "cli-old-key");
+    let new_cipher = DbEncryption::from_key(new_key, "cli-new-key");
+
+    let mut conn =
+        Connection::open(db).with_context(|| format!("failed to open {}", db.display()))?;
+    conn.busy_timeout(Duration::from_secs(15))?;
+    let tx = conn.transaction()?;
+    let mut rows = Vec::new();
+    {
+        let mut stmt = tx.prepare(
+            r#"
+            SELECT id, request_json, response_json
+            FROM integration_tasks
+            ORDER BY id ASC
+            "#,
+        )?;
+        let iter = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in iter {
+            rows.push(row?);
+        }
+    }
+
+    let mut report = RekeyIntegrationReport::default();
+    for (id, request_json, response_json) in rows {
+        report.rows_scanned += 1;
+        let request = rekey_integration_field(
+            &old_cipher,
+            &new_cipher,
+            &request_json,
+            &mut report,
+            "request_json",
+            id,
+        )?;
+        let response = rekey_integration_field(
+            &old_cipher,
+            &new_cipher,
+            &response_json,
+            &mut report,
+            "response_json",
+            id,
+        )?;
+        if !dry_run && (request.changed || response.changed) {
+            tx.execute(
+                r#"
+                UPDATE integration_tasks
+                SET request_json = ?1, response_json = ?2
+                WHERE id = ?3
+                "#,
+                params![request.value, response.value, id],
+            )?;
+        }
+    }
+
+    if dry_run {
+        tx.rollback()?;
+    } else {
+        tx.commit()?;
+        compact_rekeyed_database(&conn)?;
+    }
+
+    let mode = if dry_run { "dry-run" } else { "committed" };
+    let human = format!(
+        "integration task payload rekey {mode}\n  database:                    {}\n  rows_scanned:                {}\n  fields_scanned:              {}\n  encrypted_fields_seen:       {}\n  plaintext_fields_seen:       {}\n  fields_reencrypted:          {}\n  plaintext_fields_encrypted:  {}\n  fields_changed:              {}\n  next_step:                   restart daemon with {} set to the new key after verifying reads",
+        db.display(),
+        report.rows_scanned,
+        report.fields_scanned,
+        report.encrypted_fields_seen,
+        report.plaintext_fields_seen,
+        report.fields_reencrypted,
+        report.plaintext_fields_encrypted,
+        report.fields_changed,
+        DB_ENCRYPTION_KEY_ENV
+    );
+    Ok(CommandOutput {
+        human,
+        json: json!({
+            "action": "key-rekey-integration-tasks",
+            "mode": mode,
+            "database": db.to_string_lossy(),
+            "rows_scanned": report.rows_scanned,
+            "fields_scanned": report.fields_scanned,
+            "encrypted_fields_seen": report.encrypted_fields_seen,
+            "plaintext_fields_seen": report.plaintext_fields_seen,
+            "fields_reencrypted": report.fields_reencrypted,
+            "plaintext_fields_encrypted": report.plaintext_fields_encrypted,
+            "fields_changed": report.fields_changed,
+            "encrypted_fields": [
+                "integration_tasks.request_json",
+                "integration_tasks.response_json"
+            ],
+            "new_key_env_var": DB_ENCRYPTION_KEY_ENV,
+            "requires_daemon_stopped": true,
+            "secret_material_printed": false
+        }),
+    })
+}
+
+fn compact_rekeyed_database(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        PRAGMA wal_checkpoint(TRUNCATE);
+        VACUUM;
+        PRAGMA wal_checkpoint(TRUNCATE);
+        "#,
+    )
+    .context("failed to compact database and truncate WAL after key rekey")
+}
+
+struct RekeyedField {
+    value: String,
+    changed: bool,
+}
+
+fn rekey_integration_field(
+    old_cipher: &DbEncryption,
+    new_cipher: &DbEncryption,
+    value: &str,
+    report: &mut RekeyIntegrationReport,
+    field: &str,
+    row_id: i64,
+) -> Result<RekeyedField> {
+    report.fields_scanned += 1;
+    let was_encrypted = value.starts_with(ENCRYPTED_JSON_PREFIX);
+    if was_encrypted {
+        report.encrypted_fields_seen += 1;
+    } else {
+        report.plaintext_fields_seen += 1;
+    }
+    let plaintext = old_cipher
+        .decrypt_json_if_needed_anyhow(value)
+        .with_context(|| {
+            format!("failed to decrypt integration_tasks.{field} for row id {row_id}")
+        })?;
+    serde_json::from_str::<Value>(&plaintext).with_context(|| {
+        format!("integration_tasks.{field} for row id {row_id} is not valid JSON")
+    })?;
+    let encrypted = new_cipher.encrypt_json(&plaintext).with_context(|| {
+        format!("failed to encrypt integration_tasks.{field} for row id {row_id}")
+    })?;
+    if was_encrypted {
+        report.fields_reencrypted += 1;
+    } else {
+        report.plaintext_fields_encrypted += 1;
+    }
+    report.fields_changed += 1;
+    Ok(RekeyedField {
+        value: encrypted,
+        changed: true,
+    })
+}
+
+fn load_cli_key(
+    label: &str,
+    direct: Option<&str>,
+    file: Option<&Path>,
+    allow_env: bool,
+) -> Result<[u8; 32]> {
+    match (direct, file) {
+        (Some(_), Some(_)) => {
+            return Err(anyhow!(
+                "provide either --{label}-key or --{label}-key-file, not both"
+            ));
+        }
+        (Some(value), None) => parse_encryption_key(value)
+            .with_context(|| format!("--{label}-key must be 32 bytes, 64 hex chars, or base64")),
+        (None, Some(path)) => {
+            let content = fs::read_to_string(path)
+                .with_context(|| format!("failed to read --{label}-key-file {}", path.display()))?;
+            let value = parse_key_file_content(&content);
+            parse_encryption_key(value).with_context(|| {
+                format!(
+                    "--{label}-key-file {} must contain a raw key or {DB_ENCRYPTION_KEY_ENV}=...",
+                    path.display()
+                )
+            })
+        }
+        (None, None) if allow_env => {
+            let value = env::var(DB_ENCRYPTION_KEY_ENV).with_context(|| {
+                format!(
+                    "missing old key: pass --old-key, --old-key-file, or set {DB_ENCRYPTION_KEY_ENV}"
+                )
+            })?;
+            parse_encryption_key(&value).with_context(|| {
+                format!("{DB_ENCRYPTION_KEY_ENV} must be 32 bytes, 64 hex chars, or base64")
+            })
+        }
+        (None, None) => Err(anyhow!(
+            "missing {label} key: pass --{label}-key or --{label}-key-file"
+        )),
+    }
+}
+
+fn parse_key_file_content(content: &str) -> &str {
+    let trimmed = content.trim();
+    trimmed
+        .strip_prefix(&format!("{DB_ENCRYPTION_KEY_ENV}="))
+        .unwrap_or(trimmed)
+        .trim()
 }

@@ -1,0 +1,506 @@
+{
+  "status": "local_draft",
+  "generatedAt": "2026-06-07T23:04:08.841Z",
+  "root": "X:\\tianhks",
+  "outputDir": "X:\\tianhks\\output\\acceptance\\field-delivery-local-draft",
+  "commit": "f7ac7d175e6e060fe7b11d09b6dc87c94c2eaedf",
+  "caveats": [
+    "This is a local draft delivery package, not a final PRD acceptance package.",
+    "Training images are AI-generated visual assets and are not real hardware, real HMI, or signature evidence.",
+    "upper_computer_training_video_draft.mp4 is a silent slideshow draft, not real operation screen recording or narrated final training video.",
+    "Final acceptance still needs STM32 hardware, real Qwen/GGUF/LoRA/RK evidence, external AINAS/MQTT/Modbus tools, production security/performance evidence, and user signatures."
+  ],
+  "counts": {
+    "totalCopied": 59,
+    "totalBytes": 31500676,
+    "docs": 12,
+    "training": 8,
+    "trainingPreviews": 16,
+    "trainingAssets": 7,
+    "uat": 1,
+    "gateReports": 4
+  },
+  "copied": [
+    {
+      "src": "docs/upper_computer_current_gap_summary_for_lizuyi.md",
+      "dest": "00-summary/upper_computer_current_gap_summary_for_lizuyi.md",
+      "kind": "status",
+      "status": "copied",
+      "bytes": 9729,
+      "sha256": "a2ad95579913a92187d7633743a19060c12694f2b6938f5ebfb9034f95f00bf4"
+    },
+    {
+      "src": "docs/upper_computer_requirement_gap_matrix.md",
+      "dest": "00-summary/upper_computer_requirement_gap_matrix.md",
+      "kind": "status",
+      "status": "copied",
+      "bytes": 23786,
+      "sha256": "055b459edf9e4c2d77f91baf41c3b5fb1dca9fbdd2032e2254166c19c3ab57a7"
+    },
+    {
+      "src": "docs/upper_computer_delivery_readiness_index.md",
+      "dest": "00-summary/upper_computer_delivery_readiness_index.md",
+      "kind": "status",
+      "status": "copied",
+      "bytes": 11527,
+      "sha256": "68228a9c9f79a8dc2c0b5fcdd972cd2a81193527b4686a2f0de405c135626f1d"
+    },
+    {
+      "src": "docs/upper_computer_field_delivery_execution_pack.md",
+      "dest": "00-summary/upper_computer_field_delivery_execution_pack.md",
+      "kind": "execution_pack",
+      "status": "copied",
+      "bytes": 8896,
+      "sha256": "be7f22ae52a3df4697dba4ac23cb5f7fe8cc687b4e19988e83cfe2092bdcfbcc"
+    },
+    {
+      "src": "docs/upper_computer_field_evidence_checklist.md",
+      "dest": "00-summary/upper_computer_field_evidence_checklist.md",
+      "kind": "execution_pack",
+      "status": "copied",
+      "bytes": 5019,
+      "sha256": "b302623970274dd7cebe8de3c033af19bac79c7d08440ae9a1ec98baf69ec68c"
+    },
+    {
+      "src": "docs/upper_computer_field_evidence_checklist.json",
+      "dest": "00-summary/upper_computer_field_evidence_checklist.json",
+      "kind": "execution_pack",
+      "status": "copied",
+      "bytes": 9929,
+      "sha256": "097b9b25f3cb8dcad9eee0c721a8cba33763a86df403542e4df936f0fd215563"
+    },
+    {
+      "src": "docs/upper_computer_development_doc.md",
+      "dest": "docs/upper_computer_development_doc.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 24706,
+      "sha256": "6e94cd49931095926ff11991425e3a2ac8cdbd857265c70f4c03ac769ad10484"
+    },
+    {
+      "src": "docs/upper_computer_user_manual.md",
+      "dest": "docs/upper_computer_user_manual.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 9772,
+      "sha256": "8e46c6781e764680242bf865d70f407fcba44228a5a8033e6d859b2a1fa46a0c"
+    },
+    {
+      "src": "docs/upper_computer_test_report.md",
+      "dest": "docs/upper_computer_test_report.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 20116,
+      "sha256": "615dbaccfb069ea666ea58315902f44e7175c9f971096794bebc9ffdc1096f0f"
+    },
+    {
+      "src": "docs/upper_computer_test_plan_traceability.md",
+      "dest": "docs/upper_computer_test_plan_traceability.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 6931,
+      "sha256": "0b589ba6fb2db2e2a09dd447fe0a4d407ac9388f2b487fc226a96c0adf5d80d7"
+    },
+    {
+      "src": "docs/upper_computer_api_acceptance_manual.md",
+      "dest": "docs/upper_computer_api_acceptance_manual.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 11084,
+      "sha256": "f83fa1234ecd32d8e2409231ede573b0a681de68aa0a3ac875044197a07ec3b8"
+    },
+    {
+      "src": "docs/upper_computer_cli_reference.md",
+      "dest": "docs/upper_computer_cli_reference.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 9226,
+      "sha256": "71e9e39d21fe57bcded6b9d6a806dabde00cade1d6521e2211c365cdb47c4fca"
+    },
+    {
+      "src": "docs/upper_computer_maintenance_manual.md",
+      "dest": "docs/upper_computer_maintenance_manual.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 8648,
+      "sha256": "06df1c6a4cd30e011e1bc70060636479034a13e3a18c950115b9e2d8cdecdd21"
+    },
+    {
+      "src": "docs/upper_computer_modbus_register_map.md",
+      "dest": "docs/upper_computer_modbus_register_map.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 4988,
+      "sha256": "2470e1f7211e72b6185e650862928a0681f0b50bd442a376a4f33312ed42cd4e"
+    },
+    {
+      "src": "docs/upper_computer_rk_deployment_acceptance_guide.md",
+      "dest": "docs/upper_computer_rk_deployment_acceptance_guide.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 7673,
+      "sha256": "681b3086bd004d66f75e56bcea3d578bd9e8af36fab9d8797da79524e9ef3acc"
+    },
+    {
+      "src": "docs/upper_computer_security_key_lifecycle.md",
+      "dest": "docs/upper_computer_security_key_lifecycle.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 6701,
+      "sha256": "8d4aeaddb512777bffc4c2991e9f5c5fc960239937a36b8affc8e5ac3cd9f913"
+    },
+    {
+      "src": "docs/upper_computer_external_acceptance_checklist.md",
+      "dest": "docs/upper_computer_external_acceptance_checklist.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 9932,
+      "sha256": "9dfc564b1993b2d9100bf339c50582c748b744f95c36e94c3006795a5978b98d"
+    },
+    {
+      "src": "docs/upper_computer_visual_evidence_index.md",
+      "dest": "docs/upper_computer_visual_evidence_index.md",
+      "kind": "doc",
+      "status": "copied",
+      "bytes": 15053,
+      "sha256": "08b7ca5377597b498b9800c77fc04181821fe45d048da9e7424681dfd24cf4d5"
+    },
+    {
+      "src": "docs/upper_computer_training_material_plan.md",
+      "dest": "01-training/upper_computer_training_material_plan.md",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 10096,
+      "sha256": "14771b0ecd5bbd3017122d3e266a5e07fdb57cef2c3ca573a80d6cd452376b65"
+    },
+    {
+      "src": "docs/upper_computer_training_deck.md",
+      "dest": "01-training/upper_computer_training_deck.md",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 22469,
+      "sha256": "75bc5afb6d64f4300f67895814b9355c6b35468e32c9407909d15e714cf8fbc9"
+    },
+    {
+      "src": "docs/upper_computer_training_deck.pptx",
+      "dest": "01-training/upper_computer_training_deck.pptx",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 12259824,
+      "sha256": "805be12407cac20bdad22b58ddecaf31e6dc3ce7b7ec89d3cca4f923a0eaafb5"
+    },
+    {
+      "src": "docs/upper_computer_training_video_storyboard.md",
+      "dest": "01-training/upper_computer_training_video_storyboard.md",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 5043,
+      "sha256": "dd154e68369337210687041abc03f5f3f90aed4c2ec9648d3feee2eee5c9e1b7"
+    },
+    {
+      "src": "outputs/manual-20260607-training/video/upper_computer_training_video_draft.mp4",
+      "dest": "01-training/upper_computer_training_video_draft.mp4",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 3619865,
+      "sha256": "09d7152740dab66eb9379a41a9ed0105d5bdfac80f9753b6dee36bd136939cc7"
+    },
+    {
+      "src": "outputs/manual-20260607-training/video/upper_computer_training_video_manifest.json",
+      "dest": "01-training/upper_computer_training_video_manifest.json",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 2846,
+      "sha256": "81529539dd11fa731f8cc3f7d5093d0a57bee9659232513cfbf5a11df043a964"
+    },
+    {
+      "src": "docs/upper_computer_training_attendance_and_issues.md",
+      "dest": "01-training/upper_computer_training_attendance_and_issues.md",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 4745,
+      "sha256": "48b9a31d2c4fc8563f15b4a5fa47809c719048b47bb9ca861774c53c81b1ab4d"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/README.md",
+      "dest": "01-training/assets/README.md",
+      "kind": "training_asset_boundary",
+      "status": "copied",
+      "bytes": 1973,
+      "sha256": "74d20b27d209c03d3e7260fcda1380c4facb838d22936d5c5fca7f1f96628c57"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/reactor-hmi-system-overview.png",
+      "dest": "01-training/assets/reactor-hmi-system-overview.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1795063,
+      "sha256": "ba02d3451e3fb33e5e3b55503471423bbf41d9fee4e00195f6e1a361e2a3bc6b"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/reactor-workstation-hero.png",
+      "dest": "01-training/assets/reactor-workstation-hero.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1885309,
+      "sha256": "dd227bd2fb17c205b849e56b67c2c8f3e5a18669c63bdd9cd956c1cc13a7d4b3"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/hmi-safety-operations.png",
+      "dest": "01-training/assets/hmi-safety-operations.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1748193,
+      "sha256": "6ee1bf0439360e35f98d78e2a548c33dd5fc02b542071b0b224d2460e8825f4f"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/acceptance-training-signoff.png",
+      "dest": "01-training/assets/acceptance-training-signoff.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1757512,
+      "sha256": "dc36aab1164b14cdb7d793d6d67f0c15a7e4d47cd801d42671d9335517e5c433"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/industrial-interface-workstation.png",
+      "dest": "01-training/assets/industrial-interface-workstation.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1735104,
+      "sha256": "13d75b01a62431a02e035d2d7104a72095b6aeb2e128440b66ecb1ac254a48d2"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/safety-interlock-validation.png",
+      "dest": "01-training/assets/safety-interlock-validation.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1786190,
+      "sha256": "aae7e3366725feae985ece4c4de40b0e6a5053f14921721063900c0dac839a3a"
+    },
+    {
+      "src": "docs/assets/upper-computer-training/edge-ai-inference-pipeline.png",
+      "dest": "01-training/assets/edge-ai-inference-pipeline.png",
+      "kind": "training_asset",
+      "status": "copied",
+      "bytes": 1696383,
+      "sha256": "a571130020de5c9b4080126ba45ad1a51f97d665b3f6ea232686f3e99e1f0bd7"
+    },
+    {
+      "src": "docs/upper_computer_user_acceptance_script.md",
+      "dest": "02-uat/upper_computer_user_acceptance_script.md",
+      "kind": "uat",
+      "status": "copied",
+      "bytes": 19876,
+      "sha256": "773fa0f7024b682b0120e5eff603049f175fe2ad1643ca664121cbed35a9bb88"
+    },
+    {
+      "src": "output/playwright/vue-browser-matrix-verification.json",
+      "dest": "02-uat/vue-browser-matrix-verification.json",
+      "kind": "gate_report",
+      "optional": true,
+      "status": "copied",
+      "bytes": 44649,
+      "sha256": "bcc65f86b84a29932e0e9231016e99469057b297940edd084b5bc7098d8ce987"
+    },
+    {
+      "src": "output/acceptance/training-deliverables-report.json",
+      "dest": "02-uat/training-deliverables-report.json",
+      "kind": "gate_report",
+      "optional": true,
+      "status": "copied",
+      "bytes": 8572,
+      "sha256": "21d3e544d0e57a282b23a227feb7a6cadb601dd6a5c587372bc3a1cf518c6ffd"
+    },
+    {
+      "src": "output/acceptance/acceptance-report.json",
+      "dest": "02-uat/acceptance-report.json",
+      "kind": "gate_report",
+      "optional": true,
+      "status": "copied",
+      "bytes": 4991,
+      "sha256": "3ab28366de2a1fe1380d790b1ca7619e5bcd862b0c7a51cd8ddfc57bd420b563"
+    },
+    {
+      "src": "output/acceptance/acceptance-report.md",
+      "dest": "02-uat/acceptance-report.md",
+      "kind": "gate_report",
+      "optional": true,
+      "status": "copied",
+      "bytes": 2374,
+      "sha256": "54f81853746a31754beaa194525da3b45663672bca6d9c0bfd2f9e82f1bb2ffb"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/output/upper_computer_training_deck_manifest.json",
+      "dest": "01-training/upper_computer_training_deck_manifest.json",
+      "kind": "training",
+      "status": "copied",
+      "bytes": 3161,
+      "sha256": "93e0eac3e62eda50db7b3e011088b57f6e1288233e4d3a912980643b3835c674"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-01.png",
+      "dest": "01-training/preview/slide-01.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 197196,
+      "sha256": "43a7dc192b70482c4a0b3cb853221117577746746d7f238249ccc634e16ccb29"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-02.png",
+      "dest": "01-training/preview/slide-02.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 27126,
+      "sha256": "a42435002e96aafeb72c7342977b7714788b4cef0bf8cc60e65a999f26f8cf06"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-03.png",
+      "dest": "01-training/preview/slide-03.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 28801,
+      "sha256": "4e6664fafd1842d0d6901156b1903452c249e3229dcbea6cd600d070cca3c300"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-04.png",
+      "dest": "01-training/preview/slide-04.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 181319,
+      "sha256": "d916486de007d6c7edaa12310299ab718b6608a04c4aa2fafbcfca244bb865e3"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-05.png",
+      "dest": "01-training/preview/slide-05.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 184176,
+      "sha256": "a6dbd5015961ba5fbfea4f3ed4637d1b97ad77be6eaa0dad26fa31ec506441f9"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-06.png",
+      "dest": "01-training/preview/slide-06.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 175100,
+      "sha256": "b387514b9e15260cce77122119f40d572db39d1930b42da415d5fa3e495525d2"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-07.png",
+      "dest": "01-training/preview/slide-07.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 25501,
+      "sha256": "846c8e5683277ca8f33c09c93bc359bc1d0d7a66635a9f209c4081d073900600"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-08.png",
+      "dest": "01-training/preview/slide-08.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 32544,
+      "sha256": "69e1197abf0ff3820ad5eebab737b1f0782e7970c505b8b7bf09d6f725939ab4"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-09.png",
+      "dest": "01-training/preview/slide-09.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 26225,
+      "sha256": "37cdc82024aa62138c5a6057c326457f870881ebe40f84c8676a5283a31ca8e8"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-10.png",
+      "dest": "01-training/preview/slide-10.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 178752,
+      "sha256": "f3e5fd9f1c41a652637e80b07e488916d24e8c06396e14b3eced237bce7d7980"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-11.png",
+      "dest": "01-training/preview/slide-11.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 29172,
+      "sha256": "b3a65a231d0c14167669e486a6b9030b6fb0067f6ee590835ae82b48842e38fb"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-12.png",
+      "dest": "01-training/preview/slide-12.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 31218,
+      "sha256": "067f803fc7a398e219b7838669c9452aa2063f76da7b9e58885e2ed38247e94c"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-13.png",
+      "dest": "01-training/preview/slide-13.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 29979,
+      "sha256": "60901ea1ec4d7e656b0b088d38dbc2130c736f0288d1c96fbfe911c04bef17cd"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-14.png",
+      "dest": "01-training/preview/slide-14.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 31601,
+      "sha256": "5e450fec6125ff75b2e1b5120e75468deebead0668990e985848a670d48fc319"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-15.png",
+      "dest": "01-training/preview/slide-15.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 200080,
+      "sha256": "d84ca82a3b4508cf1ae8488c4bea949911f72d63003b14384fbee2440a31f1bd"
+    },
+    {
+      "src": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/preview/slide-16.png",
+      "dest": "01-training/preview/slide-16.png",
+      "kind": "training_preview",
+      "status": "copied",
+      "bytes": 199074,
+      "sha256": "17b2a1cb6ed8778b2f9d54b9f3759e75f597b04ba9cb4b80fcc9d7cbcd05d7d0"
+    },
+    {
+      "src": "output/acceptance/training-video-frames/frame-0005.png",
+      "dest": "01-training/video-frames/frame-0005.png",
+      "kind": "training_video_frame",
+      "optional": true,
+      "status": "copied",
+      "bytes": 548608,
+      "sha256": "5969013246220a17ba5eb5960bc730ac9ffe9e90ff45c8e662c2236965ea35bb"
+    },
+    {
+      "src": "output/acceptance/training-video-frames/frame-0235.png",
+      "dest": "01-training/video-frames/frame-0235.png",
+      "kind": "training_video_frame",
+      "optional": true,
+      "status": "copied",
+      "bytes": 171508,
+      "sha256": "e0dc8d687cdb547e7fc3e0487d9e94d88a0f0bf8b2c5d2717b61ab26dffbe9f6"
+    },
+    {
+      "src": "output/acceptance/training-video-frames/frame-0505.png",
+      "dest": "01-training/video-frames/frame-0505.png",
+      "kind": "training_video_frame",
+      "optional": true,
+      "status": "copied",
+      "bytes": 151281,
+      "sha256": "3e83aec7be9ad6d3eb5f6cea3228defc6fa9121a2c3dc7117c96e208c0865530"
+    },
+    {
+      "src": "output/acceptance/training-video-frames/frame-0735.png",
+      "dest": "01-training/video-frames/frame-0735.png",
+      "kind": "training_video_frame",
+      "optional": true,
+      "status": "copied",
+      "bytes": 433461,
+      "sha256": "f345c03999383f6cfc6ced3b4cb83599e220ef5b951c793fec969cfa09e7db6a"
+    }
+  ],
+  "remainingGapSummaryExcerpt": "硬件实机联调、真实 Qwen/GGUF/LoRA 模型资产与 RK 验收、外部平台验收、生产安全/性能可靠性、现场硬件报警验收、多端验收、现场最终版 PPTX/真实操作录屏视频和用户培训签字，这些需要硬件、算法、外部平台和验收环境共同补证。"
+}

@@ -60,7 +60,7 @@ xingshu perf smoke
 - 受保护命令需要 bearer token。
 - `xingshu data sample --duration-s ...` 通过正式 `/api/v1/reactor/:device_id/samples` 样本入口注入演示数据，不写控制目标。
 - `xingshu perf smoke` 可输出本机只读 API 往返和安全计算性能冒烟报告。
-- `xingshu ai train` 当前明确报告 LoRA 训练 API 缺失，符合真实状态。
+- `xingshu ai train --export-only` 可从本地 SQLite 导出 LoRA 训练 JSONL；配置 `XINGSHU_LOCAL_AI_TRAIN_SCRIPT` 或 `XINGSHU_LOCAL_AI_TRAIN_URL` 后可编排训练、写入 manifest，并在显式 `--promote` 时晋级候选 adapter。真实生产训练脚本、Qwen/GGUF/LoRA 资产和 RK 验收仍未完成。
 
 ## 3. REST API 验收
 

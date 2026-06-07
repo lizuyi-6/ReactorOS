@@ -1,14 +1,14 @@
 use std::{
     env,
     io::{Read, Write},
-    net::TcpStream,
+    net::{TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wait_timeout::ChildExt;
@@ -18,13 +18,21 @@ pub struct LocalAiStatus {
     pub enabled: bool,
     pub runtime: String,
     pub model_family: String,
+    pub mode: String,
     pub inference: LocalAiStageStatus,
     pub lora_adapter: LocalAiStageStatus,
     pub training: LocalAiStageStatus,
     pub conversion: LocalAiStageStatus,
     pub rk_validation: LocalAiStageStatus,
+    pub model_path: Option<String>,
+    pub adapter_path: Option<String>,
+    pub inference_endpoint: Option<String>,
+    pub training_endpoint: Option<String>,
+    pub ready_for_base_inference: bool,
+    pub ready_for_lora_inference: bool,
     pub ready_for_inference: bool,
     pub ready_for_training: bool,
+    pub ready_for_prd_lora: bool,
     pub missing: Vec<String>,
 }
 
@@ -107,8 +115,12 @@ impl LocalAiConfig {
             training_script: env_path("XINGSHU_LOCAL_AI_TRAIN_SCRIPT"),
             conversion_script: env_path("XINGSHU_LOCAL_AI_CONVERT_SCRIPT"),
             rk_report: env_path("XINGSHU_LOCAL_AI_RK_REPORT"),
-            http_endpoint: env::var("XINGSHU_LOCAL_AI_HTTP_URL").ok().filter(|s| !s.trim().is_empty()),
-            http_train_endpoint: env::var("XINGSHU_LOCAL_AI_TRAIN_URL").ok().filter(|s| !s.trim().is_empty()),
+            http_endpoint: env::var("XINGSHU_LOCAL_AI_HTTP_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
+            http_train_endpoint: env::var("XINGSHU_LOCAL_AI_TRAIN_URL")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
         }
     }
 
@@ -143,31 +155,92 @@ impl LocalAiConfig {
             "set XINGSHU_LOCAL_AI_RK_REPORT to the RK latency validation report",
             "RK validation report found",
         );
+        let http_inference = endpoint_status(
+            self.http_endpoint.as_deref(),
+            "set XINGSHU_LOCAL_AI_HTTP_URL when inference is served by llama-server",
+            "llama.cpp HTTP inference endpoint configured",
+        );
+        let http_training = endpoint_status(
+            self.http_train_endpoint.as_deref(),
+            "set XINGSHU_LOCAL_AI_TRAIN_URL when training is served by a local training service",
+            "local LoRA training HTTP endpoint configured",
+        );
 
-        let ready_for_inference = self.enabled && inference_bin.available && gguf_model.available;
-        let ready_for_training = self.enabled && training.available && conversion.available;
+        let command_inference_ready = inference_bin.available && gguf_model.available;
+        let base_inference_boundary_ready = if http_inference.configured {
+            http_inference.available
+        } else {
+            command_inference_ready
+        };
+        let ready_for_base_inference = self.enabled && base_inference_boundary_ready;
+        let ready_for_lora_inference = ready_for_base_inference && lora_adapter.available;
+        let command_training_ready =
+            training.available && conversion.available && gguf_model.available;
+        let training_boundary_ready = if http_training.configured {
+            http_training.available
+        } else {
+            command_training_ready
+        };
+        let ready_for_training = self.enabled && training_boundary_ready;
+        let ready_for_prd_lora =
+            ready_for_lora_inference && ready_for_training && rk_validation.available;
+        let mode = if ready_for_prd_lora {
+            "prd_lora_ready"
+        } else if ready_for_lora_inference {
+            "lora_inference_ready"
+        } else if ready_for_base_inference {
+            "base_inference_only"
+        } else if self.enabled {
+            "configured_not_ready"
+        } else {
+            "disabled"
+        }
+        .to_string();
         let mut missing = Vec::new();
         if !self.enabled {
             missing.push("XINGSHU_LOCAL_AI_ENABLED".to_string());
         }
-        collect_missing(&mut missing, "XINGSHU_LOCAL_AI_BIN", &inference_bin);
-        collect_missing(&mut missing, "XINGSHU_LOCAL_AI_GGUF", &gguf_model);
+        if !base_inference_boundary_ready {
+            if http_inference.configured {
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_HTTP_URL", &http_inference);
+            } else {
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_BIN", &inference_bin);
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_GGUF", &gguf_model);
+            }
+        }
         collect_missing(&mut missing, "XINGSHU_LOCAL_AI_LORA", &lora_adapter);
-        collect_missing(&mut missing, "XINGSHU_LOCAL_AI_TRAIN_SCRIPT", &training);
-        collect_missing(&mut missing, "XINGSHU_LOCAL_AI_CONVERT_SCRIPT", &conversion);
+        if !training_boundary_ready {
+            if http_training.configured {
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_TRAIN_URL", &http_training);
+            } else {
+                if !gguf_model.available {
+                    collect_missing(&mut missing, "XINGSHU_LOCAL_AI_GGUF", &gguf_model);
+                }
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_TRAIN_SCRIPT", &training);
+                collect_missing(&mut missing, "XINGSHU_LOCAL_AI_CONVERT_SCRIPT", &conversion);
+            }
+        }
         collect_missing(&mut missing, "XINGSHU_LOCAL_AI_RK_REPORT", &rk_validation);
 
         LocalAiStatus {
             enabled: self.enabled,
             runtime: self.runtime.clone(),
             model_family: self.model_family.clone(),
-            inference: merge_inference_status(inference_bin, gguf_model),
+            mode,
+            inference: merge_inference_status(inference_bin, gguf_model.clone(), http_inference),
+            model_path: gguf_model.path.clone(),
+            adapter_path: lora_adapter.path.clone(),
+            inference_endpoint: self.http_endpoint.clone(),
+            training_endpoint: self.http_train_endpoint.clone(),
             lora_adapter,
             training,
             conversion,
             rk_validation,
-            ready_for_inference,
+            ready_for_base_inference,
+            ready_for_lora_inference,
+            ready_for_inference: ready_for_lora_inference,
             ready_for_training,
+            ready_for_prd_lora,
             missing,
         }
     }
@@ -389,32 +462,46 @@ impl LocalAiConfig {
     }
 
     /// Minimal blocking HTTP POST with a JSON body and a timeout. This
-    /// is intentionally tiny: llama.cpp's /v1/chat/completions is plain
-    /// HTTP/1.1 with chunked or content-length JSON; we read the response
-    /// fully before returning.
+    /// is intentionally tiny and only supports plain HTTP; production
+    /// TLS termination should sit in front of llama-server if needed.
     fn http_post_json(&self, url: &str, body: &[u8], timeout: Duration) -> Result<Vec<u8>> {
         let (scheme, rest) = url.split_once("://").ok_or_else(|| {
-            anyhow!("llama.cpp endpoint must be http(s)://host:port/path; got {url}")
+            anyhow!("llama.cpp endpoint must be http://host:port/path; got {url}")
         })?;
+        if scheme != "http" {
+            bail!("llama.cpp endpoint currently supports plain http only; got scheme {scheme}");
+        }
         let (authority, path) = match rest.find('/') {
             Some(idx) => (&rest[..idx], &rest[idx..]),
             None => (rest, "/"),
         };
         let (host, port) = match authority.rfind(':') {
-            Some(idx) if !authority.starts_with('[') => (&authority[..idx], authority[idx + 1..].to_string()),
-            _ => (authority, if scheme == "https" { "443" } else { "80" }.to_string()),
+            Some(idx) if !authority.starts_with('[') => {
+                (&authority[..idx], authority[idx + 1..].to_string())
+            }
+            _ => (authority, "80".to_string()),
         };
-        let port: u16 = port.parse().with_context(|| format!("invalid port in {url}"))?;
+        if host.trim().is_empty() {
+            bail!("llama.cpp endpoint host must not be empty: {url}");
+        }
+        let port: u16 = port
+            .parse()
+            .with_context(|| format!("invalid port in {url}"))?;
         let stream_addr = format!("{host}:{port}");
         let started = Instant::now();
-        let mut stream = TcpStream::connect_timeout(&stream_addr.as_str().parse().unwrap(), timeout)
+        let socket_addr = stream_addr
+            .to_socket_addrs()
+            .with_context(|| format!("failed to resolve llama.cpp HTTP address {stream_addr}"))?
+            .next()
+            .ok_or_else(|| anyhow!("llama.cpp HTTP address resolved no sockets: {stream_addr}"))?;
+        let mut stream = TcpStream::connect_timeout(&socket_addr, timeout)
             .with_context(|| format!("failed to connect to llama.cpp HTTP {stream_addr}"))?;
         stream.set_read_timeout(Some(timeout)).ok();
         stream.set_write_timeout(Some(timeout)).ok();
-        let path_query = if path.contains('?') { path.to_string() } else { path.to_string() };
-        let mut request = format!(
+        let request = format!(
             "POST {path_query} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
+            body.len(),
+            path_query = path
         );
         stream
             .write_all(request.as_bytes())
@@ -430,11 +517,15 @@ impl LocalAiConfig {
                 timeout.as_millis()
             ));
         }
-        let text = String::from_utf8_lossy(&raw);
-        let header_end = text
-            .find("\r\n\r\n")
+        let header_end = raw
+            .windows(4)
+            .position(|bytes| bytes == b"\r\n\r\n")
             .ok_or_else(|| anyhow!("llama.cpp HTTP response had no header terminator"))?;
-        let status_line = &text[..text.find("\r\n").unwrap_or(header_end)];
+        let status_end = raw[..header_end]
+            .windows(2)
+            .position(|bytes| bytes == b"\r\n")
+            .unwrap_or(header_end);
+        let status_line = String::from_utf8_lossy(&raw[..status_end]);
         if !status_line.contains(" 200 ") {
             return Err(anyhow!(
                 "llama.cpp HTTP at {stream_addr} returned non-200: {status_line}"
@@ -496,19 +587,35 @@ fn truncate(value: &str) -> String {
 fn merge_inference_status(
     inference_bin: LocalAiStageStatus,
     gguf_model: LocalAiStageStatus,
+    http_inference: LocalAiStageStatus,
 ) -> LocalAiStageStatus {
-    let configured = inference_bin.configured && gguf_model.configured;
-    let available = inference_bin.available && gguf_model.available;
-    let path = match (&inference_bin.path, &gguf_model.path) {
+    let command_configured = inference_bin.configured && gguf_model.configured;
+    let command_available = inference_bin.available && gguf_model.available;
+    let configured = command_configured || http_inference.configured;
+    let available = command_available || http_inference.available;
+    let command_path = match (&inference_bin.path, &gguf_model.path) {
         (Some(bin), Some(model)) => Some(format!("{bin} | {model}")),
         (Some(bin), None) => Some(bin.clone()),
         (None, Some(model)) => Some(model.clone()),
         (None, None) => None,
     };
+    let path = if http_inference.available {
+        http_inference.path.clone()
+    } else {
+        command_path
+    };
     let detail = if available {
-        "local GGUF inference boundary is configured".to_string()
+        if http_inference.available {
+            http_inference.detail
+        } else {
+            "local GGUF base inference boundary is configured".to_string()
+        }
     } else if !inference_bin.available && !gguf_model.available {
-        "inference binary and GGUF model are missing".to_string()
+        if http_inference.configured {
+            http_inference.detail
+        } else {
+            "inference binary, GGUF model, and HTTP inference endpoint are missing".to_string()
+        }
     } else if !inference_bin.available {
         inference_bin.detail
     } else {
@@ -523,8 +630,35 @@ fn merge_inference_status(
 }
 
 fn collect_missing(missing: &mut Vec<String>, name: &str, status: &LocalAiStageStatus) {
-    if !status.available {
+    if !status.available && !missing.iter().any(|item| item == name) {
         missing.push(name.to_string());
+    }
+}
+
+fn endpoint_status(
+    endpoint: Option<&str>,
+    missing_detail: &'static str,
+    available_detail: &'static str,
+) -> LocalAiStageStatus {
+    match endpoint.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(endpoint) if endpoint.starts_with("http://") => LocalAiStageStatus {
+            configured: true,
+            available: true,
+            path: Some(endpoint.to_string()),
+            detail: available_detail.to_string(),
+        },
+        Some(endpoint) => LocalAiStageStatus {
+            configured: true,
+            available: false,
+            path: Some(endpoint.to_string()),
+            detail: "configured endpoint must use http:// in the current local bridge".to_string(),
+        },
+        None => LocalAiStageStatus {
+            configured: false,
+            available: false,
+            path: None,
+            detail: missing_detail.to_string(),
+        },
     }
 }
 
@@ -572,9 +706,20 @@ fn env_bool(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{
+        io::{BufRead, BufReader},
+        net::TcpListener,
+        sync::{Mutex, OnceLock},
+    };
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn missing_env_reports_not_ready_without_pretending_lora_exists() {
+        let _lock = env_lock().lock().unwrap();
         let _guard = EnvGuard::clear(&[
             "XINGSHU_LOCAL_AI_ENABLED",
             "XINGSHU_LOCAL_AI_BIN",
@@ -586,12 +731,288 @@ mod tests {
         ]);
         let status = LocalAiStatus::from_env();
         assert!(!status.enabled);
+        assert_eq!(status.mode, "disabled");
+        assert!(!status.ready_for_base_inference);
+        assert!(!status.ready_for_lora_inference);
         assert!(!status.ready_for_inference);
         assert!(!status.ready_for_training);
+        assert!(!status.ready_for_prd_lora);
         assert!(status
             .missing
             .contains(&"XINGSHU_LOCAL_AI_GGUF".to_string()));
         assert_eq!(status.model_family, "Qwen3.5-2B");
+    }
+
+    #[test]
+    fn http_endpoint_is_base_inference_not_lora_completion() {
+        let _lock = env_lock().lock().unwrap();
+        let _clear = EnvGuard::clear(&[
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT",
+            "XINGSHU_LOCAL_AI_HTTP_URL",
+            "XINGSHU_LOCAL_AI_TRAIN_URL",
+        ]);
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_HTTP_URL", "http://127.0.0.1:8080"),
+        ]);
+        let status = LocalAiStatus::from_env();
+        assert_eq!(status.mode, "base_inference_only");
+        assert!(status.ready_for_base_inference);
+        assert!(!status.ready_for_lora_inference);
+        assert!(!status.ready_for_inference);
+        assert!(!status.ready_for_training);
+        assert!(!status.ready_for_prd_lora);
+        assert_eq!(
+            status.inference_endpoint.as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+        assert!(!status.missing.contains(&"XINGSHU_LOCAL_AI_BIN".to_string()));
+        assert!(status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_LORA".to_string()));
+        assert!(status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_RK_REPORT".to_string()));
+    }
+
+    #[test]
+    fn complete_local_assets_mark_prd_lora_boundary_ready() -> Result<()> {
+        let _lock = env_lock().lock().unwrap();
+        let _clear = EnvGuard::clear(&[
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT",
+            "XINGSHU_LOCAL_AI_HTTP_URL",
+            "XINGSHU_LOCAL_AI_TRAIN_URL",
+        ]);
+        let temp_dir = tempfile::tempdir()?;
+        let bin = temp_dir.path().join("llama-cli.exe");
+        let model = temp_dir.path().join("qwen.gguf");
+        let lora = temp_dir.path().join("adapter.gguf");
+        let train = temp_dir.path().join("train_lora.py");
+        let convert = temp_dir.path().join("convert.py");
+        let rk_report = temp_dir.path().join("rk-report.md");
+        for file in [&bin, &model, &lora, &train, &convert, &rk_report] {
+            std::fs::write(file, "test")?;
+        }
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_BIN", bin.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_GGUF", model.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_LORA", lora.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_TRAIN_SCRIPT", train.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_CONVERT_SCRIPT", convert.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_RK_REPORT", rk_report.to_str().unwrap()),
+        ]);
+        let status = LocalAiStatus::from_env();
+        assert_eq!(status.mode, "prd_lora_ready");
+        assert!(status.ready_for_base_inference);
+        assert!(status.ready_for_lora_inference);
+        assert!(status.ready_for_inference);
+        assert!(status.ready_for_training);
+        assert!(status.ready_for_prd_lora);
+        assert!(status.missing.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn configured_http_inference_endpoint_overrides_local_files_for_readiness() -> Result<()> {
+        let _lock = env_lock().lock().unwrap();
+        let _clear = EnvGuard::clear(&[
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT",
+            "XINGSHU_LOCAL_AI_HTTP_URL",
+            "XINGSHU_LOCAL_AI_TRAIN_URL",
+        ]);
+        let temp_dir = tempfile::tempdir()?;
+        let bin = temp_dir.path().join("llama-cli.exe");
+        let model = temp_dir.path().join("qwen.gguf");
+        let lora = temp_dir.path().join("adapter.gguf");
+        std::fs::write(&bin, "test")?;
+        std::fs::write(&model, "test")?;
+        std::fs::write(&lora, "test")?;
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_BIN", bin.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_GGUF", model.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_LORA", lora.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_HTTP_URL", "https://127.0.0.1:8080"),
+        ]);
+        let status = LocalAiStatus::from_env();
+        assert_eq!(status.mode, "configured_not_ready");
+        assert!(!status.ready_for_base_inference);
+        assert!(!status.ready_for_lora_inference);
+        assert!(!status.ready_for_inference);
+        assert!(status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_HTTP_URL".to_string()));
+        assert!(!status.missing.contains(&"XINGSHU_LOCAL_AI_BIN".to_string()));
+        assert!(!status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_GGUF".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn configured_http_training_endpoint_overrides_local_scripts_for_readiness() -> Result<()> {
+        let _lock = env_lock().lock().unwrap();
+        let _clear = EnvGuard::clear(&[
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT",
+            "XINGSHU_LOCAL_AI_HTTP_URL",
+            "XINGSHU_LOCAL_AI_TRAIN_URL",
+        ]);
+        let temp_dir = tempfile::tempdir()?;
+        let bin = temp_dir.path().join("llama-cli.exe");
+        let model = temp_dir.path().join("qwen.gguf");
+        let lora = temp_dir.path().join("adapter.gguf");
+        let train = temp_dir.path().join("train_lora.py");
+        let convert = temp_dir.path().join("convert.py");
+        std::fs::write(&bin, "test")?;
+        std::fs::write(&model, "test")?;
+        std::fs::write(&lora, "test")?;
+        std::fs::write(&train, "test")?;
+        std::fs::write(&convert, "test")?;
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_BIN", bin.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_GGUF", model.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_LORA", lora.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_TRAIN_SCRIPT", train.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_CONVERT_SCRIPT", convert.to_str().unwrap()),
+            ("XINGSHU_LOCAL_AI_TRAIN_URL", "https://127.0.0.1:8090/train"),
+        ]);
+        let status = LocalAiStatus::from_env();
+        assert_eq!(status.mode, "lora_inference_ready");
+        assert!(status.ready_for_lora_inference);
+        assert!(!status.ready_for_training);
+        assert!(!status.ready_for_prd_lora);
+        assert!(status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_TRAIN_URL".to_string()));
+        assert!(!status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_TRAIN_SCRIPT".to_string()));
+        assert!(!status
+            .missing
+            .contains(&"XINGSHU_LOCAL_AI_CONVERT_SCRIPT".to_string()));
+        Ok(())
+    }
+
+    #[test]
+    fn http_inference_posts_chat_completion_request_and_parses_json() -> Result<()> {
+        let _lock = env_lock().lock().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        let addr = listener.local_addr()?;
+        let server = thread::spawn(move || -> Result<Value> {
+            let (mut stream, _) = listener.accept()?;
+            let mut reader = BufReader::new(stream.try_clone()?);
+            let mut request_line = String::new();
+            reader.read_line(&mut request_line)?;
+            let mut content_length = 0usize;
+            loop {
+                let mut header = String::new();
+                reader.read_line(&mut header)?;
+                let trimmed = header.trim_end();
+                if trimmed.is_empty() {
+                    break;
+                }
+                if let Some(value) = trimmed.strip_prefix("Content-Length: ") {
+                    content_length = value.parse()?;
+                }
+            }
+            let mut body = vec![0u8; content_length];
+            reader.read_exact(&mut body)?;
+            let request_json: Value = serde_json::from_slice(&body)?;
+            let response = serde_json::json!({
+                "id": "chatcmpl-test",
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "ok"
+                    }
+                }]
+            });
+            let response_bytes = serde_json::to_vec(&response)?;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                response_bytes.len()
+            )?;
+            stream.write_all(&response_bytes)?;
+            assert_eq!(
+                request_line.trim_end(),
+                "POST /v1/chat/completions HTTP/1.1"
+            );
+            Ok(request_json)
+        });
+
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_MODEL_FAMILY", "Qwen3.5-2B"),
+            (
+                "XINGSHU_LOCAL_AI_HTTP_URL",
+                &format!("http://127.0.0.1:{}", addr.port()),
+            ),
+        ]);
+        let report = run_inference_from_env(LocalAiInferenceRequest {
+            prompt: "给出反应釜控制建议".to_string(),
+            max_tokens: 32,
+            timeout: Duration::from_secs(3),
+        })?;
+        assert_eq!(report.exit_code, Some(0));
+        assert_eq!(
+            report.parsed_stdout.as_ref().and_then(|v| {
+                v.pointer("/choices/0/message/content")
+                    .and_then(|value| value.as_str())
+            }),
+            Some("ok")
+        );
+        let request_json = server.join().unwrap()?;
+        assert_eq!(request_json["model"], "Qwen3.5-2B");
+        assert_eq!(request_json["max_tokens"], 32);
+        assert_eq!(request_json["stream"], false);
+        assert_eq!(request_json["messages"][0]["role"], "user");
+        assert_eq!(request_json["messages"][0]["content"], "给出反应釜控制建议");
+        Ok(())
+    }
+
+    #[test]
+    fn http_inference_rejects_https_endpoint_without_panic() {
+        let _lock = env_lock().lock().unwrap();
+        let _guard = EnvGuard::set(&[
+            ("XINGSHU_LOCAL_AI_ENABLED", "true"),
+            ("XINGSHU_LOCAL_AI_HTTP_URL", "https://127.0.0.1:65535"),
+        ]);
+        let err = run_inference_from_env(LocalAiInferenceRequest {
+            prompt: "test".to_string(),
+            max_tokens: 1,
+            timeout: Duration::from_millis(50),
+        })
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("supports plain http only; got scheme https"));
     }
 
     struct EnvGuard {
@@ -599,6 +1020,18 @@ mod tests {
     }
 
     impl EnvGuard {
+        fn set(pairs: &[(&'static str, &str)]) -> Self {
+            let saved = pairs
+                .iter()
+                .map(|(name, value)| {
+                    let previous = env::var(name).ok();
+                    env::set_var(name, value);
+                    (*name, previous)
+                })
+                .collect();
+            Self { saved }
+        }
+
         fn clear(names: &[&'static str]) -> Self {
             let saved = names
                 .iter()

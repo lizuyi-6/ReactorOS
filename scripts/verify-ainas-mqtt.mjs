@@ -44,6 +44,27 @@ async function jsonRequest(path, init = {}) {
   return { status: response.status, body };
 }
 
+async function seedFreshSample() {
+  const payload = {
+    temperature_c: 60.2,
+    pressure_mpa: 0.55,
+    stirrer_rpm: 300,
+    shake_speed_cpm: 0,
+    tilt_state: 0,
+    flow_rate_l_min: 2.2,
+    product_concentration_percent: 12.4,
+    ph: 6.8
+  };
+  const response = await jsonRequest("/api/v1/reactor/reactor_001/samples", {
+    method: "POST",
+    body: payload
+  });
+  if (response.status !== 200) {
+    throw new Error(`sample seed failed: ${response.status} ${JSON.stringify(response.body).slice(0, 200)}`);
+  }
+  return payload;
+}
+
 (async () => {
   try {
     // 1. Login as engineer.
@@ -108,12 +129,14 @@ async function jsonRequest(path, init = {}) {
       last_error: mqttStatus.last_error ?? null
     }));
 
-    // 5. /api/live realtime check.
+    // 5. /api/live realtime check through the formal pipeline sample ingress.
+    const seeded = await seedFreshSample();
+    log("seed-live-sample", "ok", JSON.stringify({ temperature_c: seeded.temperature_c, pressure_mpa: seeded.pressure_mpa }));
     const live = await jsonRequest("/api/live?sample_limit=1");
     const liveOk = live.status === 200;
     log("live-realtime", liveOk ? "ok" : "fail", `status=${live.status}`);
 
-    result.ok = flags.ainas_ready && liveOk;
+    result.ok = flags.ainas_ready && flags.ainas_task_api && flags.rest_api && liveOk;
   } catch (error) {
     log("error", "fail", error instanceof Error ? error.message : String(error));
     result.ok = false;

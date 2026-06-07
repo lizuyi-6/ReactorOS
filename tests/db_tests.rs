@@ -1058,15 +1058,11 @@ async fn backup_and_restore_round_trip_preserves_data_and_schema() {
 
     // 1. Open a real Db, write a sample + a process step, take a backup.
     let db = Db::open(&db_path).unwrap();
-    db.insert_sample(
-        None,
-        &sample(1),
-    )
-    .await
-    .unwrap();
-    let pid = db
+    db.insert_sample(None, &sample(1)).unwrap();
+    let process = db
         .create_process("backup-roundtrip", "online VACUUM INTO acceptance")
         .unwrap();
+    let pid = process.id;
     let report = db.backup_to(&backup_path).unwrap();
     assert!(report.size_bytes > 0, "backup file must be non-empty");
     assert!(report.sha256.len() == 64, "sha256 must be 64 hex chars");
@@ -1077,37 +1073,39 @@ async fn backup_and_restore_round_trip_preserves_data_and_schema() {
     std::fs::remove_file(&db_path).unwrap();
     assert!(!db_path.exists(), "main db must be gone before restore");
 
-    // 3. Restore by re-opening at the same path; restore_from copies the
-    //    backup into place. (We construct the Db via the same code
-    //    path ops restore uses, by passing the same path to a fresh
-    //    Db::open.)
-    std::fs::copy(&backup_path, &db_path).unwrap();
-    let restored = Db::open(&db_path).unwrap();
-    let processes = restored.list_processes().unwrap();
-    assert_eq!(processes.len(), 1, "restored process row must survive");
-    assert_eq!(processes[0].id, pid);
+    // 3. Restore through the same static restore path used by the CLI.
+    std::fs::write(dir.path().join("reactor.sqlite3-wal"), b"stale wal").unwrap();
+    let restore_report = Db::restore_file(&backup_path, &db_path, true).unwrap();
+    assert_eq!(restore_report.integrity_check, "ok");
+    assert_eq!(
+        restore_report.sha256, report.sha256,
+        "restore_file should copy the backup image byte-for-byte before daemon migrations reopen it"
+    );
+    assert!(restore_report.tables.iter().any(|name| name == "processes"));
+    assert!(
+        !dir.path().join("reactor.sqlite3-wal").exists(),
+        "restore_file must remove stale WAL sidecar before replacement"
+    );
+    {
+        let restored = Db::open(&db_path).unwrap();
+        let processes = restored.list_processes().unwrap();
+        assert_eq!(processes.len(), 1, "restored process row must survive");
+        assert_eq!(processes[0].id, pid);
+    }
 
-    // 4. SHA-256 of the restored file must match the backup report.
-    let restored_hash = {
-        use sha2::{Digest, Sha256};
-        use std::io::Read;
-        let mut file = std::fs::File::open(&db_path).unwrap();
-        let mut hasher = Sha256::new();
-        let mut buf = [0u8; 64 * 1024];
-        loop {
-            let n = file.read(&mut buf).unwrap();
-            if n == 0 { break; }
-            hasher.update(&buf[..n]);
-        }
-        hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>()
-    };
-    assert_eq!(restored_hash, report.sha256, "restored file sha256 must match backup report");
-
-    // 5. restore_from also needs to refuse non-SQLite files and the
-    //    file should round-trip the table list (smoke check).
+    // 4. restore_file also needs to refuse non-SQLite files and refuse
+    //    overwrite=false when the target exists.
+    let err = Db::restore_file(&backup_path, &db_path, false).unwrap_err();
+    assert!(
+        err.to_string().contains("without overwrite"),
+        "restore_file must require overwrite=true for existing targets"
+    );
     std::fs::remove_file(&db_path).unwrap();
     let bogus = dir.path().join("bogus.bin");
     std::fs::write(&bogus, b"not a sqlite database").unwrap();
-    let err = restored.restore_from(&bogus, true).unwrap_err();
-    assert!(err.to_string().contains("magic header"), "restore_from must reject non-SQLite input");
+    let err = Db::restore_file(&bogus, &db_path, true).unwrap_err();
+    assert!(
+        err.to_string().contains("magic header"),
+        "restore_file must reject non-SQLite input"
+    );
 }

@@ -1,0 +1,802 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:18098/",
+  "apiBase": "http://127.0.0.1:18098",
+  "viewports": [
+    {
+      "name": "phone",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1440,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-monitor-en.png",
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3760,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-control-en.png",
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3205,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-ai-en.png",
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2088,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-history-en.png",
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1823,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-audit-en.png",
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3438,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-modbus-en.png",
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 4717,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-settings-en.png",
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1440,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-monitor-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3533,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-control-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3063,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-ai-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2014,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-history-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1802,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-audit-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3362,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-modbus-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 390,
+            "docClient": 390,
+            "contentScroll": 390,
+            "contentClient": 390,
+            "stackScroll": 358,
+            "stackClient": 358
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 4480,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-phone-settings-zh.png",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "tablet",
+      "viewport": {
+        "width": 820,
+        "height": 1180
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 828,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-monitor-en.png",
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2748,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-control-en.png",
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2190,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-ai-en.png",
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1639,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-history-en.png",
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1156,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-audit-en.png",
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2132,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-modbus-en.png",
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3284,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-settings-en.png",
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 828,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-monitor-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2694,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-control-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2190,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-ai-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1616,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-history-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 1156,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-audit-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 2132,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-modbus-zh.png",
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 820,
+            "docClient": 820,
+            "contentScroll": 820,
+            "contentClient": 820,
+            "stackScroll": 772,
+            "stackClient": 772
+          },
+          "scroll": {
+            "scrollable": true,
+            "before": 0,
+            "after": 3211,
+            "ok": true
+          },
+          "screenshot": "output/playwright/vue-mobile-tablet-settings-zh.png",
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "unexpectedConsoleMessages": []
+}

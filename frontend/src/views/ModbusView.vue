@@ -2,13 +2,17 @@
 import { computed, reactive, ref, watch } from "vue";
 import { usePlantStore } from "../stores/plant";
 import type { ApiRecord } from "../stores/plant";
-import { arrayAt, textAt } from "./view-utils";
+import { arrayAt, objectAt, textAt } from "./view-utils";
 
 const store = usePlantStore();
 const readRegisters = computed(() => arrayAt(store.modbus, "read_registers"));
 const writeRegisters = computed(() => arrayAt(store.modbus, "write_registers"));
 const registers = computed(() => [...readRegisters.value, ...writeRegisters.value]);
 const coils = computed(() => arrayAt(store.modbus, "coils"));
+const integrations = computed(() => objectAt(store.config, "integrations"));
+const mqttStatus = computed(() => objectAt(integrations.value, "mqtt_status"));
+const modbusTcpStatus = computed(() => objectAt(integrations.value, "modbus_tcp_status"));
+const localAi = computed(() => objectAt(store.config, "local_ai"));
 const submitting = ref(false);
 const actionMessage = ref("");
 const readResult = ref<ApiRecord | null>(null);
@@ -26,6 +30,16 @@ const writeOptions = computed(() =>
     value: textAt(register, "name", "")
   }))
 );
+
+const valueTranslations: Record<string, { zh: string; en: string }> = {
+  true: { zh: "是", en: "Yes" },
+  false: { zh: "否", en: "No" },
+  prd_lora_ready: { zh: "PRD LoRA/RK 闭环", en: "PRD LoRA/RK ready" },
+  lora_inference_ready: { zh: "LoRA 推理入口就绪", en: "LoRA inference ready" },
+  base_inference_only: { zh: "仅基础模型入口", en: "Base model only" },
+  configured_not_ready: { zh: "配置未就绪", en: "Configured, not ready" },
+  disabled: { zh: "未启用", en: "Disabled" }
+};
 
 const readOptions = computed(() =>
   registers.value.map((register) => ({
@@ -63,6 +77,26 @@ function resultRows(result: ApiRecord | null): { label: string; value: string }[
     { label: store.tr("原始值", "Raw"), value: textAt(result, "raw") },
     { label: store.tr("来源", "Source"), value: textAt(result, "source", textAt(result, "requested_value")) }
   ];
+}
+
+function boolText(value: unknown): string {
+  if (value === true || value === "true") return store.tr("是", "Yes");
+  if (value === false || value === "false") return store.tr("否", "No");
+  return value === null || value === undefined || value === "" ? "--" : String(value);
+}
+
+function localizedValue(value: string): string {
+  const translation = valueTranslations[value];
+  return translation ? store.tr(translation.zh, translation.en) : value;
+}
+
+function displayAt(source: unknown, key: string, fallback = "--"): string {
+  if (!source || typeof source !== "object") return fallback;
+  const value = (source as ApiRecord)[key];
+  if (typeof value === "boolean") return boolText(value);
+  if (Array.isArray(value)) return value.length ? value.join(", ") : fallback;
+  if (value && typeof value === "object") return JSON.stringify(value);
+  return value === null || value === undefined || value === "" ? fallback : localizedValue(String(value));
 }
 
 async function runModbusAction(action: () => Promise<void>, successMessage: string): Promise<void> {
@@ -166,6 +200,45 @@ async function writeSelectedRegister(): Promise<void> {
           <span>{{ row.label }}</span>
           <strong>{{ row.value }}</strong>
           <small>{{ store.tr("读回结果", "Read result") }}</small>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("集成接口状态", "Integration Surface") }}</h2>
+        <span>{{ store.tr("Modbus / MQTT / AINAS / LoRA 边界", "Modbus / MQTT / AINAS / LoRA boundary") }}</span>
+      </div>
+      <div class="target-summary integration-grid">
+        <div>
+          <span>Modbus TCP</span>
+          <strong>{{ boolText(integrations?.modbus_tcp) }}</strong>
+          <small>{{ displayAt(modbusTcpStatus, "bind") }}</small>
+        </div>
+        <div>
+          <span>MQTT</span>
+          <strong>{{ boolText(integrations?.mqtt) }}</strong>
+          <small>{{ displayAt(mqttStatus, "broker") }}</small>
+        </div>
+        <div>
+          <span>AINAS</span>
+          <strong>{{ boolText(integrations?.ainas_ready) }}</strong>
+          <small>{{ displayAt(integrations, "ainas_task_api") }}</small>
+        </div>
+        <div>
+          <span>{{ store.tr("基础模型入口", "Base inference") }}</span>
+          <strong>{{ displayAt(localAi, "ready_for_base_inference") }}</strong>
+          <small>{{ displayAt(localAi, "inference_endpoint", displayAt(localAi, "model_path")) }}</small>
+        </div>
+        <div>
+          <span>{{ store.tr("LoRA 推理闭环", "LoRA inference") }}</span>
+          <strong>{{ displayAt(localAi, "ready_for_lora_inference") }}</strong>
+          <small>{{ displayAt(localAi, "adapter_path") }}</small>
+        </div>
+        <div>
+          <span>{{ store.tr("PRD LoRA/RK 闭环", "PRD LoRA/RK") }}</span>
+          <strong>{{ displayAt(localAi, "ready_for_prd_lora") }}</strong>
+          <small>{{ displayAt(localAi, "mode") }}</small>
         </div>
       </div>
     </section>

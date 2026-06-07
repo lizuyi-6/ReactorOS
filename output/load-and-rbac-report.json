@@ -1,0 +1,137 @@
+{
+    "base":  "http://127.0.0.1:18300",
+    "concurrent_writers":  20,
+    "steps":  [
+                  {
+                      "status":  "ok",
+                      "name":  "preflight",
+                      "info":  "health=200"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "login",
+                      "info":  "engineer/operator/admin tokens obtained"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "concurrent-writes",
+                      "info":  "accepted=20 rejected=0 server5xx=0"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "audit-chain",
+                      "info":  "events=20 valid=True"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "forbidden-zone",
+                      "info":  "status=403"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac operator GET /api/audit/logs",
+                      "info":  "status=403"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac operator POST /api/control/targets",
+                      "info":  "status=200"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac operator POST /api/integrations/ainas/tasks",
+                      "info":  "status=403"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac engineer GET /api/audit/logs",
+                      "info":  "status=200"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac engineer POST /api/integrations/ainas/tasks",
+                      "info":  "status=200"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac admin POST /api/modbus/registers/target_temperature_c/write",
+                      "info":  "status=200"
+                  },
+                  {
+                      "status":  "ok",
+                      "name":  "rbac engineer POST /api/modbus/registers/target_temperature_c/write",
+                      "info":  "status=403"
+                  }
+              ],
+    "cases":  [
+                  {
+                      "expected_allow":  false,
+                      "ok":  true,
+                      "path":  "/api/audit/logs",
+                      "method":  "GET",
+                      "role":  "operator",
+                      "status":  403
+                  },
+                  {
+                      "expected_allow":  true,
+                      "ok":  true,
+                      "path":  "/api/control/targets",
+                      "method":  "POST",
+                      "role":  "operator",
+                      "status":  200
+                  },
+                  {
+                      "expected_allow":  false,
+                      "ok":  true,
+                      "path":  "/api/integrations/ainas/tasks",
+                      "method":  "POST",
+                      "role":  "operator",
+                      "status":  403
+                  },
+                  {
+                      "expected_allow":  true,
+                      "ok":  true,
+                      "path":  "/api/audit/logs",
+                      "method":  "GET",
+                      "role":  "engineer",
+                      "status":  200
+                  },
+                  {
+                      "expected_allow":  true,
+                      "ok":  true,
+                      "path":  "/api/integrations/ainas/tasks",
+                      "method":  "POST",
+                      "role":  "engineer",
+                      "status":  200
+                  },
+                  {
+                      "expected_allow":  true,
+                      "ok":  true,
+                      "path":  "/api/modbus/registers/target_temperature_c/write",
+                      "method":  "POST",
+                      "role":  "admin",
+                      "status":  200
+                  },
+                  {
+                      "expected_allow":  false,
+                      "ok":  true,
+                      "path":  "/api/modbus/registers/target_temperature_c/write",
+                      "method":  "POST",
+                      "role":  "engineer",
+                      "status":  403
+                  }
+              ],
+    "findings":  [
+
+                 ],
+    "ok":  true,
+    "concurrent_result":  {
+                              "accepted":  20,
+                              "rejected":  0,
+                              "note":  "no contention observed",
+                              "server5xx":  0
+                          },
+    "concurrent_writes_failed":  false,
+    "rbac_failed":  0,
+    "rbac_failed_count":  0
+}

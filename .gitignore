@@ -14,3 +14,38 @@ data/*.db-*
 config/reactor-edge.env
 .playwright-mcp/
 *.log
+
+# Local agent notes / ad-hoc audit exports
+/CLAUDE.md
+/code_audit_report.md
+
+# Generated training workspaces should not vendor dependencies.
+/outputs/**/node_modules/
+
+# Acceptance runs create scratch databases, logs and temporary extracted inputs.
+/output/**/*.log
+/output/**/*.sqlite3
+/output/**/*.sqlite3-*
+/output/**/*.db
+/output/**/*.db-*
+/output/**/*.key
+/output/**/*.snapshot
+/output/**/*.snapshot.sha256
+/output/**/bogus.bin
+/output/**/candidate-adapter.gguf
+/output/**/active-adapter.gguf
+/output/**/active-adapter.gguf.pre-promote-*.bak
+/output/**/fake-qwen.gguf
+/output/acceptance/acceptance-steps.jsonl
+/output/acceptance/backup-script/
+/output/acceptance/cli-smoke-*/
+/output/acceptance/logs/
+/output/acceptance/tmp/
+/output/acceptance/*.conf
+/output/local-run/*.log*
+/output/local-run/*payload.json
+/output/local-run/ainas-mqtt-selfcheck.json
+/output/team_*.txt
+/output/xingshu_prd_pdf.txt
+/output/index-script-check.js
+/output/frame-*.jpg

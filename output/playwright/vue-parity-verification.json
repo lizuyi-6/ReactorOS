@@ -1,0 +1,561 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:18098/",
+  "apiBase": "http://127.0.0.1:18098",
+  "pages": [
+    {
+      "name": "ai",
+      "route": "/ai",
+      "steps": [
+        {
+          "step": "open-en",
+          "status": "ok",
+          "info": "h1 \"AI Decision\" visible"
+        },
+        {
+          "step": "english-checks",
+          "status": "ok",
+          "info": "13/13 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-en",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-en",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "open-zh",
+          "status": "ok",
+          "info": "h1 \"AI 决策\" visible"
+        },
+        {
+          "step": "chinese-checks",
+          "status": "ok",
+          "info": "11/11 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-zh",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-zh",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        }
+      ],
+      "englishFound": [
+        "AI Decision",
+        "Latest Recommendation Provider",
+        "Recommendation Detail",
+        "AI Master Control",
+        "Dry-run",
+        "Execute",
+        "AI Result Review",
+        "Decision Summary",
+        "Action Review",
+        "Safety Gate",
+        "Recommended Targets",
+        "Experiment Plan",
+        "SOP Draft"
+      ],
+      "chineseFound": [
+        "AI 决策",
+        "最新推荐来源",
+        "推荐内容",
+        "AI 主控",
+        "AI 结果复核",
+        "决策摘要",
+        "动作复核",
+        "安全门控",
+        "推荐目标",
+        "实验方案",
+        "加载 SOP 草案"
+      ],
+      "englishMissing": [],
+      "chineseMissing": [],
+      "overflowEn": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "overflowZh": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "renderPlaceholdersEnAbsent": true,
+      "renderPlaceholdersZhAbsent": true,
+      "historyExportCsv": null,
+      "historyExportXlsx": null,
+      "monitorAlarmEn": null,
+      "monitorAlarmZh": null,
+      "realAlarmSeed": null,
+      "openEn": "ok",
+      "openZh": "ok",
+      "screenshots": {
+        "en": "output/playwright/vue-parity-ai-en.png",
+        "zh": "output/playwright/vue-parity-ai-zh.png"
+      }
+    },
+    {
+      "name": "history",
+      "route": "/history",
+      "steps": [
+        {
+          "step": "open-en",
+          "status": "ok",
+          "info": "h1 \"History Data\" visible"
+        },
+        {
+          "step": "english-checks",
+          "status": "ok",
+          "info": "15/15 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-en",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "history-export-csv",
+          "status": "ok",
+          "info": "batches-1780846993513.csv"
+        },
+        {
+          "step": "history-export-xlsx",
+          "status": "ok",
+          "info": "batches-1780846993677.xlsx"
+        },
+        {
+          "step": "overflow-en",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "open-zh",
+          "status": "ok",
+          "info": "h1 \"历史数据\" visible"
+        },
+        {
+          "step": "chinese-checks",
+          "status": "ok",
+          "info": "15/15 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-zh",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-zh",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        }
+      ],
+      "englishFound": [
+        "History Data",
+        "History Filters",
+        "Search",
+        "All statuses",
+        "Product ratio",
+        "All ratios",
+        "Clear Filters",
+        "Batch Detail",
+        "Export CSV",
+        "Export XLSX",
+        "Product Result Entry",
+        "Save Product Result",
+        "Product Outcomes",
+        "Yield %",
+        "Target temperature"
+      ],
+      "chineseFound": [
+        "历史数据",
+        "历史筛选",
+        "搜索",
+        "全部状态",
+        "产物比例",
+        "全部比例",
+        "清空筛选",
+        "批次详情",
+        "导出 CSV",
+        "导出 XLSX",
+        "产物结果录入",
+        "保存产物结果",
+        "产物结果",
+        "产率 %",
+        "目标温度"
+      ],
+      "englishMissing": [],
+      "chineseMissing": [],
+      "overflowEn": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "overflowZh": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "renderPlaceholdersEnAbsent": true,
+      "renderPlaceholdersZhAbsent": true,
+      "historyExportCsv": "ok",
+      "historyExportXlsx": "ok",
+      "monitorAlarmEn": null,
+      "monitorAlarmZh": null,
+      "realAlarmSeed": null,
+      "openEn": "ok",
+      "openZh": "ok",
+      "screenshots": {
+        "en": "output/playwright/vue-parity-history-en.png",
+        "zh": "output/playwright/vue-parity-history-zh.png"
+      }
+    },
+    {
+      "name": "settings",
+      "route": "/settings",
+      "steps": [
+        {
+          "step": "open-en",
+          "status": "ok",
+          "info": "h1 \"System Settings\" visible"
+        },
+        {
+          "step": "english-checks",
+          "status": "ok",
+          "info": "6/6 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-en",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-en",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "open-zh",
+          "status": "ok",
+          "info": "h1 \"系统配置\" visible"
+        },
+        {
+          "step": "chinese-checks",
+          "status": "ok",
+          "info": "6/6 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-zh",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-zh",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        }
+      ],
+      "englishFound": [
+        "System Settings",
+        "Storage Security",
+        "Forbidden Zones",
+        "Permission Matrix",
+        "Endpoint Matrix",
+        "Integration Status"
+      ],
+      "chineseFound": [
+        "系统配置",
+        "存储安全",
+        "禁区",
+        "权限矩阵",
+        "端点矩阵",
+        "集成状态"
+      ],
+      "englishMissing": [],
+      "chineseMissing": [],
+      "overflowEn": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "overflowZh": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "renderPlaceholdersEnAbsent": true,
+      "renderPlaceholdersZhAbsent": true,
+      "historyExportCsv": null,
+      "historyExportXlsx": null,
+      "monitorAlarmEn": null,
+      "monitorAlarmZh": null,
+      "realAlarmSeed": null,
+      "openEn": "ok",
+      "openZh": "ok",
+      "screenshots": {
+        "en": "output/playwright/vue-parity-settings-en.png",
+        "zh": "output/playwright/vue-parity-settings-zh.png"
+      }
+    },
+    {
+      "name": "monitor",
+      "route": "/monitor",
+      "steps": [
+        {
+          "step": "open-en",
+          "status": "ok",
+          "info": "h1 \"Realtime Monitor\" visible"
+        },
+        {
+          "step": "english-checks",
+          "status": "ok",
+          "info": "3/3 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-en",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-en",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "open-zh",
+          "status": "ok",
+          "info": "h1 \"实时监控\" visible"
+        },
+        {
+          "step": "chinese-checks",
+          "status": "ok",
+          "info": "3/3 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-zh",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-zh",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "real-alarm-seed",
+          "status": "ok",
+          "info": "types=[temperature_limit,pressure_limit]; attempts=1"
+        },
+        {
+          "step": "monitor-alarm-en",
+          "status": "ok",
+          "info": "missing=[none]"
+        },
+        {
+          "step": "real-alarm-seed",
+          "status": "ok",
+          "info": "types=[temperature_limit,pressure_limit]; attempts=1"
+        },
+        {
+          "step": "monitor-alarm-zh",
+          "status": "ok",
+          "info": "missing=[none]"
+        }
+      ],
+      "englishFound": [
+        "Realtime Monitor",
+        "Live Trend",
+        "Alarm Center"
+      ],
+      "chineseFound": [
+        "实时监控",
+        "实时趋势",
+        "报警中心"
+      ],
+      "englishMissing": [],
+      "chineseMissing": [],
+      "overflowEn": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "overflowZh": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "renderPlaceholdersEnAbsent": true,
+      "renderPlaceholdersZhAbsent": true,
+      "historyExportCsv": null,
+      "historyExportXlsx": null,
+      "monitorAlarmEn": {
+        "ok": true,
+        "missing": []
+      },
+      "monitorAlarmZh": {
+        "ok": true,
+        "missing": []
+      },
+      "realAlarmSeed": {
+        "ok": true,
+        "types": [
+          "temperature_limit",
+          "pressure_limit"
+        ],
+        "sample": {
+          "temperature_c": 170,
+          "pressure_mpa": 1.2,
+          "stirrer_rpm": 125.18,
+          "shake_speed_cpm": 30,
+          "tilt_state": 1,
+          "flow_rate_l_min": 2.42,
+          "product_concentration_percent": 11.1,
+          "ph": 6.15
+        },
+        "attempts": 1
+      },
+      "openEn": "ok",
+      "openZh": "ok",
+      "screenshots": {
+        "en": "output/playwright/vue-parity-monitor-en.png",
+        "zh": "output/playwright/vue-parity-monitor-zh.png"
+      }
+    },
+    {
+      "name": "modbus",
+      "route": "/modbus",
+      "steps": [
+        {
+          "step": "open-en",
+          "status": "ok",
+          "info": "h1 \"Modbus Debug\" visible"
+        },
+        {
+          "step": "english-checks",
+          "status": "ok",
+          "info": "7/7 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-en",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-en",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        },
+        {
+          "step": "open-zh",
+          "status": "ok",
+          "info": "h1 \"Modbus 调试\" visible"
+        },
+        {
+          "step": "chinese-checks",
+          "status": "ok",
+          "info": "7/7 missing=[none]"
+        },
+        {
+          "step": "render-placeholders-zh",
+          "status": "ok",
+          "info": "[object Object]"
+        },
+        {
+          "step": "overflow-zh",
+          "status": "ok",
+          "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+        }
+      ],
+      "englishFound": [
+        "Modbus Debug",
+        "Register Debug",
+        "Integration Surface",
+        "Base inference",
+        "LoRA inference",
+        "PRD LoRA/RK",
+        "Holding / Input Registers"
+      ],
+      "chineseFound": [
+        "Modbus 调试",
+        "寄存器调试",
+        "集成接口状态",
+        "基础模型入口",
+        "LoRA 推理闭环",
+        "PRD LoRA/RK 闭环",
+        "保持/输入寄存器"
+      ],
+      "englishMissing": [],
+      "chineseMissing": [],
+      "overflowEn": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "overflowZh": {
+        "docScroll": 1440,
+        "docClient": 1440,
+        "contentScroll": 1172,
+        "contentClient": 1172,
+        "stackScroll": 1124,
+        "stackClient": 1124,
+        "ok": true
+      },
+      "renderPlaceholdersEnAbsent": true,
+      "renderPlaceholdersZhAbsent": true,
+      "historyExportCsv": null,
+      "historyExportXlsx": null,
+      "monitorAlarmEn": null,
+      "monitorAlarmZh": null,
+      "realAlarmSeed": null,
+      "openEn": "ok",
+      "openZh": "ok",
+      "screenshots": {
+        "en": "output/playwright/vue-parity-modbus-en.png",
+        "zh": "output/playwright/vue-parity-modbus-zh.png"
+      }
+    }
+  ]
+}

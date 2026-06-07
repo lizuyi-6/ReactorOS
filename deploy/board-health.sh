@@ -66,6 +66,8 @@ if command -v systemctl >/dev/null 2>&1; then
   for svc in reactor-edge reactor-os-chromium; do
     printf '%s: %s\n' "$svc" "$(systemctl is-active "$svc" 2>/dev/null || true)"
   done
+  printf 'reactor-edge-backup.timer: %s\n' "$(systemctl is-active reactor-edge-backup.timer 2>/dev/null || true)"
+  systemctl list-timers reactor-edge-backup.timer --no-pager 2>/dev/null || true
 else
   echo "systemctl unavailable"
 fi

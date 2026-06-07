@@ -1,0 +1,151 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:15173/",
+  "apiBase": "http://127.0.0.1:18300",
+  "steps": [
+    {
+      "step": "login-engineer",
+      "status": "ok",
+      "info": "{\"role\":\"engineer\"}"
+    },
+    {
+      "step": "seed-fresh-sample",
+      "status": "ok"
+    },
+    {
+      "step": "open-control-en",
+      "status": "ok"
+    },
+    {
+      "step": "english-checks",
+      "status": "ok",
+      "info": "6/6 found; missing: none"
+    },
+    {
+      "step": "create-process",
+      "status": "ok",
+      "info": "{\"id\":1,\"name\":\"Vue process 1780841489233\"}"
+    },
+    {
+      "step": "select-created-process",
+      "status": "ok",
+      "info": "{\"id\":1,\"name\":\"Vue process 1780841489233\"}"
+    },
+    {
+      "step": "add-step",
+      "status": "ok",
+      "info": "{\"id\":1,\"name\":\"Step-1780841491662\"}"
+    },
+    {
+      "step": "seed-fresh-sample-before-start",
+      "status": "ok"
+    },
+    {
+      "step": "start-api-response",
+      "status": "ok",
+      "info": "{\"status\":200}"
+    },
+    {
+      "step": "start-process",
+      "status": "ok",
+      "info": "{\"active_batch_id\":1,\"auto_enabled\":true}"
+    },
+    {
+      "step": "stop-process",
+      "status": "ok",
+      "info": "{\"auto_enabled\":false,\"active_batch_id\":null}"
+    },
+    {
+      "step": "overflow-en",
+      "status": "ok",
+      "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+    },
+    {
+      "step": "chinese-checks",
+      "status": "ok",
+      "info": "6/6 found; missing: none"
+    },
+    {
+      "step": "overflow-zh",
+      "status": "ok",
+      "info": "{\"docScroll\":1440,\"docClient\":1440,\"contentScroll\":1172,\"contentClient\":1172,\"stackScroll\":1124,\"stackClient\":1124}"
+    },
+    {
+      "step": "summary",
+      "status": "ok",
+      "info": "{\"enOk\":true,\"zhOk\":true,\"lifecycleOk\":true,\"overflowOk\":true}"
+    }
+  ],
+  "englishChecks": [
+    "Process Control",
+    "Process Recipes",
+    "Process Detail",
+    "Create Process",
+    "Current Run",
+    "Recent Batches"
+  ],
+  "chineseChecks": [
+    "参数配置",
+    "工艺管理",
+    "工艺详情",
+    "创建工艺",
+    "当前运行",
+    "最近批次"
+  ],
+  "englishFound": [
+    "Process Control",
+    "Process Recipes",
+    "Process Detail",
+    "Create Process",
+    "Current Run",
+    "Recent Batches"
+  ],
+  "chineseFound": [
+    "参数配置",
+    "工艺管理",
+    "工艺详情",
+    "创建工艺",
+    "当前运行",
+    "最近批次"
+  ],
+  "englishMissing": [],
+  "chineseMissing": [],
+  "processCreated": {
+    "id": 1,
+    "name": "Vue process 1780841489233"
+  },
+  "stepAdded": {
+    "id": 1,
+    "name": "Step-1780841491662"
+  },
+  "processStarted": {
+    "active_batch_id": 1,
+    "auto_enabled": true
+  },
+  "processStopped": {
+    "auto_enabled": false,
+    "active_batch_id": null
+  },
+  "horizontalOverflow": {
+    "docScroll": 1440,
+    "docClient": 1440,
+    "contentScroll": 1172,
+    "contentClient": 1172,
+    "stackScroll": 1124,
+    "stackClient": 1124,
+    "ok": true
+  },
+  "horizontalOverflowZh": {
+    "docScroll": 1440,
+    "docClient": 1440,
+    "contentScroll": 1172,
+    "contentClient": 1172,
+    "stackScroll": 1124,
+    "stackClient": 1124,
+    "ok": true
+  },
+  "screenshots": {
+    "en": "output/playwright/vue-process-lifecycle-en.png",
+    "zh": "output/playwright/vue-process-lifecycle-zh.png"
+  }
+}

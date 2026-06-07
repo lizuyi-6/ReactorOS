@@ -1,0 +1,39 @@
+{
+  "output": "X:\\tianhks\\docs\\upper_computer_training_deck.pptx",
+  "bytes": 12259824,
+  "slideCount": 16,
+  "slideSize": {
+    "width": 1280,
+    "height": 720
+  },
+  "source": "X:\\tianhks\\docs\\upper_computer_training_deck.md",
+  "imageAssets": {
+    "overview": "X:\\tianhks\\docs\\assets\\upper-computer-training\\reactor-hmi-system-overview.png",
+    "hero": "X:\\tianhks\\docs\\assets\\upper-computer-training\\reactor-workstation-hero.png",
+    "safety": "X:\\tianhks\\docs\\assets\\upper-computer-training\\hmi-safety-operations.png",
+    "signoff": "X:\\tianhks\\docs\\assets\\upper-computer-training\\acceptance-training-signoff.png",
+    "interface": "X:\\tianhks\\docs\\assets\\upper-computer-training\\industrial-interface-workstation.png",
+    "interlock": "X:\\tianhks\\docs\\assets\\upper-computer-training\\safety-interlock-validation.png",
+    "edgeAi": "X:\\tianhks\\docs\\assets\\upper-computer-training\\edge-ai-inference-pipeline.png"
+  },
+  "previewDir": "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview",
+  "previewPaths": [
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-01.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-02.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-03.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-04.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-05.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-06.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-07.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-08.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-09.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-10.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-11.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-12.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-13.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-14.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-15.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-16.png"
+  ],
+  "generatedAt": "2026-06-07T13:43:28.052Z"
+}

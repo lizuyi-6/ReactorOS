@@ -17,6 +17,13 @@ export interface ModbusWritePayload {
   reason: string;
 }
 
+export interface ProductResultPayload {
+  batch_id: number;
+  yield_percent: number;
+  product_ratio: number;
+  notes?: string;
+}
+
 export interface CreateProcessPayload {
   name: string;
   description: string;
@@ -47,6 +54,7 @@ interface RequestOptions {
   body?: unknown;
   auth?: boolean;
   allowFailure?: boolean;
+  accept?: string;
 }
 
 interface AuditQueryOptions {
@@ -178,7 +186,7 @@ export const usePlantStore = defineStore("plant", () => {
 
   async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
     const headers = new Headers();
-    headers.set("Accept", "text/csv");
+    headers.set("Accept", options.accept ?? "application/octet-stream");
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
     if (options.auth !== false && token.value) headers.set("Authorization", `Bearer ${token.value}`);
 
@@ -369,6 +377,17 @@ export const usePlantStore = defineStore("plant", () => {
     return request<ApiRecord>("/api/ai/experiment-plan");
   }
 
+  async function saveProductResult(payload: ProductResultPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/product-results", {
+      method: "POST",
+      body: payload
+    });
+    recommendation.value = response;
+    await loadBatches();
+    await refreshProtected();
+    return response;
+  }
+
   async function loadBatches(): Promise<ApiRecord> {
     const response = await request<ApiRecord>("/api/batches");
     batches.value = response;
@@ -381,6 +400,16 @@ export const usePlantStore = defineStore("plant", () => {
 
   async function exportBatchReport(batchId: number): Promise<Blob> {
     return requestBlob(`/api/batches/${batchId}/report.md`);
+  }
+
+  async function exportBatchesCsv(): Promise<Blob> {
+    return requestBlob("/api/batches/export.csv", { accept: "text/csv" });
+  }
+
+  async function exportBatchesXlsx(): Promise<Blob> {
+    return requestBlob("/api/batches/export.xlsx", {
+      accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
   }
 
   async function loadProcesses(): Promise<ApiRecord[]> {
@@ -485,8 +514,11 @@ export const usePlantStore = defineStore("plant", () => {
     generateRecommendation,
     applyAiControl,
     loadExperimentPlan,
+    saveProductResult,
     loadBatches,
     loadBatchDetail,
+    exportBatchesCsv,
+    exportBatchesXlsx,
     exportBatchReport,
     loadProcesses,
     loadProcessDetail,

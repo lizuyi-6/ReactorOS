@@ -32,9 +32,9 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
 
 const READ_CONNECTIONS: usize = 2;
-const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
-const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
+const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(15);
+pub const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
+pub const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
 const DB_ENCRYPTION_AAD: &[u8] = b"xingshu:integration_tasks:json:v1";
 const AUDIT_CHAIN_CHECK_LIMIT: usize = 10_000;
 const SCHEMA_SQL: &str = r#"
@@ -214,7 +214,7 @@ pub struct Db {
 }
 
 #[derive(Clone)]
-struct DbEncryption {
+pub struct DbEncryption {
     cipher: Aes256Gcm,
     key_source: &'static str,
 }
@@ -225,6 +225,7 @@ struct DbInner {
     next_read: AtomicUsize,
     encryption: Option<DbEncryption>,
     sqlx_pool: Option<sqlx::SqlitePool>,
+    sqlx_write_lock: AsyncMutex<()>,
     audit_write_lock: AsyncMutex<()>,
     process_write_lock: AsyncMutex<()>,
     /// Path the main database file was opened from, captured by the
@@ -493,6 +494,7 @@ impl Db {
                 next_read: AtomicUsize::new(0),
                 encryption,
                 sqlx_pool,
+                sqlx_write_lock: AsyncMutex::new(()),
                 audit_write_lock: AsyncMutex::new(()),
                 process_write_lock: AsyncMutex::new(()),
                 db_path,
@@ -551,9 +553,7 @@ impl Db {
         let conn = self.write_conn()?;
         conn.execute_batch(&sql)
             .with_context(|| format!("VACUUM INTO failed for {}", destination.display()))?;
-        let size = std::fs::metadata(destination)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let size = std::fs::metadata(destination).map(|m| m.len()).unwrap_or(0);
         Ok(BackupReport {
             source: self.path_display(),
             destination: destination.display().to_string(),
@@ -564,14 +564,14 @@ impl Db {
         })
     }
 
-    /// Restore from a SQLite backup file produced by `backup_to` or by
-    /// any tool that emits a valid SQLite image (file copy, sqlite3
-    /// `.backup`, etc.). The function refuses files that do not look
-    /// like SQLite and refuses to overwrite an existing target without
-    /// `overwrite = true`.
-    pub fn restore_from(
-        &self,
+    /// Restore a SQLite file from a backup image. This is intended for
+    /// disaster recovery after the daemon has been stopped: it validates
+    /// the source image, preserves the existing main DB file, removes
+    /// stale WAL/SHM/JOURNAL sidecars, copies the backup into place, and
+    /// opens the restored DB to verify the schema and integrity check.
+    pub fn restore_file(
         source: &Path,
+        destination: &Path,
         overwrite: bool,
     ) -> Result<RestoreReport> {
         if !source.is_file() {
@@ -580,40 +580,74 @@ impl Db {
                 source.display()
             ));
         }
-        if self.path_exists() && !overwrite {
+        if destination.exists() && !overwrite {
             return Err(anyhow!(
                 "refusing to restore over an existing database without overwrite = true: {}",
-                self.path_display()
+                destination.display()
             ));
         }
-        let head = std::fs::read(source)
-            .with_context(|| format!("failed to read {}", source.display()))?;
-        if !head.starts_with(b"SQLite format 3\0") {
+        let mut magic = [0u8; 16];
+        std::fs::File::open(source)
+            .with_context(|| format!("failed to open {}", source.display()))?
+            .read_exact(&mut magic)
+            .with_context(|| format!("failed to read SQLite magic from {}", source.display()))?;
+        if magic != *b"SQLite format 3\0" {
             return Err(anyhow!(
                 "restore source {} is not a SQLite file (magic header missing)",
                 source.display()
             ));
         }
-        if self.path_exists() {
-            let backup_existing = self.path_with_extension("pre-restore");
-            std::fs::copy(self.path_ref(), &backup_existing).with_context(|| {
+
+        if let Some(parent) = destination.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("failed to create restore target dir {}", parent.display())
+                })?;
+            }
+        }
+
+        let mut preserved_existing = None;
+        if destination.exists() {
+            let backup_existing = path_with_file_suffix(destination, "pre-restore");
+            std::fs::copy(destination, &backup_existing).with_context(|| {
                 format!(
                     "failed to preserve existing db {} -> {}",
-                    self.path_display(),
+                    destination.display(),
                     backup_existing.display()
                 )
             })?;
+            preserved_existing = Some(backup_existing.display().to_string());
         }
-        std::fs::copy(source, self.path_ref()).with_context(|| {
+
+        let mut removed_sidecars = Vec::new();
+        for suffix in ["-wal", "-shm", "-journal"] {
+            let sidecar = path_with_raw_suffix(destination, suffix);
+            if sidecar.exists() {
+                std::fs::remove_file(&sidecar).with_context(|| {
+                    format!(
+                        "failed to remove stale SQLite sidecar {}",
+                        sidecar.display()
+                    )
+                })?;
+                removed_sidecars.push(sidecar.display().to_string());
+            }
+        }
+
+        std::fs::copy(source, destination).with_context(|| {
             format!(
                 "failed to copy {} -> {}",
                 source.display(),
-                self.path_display()
+                destination.display()
             )
         })?;
-        // Verify the restored file opens and has the expected schema.
-        let conn = rusqlite::Connection::open(self.path_ref())
-            .with_context(|| format!("restored db is unreadable: {}", self.path_display()))?;
+        let conn = rusqlite::Connection::open(destination)
+            .with_context(|| format!("restored db is unreadable: {}", destination.display()))?;
+        let integrity: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .context("failed to run SQLite integrity_check")?;
+        if integrity != "ok" {
+            return Err(anyhow!("restored db failed integrity_check: {integrity}"));
+        }
         let tables = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
             .query_map([], |row| row.get::<_, String>(0))?
@@ -621,13 +655,21 @@ impl Db {
             .context("failed to list restored tables")?;
         Ok(RestoreReport {
             source: source.display().to_string(),
-            destination: self.path_display(),
-            size_bytes: std::fs::metadata(self.path_ref())
-                .map(|m| m.len())
-                .unwrap_or(0),
-            sha256: sha256_hex(self.path_ref())?,
+            destination: destination.display().to_string(),
+            preserved_existing,
+            removed_sidecars,
+            integrity_check: integrity,
+            size_bytes: std::fs::metadata(destination).map(|m| m.len()).unwrap_or(0),
+            sha256: sha256_hex(destination)?,
             tables,
         })
+    }
+
+    /// Restore into this Db's recorded path. Prefer `restore_file` from
+    /// CLI/operations code so no live SQLite connection is open while
+    /// replacing the target file.
+    pub fn restore_from(&self, source: &Path, overwrite: bool) -> Result<RestoreReport> {
+        Self::restore_file(source, self.path_ref(), overwrite)
     }
 
     /// Returns the on-disk path of the main database file as a String
@@ -642,28 +684,11 @@ impl Db {
         // we surface the inner path directly via a small accessor on
         // DbInner; if it is not yet recorded we fall back to a
         // placeholder so reports do not crash.
-        self.inner.db_path
+        self.inner
+            .db_path
             .as_deref()
             .map(Path::new)
             .unwrap_or_else(|| Path::new("<unknown>"))
-    }
-
-    fn path_with_extension(&self, suffix: &str) -> PathBuf {
-        let p = self.path_ref().to_path_buf();
-        let mut name = p
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "reactor.sqlite3".to_string());
-        name.push('.');
-        name.push_str(suffix);
-        p.with_file_name(name)
-    }
-
-    fn path_exists(&self) -> bool {
-        self.inner.db_path
-            .as_deref()
-            .map(|p| std::path::Path::new(p).is_file())
-            .unwrap_or(false)
     }
 
     /// Apply the same schema migration to the SQLx pool so SQLx-only callers
@@ -674,7 +699,12 @@ impl Db {
         let Some(pool) = self.inner.sqlx_pool.as_ref() else {
             return Ok(());
         };
-        let statements: Vec<&str> = SCHEMA_SQL.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let statements: Vec<&str> = SCHEMA_SQL
+            .split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
         for statement in statements {
             sqlx::query(statement)
                 .execute(pool)
@@ -1332,6 +1362,7 @@ impl Db {
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_sample(batch_id, sample);
         };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
         sqlx::query(
             r#"
             INSERT INTO sensor_samples
@@ -1619,6 +1650,7 @@ impl Db {
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_control_event(batch_id, event_type, command, reason);
         };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
         let created_at = Utc::now().to_rfc3339();
         let mut tx = pool
@@ -3508,9 +3540,31 @@ pub struct BackupReport {
 pub struct RestoreReport {
     pub source: String,
     pub destination: String,
+    pub preserved_existing: Option<String>,
+    pub removed_sidecars: Vec<String>,
+    pub integrity_check: String,
     pub size_bytes: u64,
     pub sha256: String,
     pub tables: Vec<String>,
+}
+
+fn path_with_file_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "reactor.sqlite3".to_string());
+    name.push('.');
+    name.push_str(suffix);
+    path.with_file_name(name)
+}
+
+fn path_with_raw_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "reactor.sqlite3".to_string());
+    name.push_str(suffix);
+    path.with_file_name(name)
 }
 
 fn sha256_hex(path: &Path) -> Result<String> {
@@ -3534,14 +3588,14 @@ fn sha256_hex(path: &Path) -> Result<String> {
 }
 
 impl DbEncryption {
-    fn from_key(key: [u8; 32], key_source: &'static str) -> Self {
+    pub fn from_key(key: [u8; 32], key_source: &'static str) -> Self {
         Self {
             cipher: Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key)),
             key_source,
         }
     }
 
-    fn encrypt_json(&self, plaintext: &str) -> Result<String> {
+    pub fn encrypt_json(&self, plaintext: &str) -> Result<String> {
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = self
             .cipher
@@ -3566,7 +3620,7 @@ impl DbEncryption {
             .map_err(rusqlite_conversion_error)
     }
 
-    fn decrypt_json_if_needed_anyhow(&self, value: &str) -> Result<String> {
+    pub fn decrypt_json_if_needed_anyhow(&self, value: &str) -> Result<String> {
         let Some(envelope) = value.strip_prefix(ENCRYPTED_JSON_PREFIX) else {
             return Ok(value.to_string());
         };
@@ -3611,7 +3665,7 @@ fn db_encryption_from_env() -> Result<Option<DbEncryption>> {
     }
 }
 
-fn parse_encryption_key(value: &str) -> Result<[u8; 32]> {
+pub fn parse_encryption_key(value: &str) -> Result<[u8; 32]> {
     let trimmed = value.trim();
     if trimmed.len() == 32 {
         return bytes_to_key(trimmed.as_bytes());

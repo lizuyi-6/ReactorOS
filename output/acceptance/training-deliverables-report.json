@@ -1,0 +1,285 @@
+{
+  "status": "ok",
+  "generatedAt": "2026-06-07T14:10:37.224Z",
+  "root": "X:\\tianhks",
+  "checkedFiles": [
+    "docs/upper_computer_training_deck.md",
+    "docs/upper_computer_user_acceptance_script.md",
+    "docs/upper_computer_training_attendance_and_issues.md",
+    "docs/upper_computer_field_delivery_execution_pack.md",
+    "docs/upper_computer_field_evidence_checklist.md",
+    "docs/upper_computer_field_evidence_checklist.json",
+    "docs/upper_computer_training_video_storyboard.md",
+    "docs/assets/upper-computer-training/README.md",
+    "docs/assets/upper-computer-training/reactor-hmi-system-overview.png",
+    "docs/assets/upper-computer-training/reactor-workstation-hero.png",
+    "docs/assets/upper-computer-training/hmi-safety-operations.png",
+    "docs/assets/upper-computer-training/acceptance-training-signoff.png",
+    "docs/assets/upper-computer-training/industrial-interface-workstation.png",
+    "docs/assets/upper-computer-training/safety-interlock-validation.png",
+    "docs/assets/upper-computer-training/edge-ai-inference-pipeline.png",
+    "output/playwright/vue-browser-matrix-verification.json",
+    "scripts/generate-upper-computer-training-deck.mjs",
+    "scripts/generate-upper-computer-training-video.mjs",
+    "scripts/package-upper-computer-delivery.mjs",
+    "docs/upper_computer_training_deck.pptx",
+    "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/output/upper_computer_training_deck_manifest.json",
+    "outputs/manual-20260607-training/video/upper_computer_training_video_draft.mp4",
+    "outputs/manual-20260607-training/video/upper_computer_training_video_manifest.json",
+    "output/acceptance/field-delivery-local-draft/00-summary/upper_computer_delivery_manifest.json"
+  ],
+  "reportPath": "X:\\tianhks\\output\\acceptance\\training-deliverables-report.json",
+  "generated": {
+    "deck": {
+      "attempted": false,
+      "exitCode": null,
+      "reason": "existing PPTX, manifest, and previews found"
+    },
+    "video": {
+      "attempted": false,
+      "exitCode": null,
+      "reason": "existing video draft and manifest found"
+    },
+    "deliveryPackage": {
+      "attempted": false,
+      "exitCode": null,
+      "reason": "existing local draft delivery package manifest found"
+    }
+  },
+  "checks": [
+    {
+      "name": "docs/upper_computer_training_deck.md",
+      "status": "ok",
+      "bytes": 22470
+    },
+    {
+      "name": "docs/upper_computer_user_acceptance_script.md",
+      "status": "ok",
+      "bytes": 19876
+    },
+    {
+      "name": "docs/upper_computer_training_attendance_and_issues.md",
+      "status": "ok",
+      "bytes": 4746
+    },
+    {
+      "name": "docs/upper_computer_field_delivery_execution_pack.md",
+      "status": "ok",
+      "bytes": 8896
+    },
+    {
+      "name": "docs/upper_computer_field_evidence_checklist.md",
+      "status": "ok",
+      "bytes": 5019
+    },
+    {
+      "name": "docs/upper_computer_field_evidence_checklist.json",
+      "status": "ok",
+      "bytes": 9929
+    },
+    {
+      "name": "docs/upper_computer_training_video_storyboard.md",
+      "status": "ok",
+      "bytes": 5044
+    },
+    {
+      "name": "docs/assets/upper-computer-training/README.md",
+      "status": "ok",
+      "bytes": 1973
+    },
+    {
+      "name": "docs/assets/upper-computer-training/reactor-hmi-system-overview.png",
+      "status": "ok",
+      "bytes": 1795063
+    },
+    {
+      "name": "docs/assets/upper-computer-training/reactor-workstation-hero.png",
+      "status": "ok",
+      "bytes": 1885309
+    },
+    {
+      "name": "docs/assets/upper-computer-training/hmi-safety-operations.png",
+      "status": "ok",
+      "bytes": 1748193
+    },
+    {
+      "name": "docs/assets/upper-computer-training/acceptance-training-signoff.png",
+      "status": "ok",
+      "bytes": 1757512
+    },
+    {
+      "name": "docs/assets/upper-computer-training/industrial-interface-workstation.png",
+      "status": "ok",
+      "bytes": 1735104
+    },
+    {
+      "name": "docs/assets/upper-computer-training/safety-interlock-validation.png",
+      "status": "ok",
+      "bytes": 1786190
+    },
+    {
+      "name": "docs/assets/upper-computer-training/edge-ai-inference-pipeline.png",
+      "status": "ok",
+      "bytes": 1696383
+    },
+    {
+      "name": "output/playwright/vue-browser-matrix-verification.json",
+      "status": "ok",
+      "bytes": 42675
+    },
+    {
+      "name": "scripts/generate-upper-computer-training-deck.mjs",
+      "status": "ok",
+      "bytes": 26141
+    },
+    {
+      "name": "scripts/generate-upper-computer-training-video.mjs",
+      "status": "ok",
+      "bytes": 4565
+    },
+    {
+      "name": "scripts/package-upper-computer-delivery.mjs",
+      "status": "ok",
+      "bytes": 11246
+    },
+    {
+      "name": "docs/upper_computer_training_deck.pptx",
+      "status": "ok",
+      "bytes": 12259824
+    },
+    {
+      "name": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/output/upper_computer_training_deck_manifest.json",
+      "status": "ok",
+      "bytes": 3161
+    },
+    {
+      "name": "outputs/manual-20260607-training/video/upper_computer_training_video_draft.mp4",
+      "status": "ok",
+      "bytes": 3619865
+    },
+    {
+      "name": "outputs/manual-20260607-training/video/upper_computer_training_video_manifest.json",
+      "status": "ok",
+      "bytes": 2846
+    },
+    {
+      "name": "output/acceptance/field-delivery-local-draft/00-summary/upper_computer_delivery_manifest.json",
+      "status": "ok",
+      "bytes": 20144
+    },
+    {
+      "name": "docs/upper_computer_training_deck.md text markers",
+      "status": "ok",
+      "checked": 7,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_user_acceptance_script.md text markers",
+      "status": "ok",
+      "checked": 4,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_training_attendance_and_issues.md text markers",
+      "status": "ok",
+      "checked": 4,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_field_delivery_execution_pack.md text markers",
+      "status": "ok",
+      "checked": 3,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_field_evidence_checklist.md text markers",
+      "status": "ok",
+      "checked": 4,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_training_video_storyboard.md text markers",
+      "status": "ok",
+      "checked": 4,
+      "missing": []
+    },
+    {
+      "name": "docs/assets/upper-computer-training/README.md text markers",
+      "status": "ok",
+      "checked": 9,
+      "missing": []
+    },
+    {
+      "name": "docs/upper_computer_field_evidence_checklist.json",
+      "status": "ok",
+      "itemCount": 15,
+      "statuses": {
+        "local_ready": 1,
+        "external_required": 9,
+        "signature_required": 3,
+        "draft_only": 2
+      }
+    },
+    {
+      "name": "docs/upper_computer_training_deck.pptx",
+      "status": "ok",
+      "entries": 89,
+      "slideXmlCount": 16,
+      "mediaCount": 7,
+      "emptyEntryCount": 0
+    },
+    {
+      "name": "outputs/manual-20260607-training/presentations/xingshu-upper-computer-training/output/upper_computer_training_deck_manifest.json",
+      "status": "ok",
+      "slideCount": 16,
+      "previewCount": 16,
+      "imageAssetKeys": [
+        "overview",
+        "hero",
+        "safety",
+        "signoff",
+        "interface",
+        "interlock",
+        "edgeAi"
+      ]
+    },
+    {
+      "name": "outputs/manual-20260607-training/video/upper_computer_training_video_draft.mp4",
+      "status": "ok",
+      "bytes": 3619865
+    },
+    {
+      "name": "outputs/manual-20260607-training/video/upper_computer_training_video_manifest.json",
+      "status": "ok",
+      "slideCount": 16,
+      "secondsPerSlide": 30,
+      "estimatedDurationSeconds": 480,
+      "ffprobeDuration": "480.000000"
+    },
+    {
+      "name": "output/playwright/vue-browser-matrix-verification.json",
+      "status": "ok",
+      "expectedBrowsers": [
+        "chromium",
+        "chrome",
+        "msedge",
+        "firefox",
+        "webkit"
+      ],
+      "browserCount": 5,
+      "totalPageChecks": 70,
+      "unexpectedConsoleMessages": 0
+    },
+    {
+      "name": "output/acceptance/field-delivery-local-draft/00-summary/upper_computer_delivery_manifest.json",
+      "status": "ok",
+      "totalCopied": 59,
+      "totalBytes": 28135020,
+      "commit": "f7ac7d175e6e060fe7b11d09b6dc87c94c2eaedf",
+      "copiedWithSha256": 59,
+      "trainingPreviews": 16,
+      "gateReports": 4
+    }
+  ],
+  "failures": []
+}

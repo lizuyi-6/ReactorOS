@@ -105,9 +105,13 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
   install_deps
 fi
 
-install -d -m 0755 "$PREFIX" "$PREFIX/bin" "$PREFIX/static" "$PREFIX/kiosk" "$ETC_DIR" "$DATA_DIR" "$PROJECT_DIR"
+install -d -m 0755 "$PREFIX" "$PREFIX/bin" "$PREFIX/static" "$PREFIX/frontend" "$PREFIX/kiosk" "$ETC_DIR" "$DATA_DIR" "$PROJECT_DIR"
+install -d -m 0750 "$DATA_DIR/backups"
 copy_tree "${ROOT}/bin" "${PREFIX}/bin"
 copy_tree "${ROOT}/static" "${PREFIX}/static"
+if [[ -d "${ROOT}/frontend" ]]; then
+  copy_tree "${ROOT}/frontend" "${PREFIX}/frontend"
+fi
 copy_tree "${ROOT}/kiosk" "${PREFIX}/kiosk"
 copy_tree "${ROOT}/config" "$ETC_DIR"
 if [[ -f "${ROOT}/health-check.sh" ]]; then
@@ -115,14 +119,26 @@ if [[ -f "${ROOT}/health-check.sh" ]]; then
 elif [[ -f "${ROOT}/deploy/board-health.sh" ]]; then
   install -m 0755 "${ROOT}/deploy/board-health.sh" "${PREFIX}/health-check.sh"
 fi
+if [[ -f "${ROOT}/backup.sh" ]]; then
+  install -m 0755 "${ROOT}/backup.sh" "${PREFIX}/backup.sh"
+elif [[ -f "${ROOT}/deploy/reactor-edge-backup.sh" ]]; then
+  install -m 0755 "${ROOT}/deploy/reactor-edge-backup.sh" "${PREFIX}/backup.sh"
+fi
 install -m 0644 "${ROOT}/deploy/reactor-edge.service" /etc/systemd/system/reactor-edge.service
+if [[ -f "${ROOT}/deploy/reactor-edge-backup.service" ]]; then
+  install -m 0644 "${ROOT}/deploy/reactor-edge-backup.service" /etc/systemd/system/reactor-edge-backup.service
+fi
+if [[ -f "${ROOT}/deploy/reactor-edge-backup.timer" ]]; then
+  install -m 0644 "${ROOT}/deploy/reactor-edge-backup.timer" /etc/systemd/system/reactor-edge-backup.timer
+fi
 install -m 0644 "${ROOT}/deploy/reactor-os-chromium.service" /etc/systemd/system/reactor-os-chromium.service
 
-chmod +x "${PREFIX}/bin/reactor-edge-daemon" "${PREFIX}/kiosk/run-chromium-kiosk.sh"
+chmod +x "${PREFIX}/bin/reactor-edge-daemon" "${PREFIX}/bin/reactor-safety-guard" "${PREFIX}/bin/xingshu" "${PREFIX}/kiosk/run-chromium-kiosk.sh"
 if [[ -f "${PREFIX}/health-check.sh" ]]; then
   chmod +x "${PREFIX}/health-check.sh"
 fi
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DATA_DIR" "$PROJECT_DIR" || true
+chmod 0750 "$DATA_DIR/backups" || true
 
 if [[ "${SEED_DEMO_CONTEXT}" -eq 1 ]]; then
   mkdir -p /etc/systemd/system/reactor-edge.service.d
@@ -136,6 +152,9 @@ fi
 
 systemctl daemon-reload
 systemctl enable reactor-edge
+if [[ -f /etc/systemd/system/reactor-edge-backup.timer ]]; then
+  systemctl enable reactor-edge-backup.timer
+fi
 if [[ "${ENABLE_KIOSK}" -eq 1 ]]; then
   systemctl enable reactor-os-chromium
 else
@@ -144,6 +163,9 @@ fi
 
 if [[ "${START_NOW}" -eq 1 ]]; then
   systemctl restart reactor-edge
+  if [[ -f /etc/systemd/system/reactor-edge-backup.timer ]]; then
+    systemctl restart reactor-edge-backup.timer
+  fi
   if [[ "${ENABLE_KIOSK}" -eq 1 ]]; then
     systemctl restart reactor-os-chromium || {
       echo "Backend installed, but Chromium kiosk failed to start. Check: journalctl -u reactor-os-chromium -e" >&2
@@ -157,6 +179,7 @@ ReactorOS installed.
 
 Backend:
   systemctl status reactor-edge
+  systemctl status reactor-edge-backup.timer
   curl http://127.0.0.1:8000/health
 
 Kiosk:

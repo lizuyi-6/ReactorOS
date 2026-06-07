@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-06-05T22:59:26.910Z",
+  "response": {
+    "temperature_c": 66,
+    "heat_time_s": 300,
+    "hold_time_s": 600,
+    "cool_time_s": 180,
+    "stirrer_rpm": 360,
+    "shake_speed_cpm": 32,
+    "target_pressure_mpa": 0.5
+  },
+  "textChecks": [
+    "Safety writes wired",
+    "Target Write",
+    "Runtime Switches",
+    "Targets were written through the safety gate",
+    "66",
+    "360",
+    "32"
+  ]
+}

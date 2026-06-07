@@ -1,0 +1,14 @@
+﻿{
+    "log_lines_with_mqtt_keyword":  0,
+    "receipt_payload":  "X:\\tianhks\\output\\local-run\\mqtt-receipt-payload.json",
+    "broker":  "mosquitto:2.0 (docker)",
+    "payload_validate_ok":  true,
+    "task_publish_ok":  true,
+    "daemon_bound":  "127.0.0.1:18200",
+    "broker_port":  1883,
+    "status_subscribe_ok":  true,
+    "status_payload":  "X:\\tianhks\\output\\local-run\\mqtt-status-payload.json",
+    "external_task_id":  "mqtt-acceptance-1780841583",
+    "status":  "ok",
+    "receipt_subscribe_ok":  true
+}

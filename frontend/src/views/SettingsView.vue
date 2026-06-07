@@ -13,11 +13,15 @@ const forbidden = computed(() => arrayAt(safety.value, "forbidden_control_zones"
 const device = computed(() => objectAt(store.config, "device"));
 const integrations = computed(() => objectAt(store.config, "integrations"));
 const security = computed(() => objectAt(store.config, "data_security"));
+const storageEncryption = computed(() => objectAt(security.value, "storage_encryption"));
+const encryptedFields = computed(() => arrayAt<string>(storageEncryption.value, "encrypted_fields"));
 const aiMemory = computed(() => objectAt(store.config, "ai_memory"));
 const aiProvider = computed(() => objectAt(store.config, "ai_provider"));
 const localAi = computed(() => objectAt(store.config, "local_ai"));
 const permissions = computed(() => objectAt(store.config, "permissions"));
 const roles = computed(() => arrayAt(permissions.value, "roles"));
+const defaultUsers = computed(() => arrayAt<Record<string, unknown> | string>(permissions.value, "default_users"));
+const defaultUserLabels = computed(() => defaultUsers.value.map(defaultUserLabel));
 
 const endpointGroups = [
   {
@@ -92,6 +96,40 @@ const endpointGroups = [
 const mqttStatus = computed(() => objectAt(integrations.value, "mqtt_status"));
 const modbusTcpStatus = computed(() => objectAt(integrations.value, "modbus_tcp_status"));
 
+const valueTranslations: Record<string, { zh: string; en: string }> = {
+  true: { zh: "是", en: "Yes" },
+  false: { zh: "否", en: "No" },
+  pipeline: { zh: "管线模式", en: "Pipeline" },
+  local_optimizer: { zh: "本地优化器", en: "Local optimizer" },
+  local_role_policy: { zh: "本地角色策略", en: "Local role policy" },
+  bearer_session_enforced: { zh: "Bearer 会话认证", en: "Bearer session enforced" },
+  operator: { zh: "操作员", en: "Operator" },
+  engineer: { zh: "工程师", en: "Engineer" },
+  admin: { zh: "管理员", en: "Admin" },
+  prd_lora_ready: { zh: "PRD LoRA/RK 闭环", en: "PRD LoRA/RK ready" },
+  lora_inference_ready: { zh: "LoRA 推理入口就绪", en: "LoRA inference ready" },
+  base_inference_only: { zh: "仅基础模型入口", en: "Base model only" },
+  configured_not_ready: { zh: "配置未就绪", en: "Configured, not ready" },
+  disabled: { zh: "未启用", en: "Disabled" }
+};
+
+const permissionTranslations: Record<string, { zh: string; en: string }> = {
+  view_monitor: { zh: "查看监控", en: "View monitor" },
+  view_history: { zh: "查看历史", en: "View history" },
+  view_audit: { zh: "查看审计", en: "View audit" },
+  export_reports: { zh: "导出报告", en: "Export reports" },
+  edit_process: { zh: "编辑工艺", en: "Edit process" },
+  start_stop_process: { zh: "启停工艺", en: "Start/stop process" },
+  set_safe_targets: { zh: "写入安全目标", en: "Set safe targets" },
+  apply_ai_suggestion: { zh: "应用 AI 建议", en: "Apply AI suggestion" },
+  emergency_stop: { zh: "急停控制", en: "Emergency stop" },
+  modbus_debug: { zh: "Modbus 调试", en: "Modbus debug" },
+  edit_system_config: { zh: "编辑系统配置", en: "Edit system config" },
+  delete_data: { zh: "删除数据", en: "Delete data" },
+  manage_users: { zh: "管理用户", en: "Manage users" },
+  apply_integration_task: { zh: "执行集成任务", en: "Apply integration task" }
+};
+
 function integrationTag(name: string, on: boolean): "success" | "info" {
   return on ? "success" : "info";
 }
@@ -100,6 +138,47 @@ function boolFrom(value: unknown): boolean {
   if (value === true) return true;
   if (typeof value === "string") return value === "true";
   return false;
+}
+
+function localizedValue(value: string): string {
+  const hit = valueTranslations[value];
+  if (!hit) return value;
+  return store.isChinese ? hit.zh : hit.en;
+}
+
+function displayAt(source: unknown, key: string, fallback = "--"): string {
+  const value = textAt(source, key, fallback);
+  return value === fallback ? fallback : localizedValue(value);
+}
+
+function stringListAt(row: Record<string, unknown>, key: string): string[] {
+  const value = row[key];
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function permissionLabel(permission: string): string {
+  const hit = permissionTranslations[permission];
+  if (!hit) return permission;
+  return store.isChinese ? hit.zh : hit.en;
+}
+
+function permissionList(row: Record<string, unknown>): string[] {
+  const can = stringListAt(row, "can");
+  return (can.length > 0 ? can : stringListAt(row, "permissions")).map(permissionLabel);
+}
+
+function defaultUserLabel(row: Record<string, unknown> | string): string {
+  if (!row || typeof row !== "object") return localizedValue(String(row || "--"));
+  const username = textAt(row, "username", "");
+  const role = textAt(row, "role", "");
+  if (username && role) return `${username} (${localizedValue(role)})`;
+  return username || localizedValue(role) || "--";
+}
+
+function permissionNote(): string {
+  return store.isChinese
+    ? "本地用户名/密码登录会签发 Bearer 会话；写入和导出操作会按角色权限校验。"
+    : textAt(permissions.value, "note");
 }
 
 const mqttOn = computed(() => boolFrom(integrations.value?.mqtt));
@@ -128,12 +207,15 @@ const cliOn = computed(() => boolFrom(integrations.value?.cli));
 
     <section class="panel two-col">
       <el-descriptions :column="1" border>
-        <el-descriptions-item :label="store.tr('设备模式', 'Device mode')">{{ textAt(store.config, "device_mode") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('设备驱动', 'Device driver')">{{ textAt(device, "mode") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('设备模式', 'Device mode')">{{ displayAt(store.config, "device_mode") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('设备驱动', 'Device driver')">{{ displayAt(device, "mode") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('推荐 provider', 'Provider model')">{{ textAt(aiProvider, "model") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('Provider 模式', 'Provider mode')">{{ textAt(aiProvider, "mode") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('LoRA 推理就绪', 'LoRA inference ready')">{{ textAt(localAi, "ready_for_inference") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('LoRA 训练就绪', 'LoRA training ready')">{{ textAt(localAi, "ready_for_training") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('Provider 模式', 'Provider mode')">{{ displayAt(aiProvider, "mode") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('AI 模式', 'AI mode')">{{ displayAt(localAi, "mode") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('基础模型入口', 'Base inference')">{{ displayAt(localAi, "ready_for_base_inference") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('LoRA 推理闭环', 'LoRA inference')">{{ displayAt(localAi, "ready_for_lora_inference") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('LoRA 训练就绪', 'LoRA training ready')">{{ displayAt(localAi, "ready_for_training") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('PRD LoRA/RK 闭环', 'PRD LoRA/RK')">{{ displayAt(localAi, "ready_for_prd_lora") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('AI 记忆', 'AI memory')">
           {{ textAt(aiMemory, "profile_name") }} / {{ textAt(aiMemory, "profile_version") }}
         </el-descriptions-item>
@@ -144,19 +226,19 @@ const cliOn = computed(() => boolFrom(integrations.value?.cli));
         <h2>{{ store.tr("存储安全", "Storage Security") }}</h2>
         <p>
           <strong>{{ store.tr("算法", "Algorithm") }}:</strong>
-          <span>{{ textAt(objectAt(security.value, "storage_encryption"), "algorithm") }}</span>
+          <span>{{ textAt(storageEncryption, "algorithm") }}</span>
         </p>
         <p>
           <strong>{{ store.tr("启用", "Enabled") }}:</strong>
-          <span>{{ textAt(objectAt(security.value, "storage_encryption"), "enabled") }}</span>
+          <span>{{ displayAt(storageEncryption, "enabled") }}</span>
         </p>
         <p>
           <strong>{{ store.tr("密钥来源", "Key source") }}:</strong>
-          <span>{{ textAt(objectAt(security.value, "storage_encryption"), "key_source") }}</span>
+          <span>{{ textAt(storageEncryption, "key_source") }}</span>
         </p>
         <p>
           <strong>{{ store.tr("加密字段", "Encrypted fields") }}:</strong>
-          <span>{{ (objectAt(security.value, "storage_encryption")?.encrypted_fields ?? []).join(", ") }}</span>
+          <span>{{ encryptedFields.join(", ") || "--" }}</span>
         </p>
       </div>
     </section>
@@ -230,7 +312,7 @@ const cliOn = computed(() => boolFrom(integrations.value?.cli));
               {{ ainasOn ? store.tr("已接入", "Connected") : store.tr("未接入", "Not connected") }}
             </el-tag>
           </strong>
-          <small>{{ textAt(integrations.value, "ainas_task_api") }}</small>
+          <small>{{ displayAt(integrations, "ainas_task_api") }}</small>
         </div>
         <div>
           <span>REST API</span>
@@ -267,29 +349,29 @@ const cliOn = computed(() => boolFrom(integrations.value?.cli));
     <section class="panel two-col">
       <div class="analysis-block">
         <h2>{{ store.tr("权限矩阵", "Permission Matrix") }}</h2>
-        <p class="muted">{{ textAt(permissions.value, "note") }}</p>
+        <p class="muted">{{ permissionNote() }}</p>
         <p>
           <strong>{{ store.tr("认证", "Authentication") }}:</strong>
-          <span>{{ textAt(permissions.value, "authentication") }}</span>
+          <span>{{ displayAt(permissions, "authentication") }}</span>
         </p>
         <p>
           <strong>{{ store.tr("模式", "Mode") }}:</strong>
-          <span>{{ textAt(permissions.value, "mode") }}</span>
+          <span>{{ displayAt(permissions, "mode") }}</span>
         </p>
         <p>
           <strong>{{ store.tr("默认用户", "Default users") }}:</strong>
-          <span>{{ (permissions.value?.default_users ?? []).join(", ") }}</span>
+          <span>{{ defaultUserLabels.join(", ") || "--" }}</span>
         </p>
       </div>
       <el-table v-if="roles.length > 0" :data="roles" class="data-table" size="small">
         <el-table-column :label="store.tr('角色', 'Role')" min-width="120">
-          <template #default="{ row }">{{ textAt(row, "role") }}</template>
+          <template #default="{ row }">{{ displayAt(row, "role") }}</template>
         </el-table-column>
         <el-table-column :label="store.tr('能力数', 'Capabilities')" width="120">
-          <template #default="{ row }">{{ (row.permissions ?? []).length }}</template>
+          <template #default="{ row }">{{ permissionList(row).length }}</template>
         </el-table-column>
         <el-table-column :label="store.tr('能力', 'Capabilities')" min-width="320">
-          <template #default="{ row }">{{ (row.permissions ?? []).join(", ") }}</template>
+          <template #default="{ row }">{{ permissionList(row).join(", ") || "--" }}</template>
         </el-table-column>
       </el-table>
     </section>

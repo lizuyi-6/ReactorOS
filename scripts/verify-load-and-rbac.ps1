@@ -212,7 +212,7 @@ if ($report.concurrent_writes_failed) {
 }
 $report.findings = $findings.ToArray()
 
-$report.rbac_failed_count = ($report.cases | Where-Object { -not $_.ok }).Count
+$report.rbac_failed_count = ($report.cases | Where-Object { -not $_["ok"] }).Count
 $concurrentFailed = $report.concurrent_writes_failed -eq $true
 if ($report.rbac_failed_count -gt 0 -or $concurrentFailed) {
     $report.ok = $false

@@ -165,7 +165,7 @@ Safety behavior:
   --safety config/safety.toml \
   --memory config/ai_memory.toml \
   --db data/reactor.sqlite3 \
-  --assets static \
+  --assets auto \
   --bind 0.0.0.0:8000
 ```
 

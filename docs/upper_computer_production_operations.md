@@ -108,7 +108,7 @@ chown root:xingshu /etc/xingshu/daemon.env
 chmod 0640 /etc/xingshu/daemon.env
 ```
 
-密钥轮换：用 `xingshu key generate --db <path> --yes`（见 `docs/upper_computer_security_key_lifecycle.md`）。该命令只生成新的 `<db>.key` 文件并设权限 0600，不会重加密现有 ciphertext 行；操作员需在 daemon 停止期间重导出 `XINGSHU_DB_ENCRYPTION_KEY` 后再启动。
+密钥轮换：用 `xingshu key generate --db <path> --yes` 生成新 `<db>.key`，随后在 daemon 停止期间运行 `xingshu key rekey-integration-tasks --db <path> --old-key-file <old.env> --new-key-file <new.env> --dry-run` 预检，确认计数后改用 `--yes` 提交。该命令只迁移 `integration_tasks.request_json/response_json`，会把旧密文和历史明文行重写为新 key 的 AES-256-GCM 信封；完成后再重导出 `XINGSHU_DB_ENCRYPTION_KEY` 并启动 daemon。
 
 ## 4. watchdog / 健康检查
 
@@ -176,21 +176,24 @@ netfilter-persistent save
 见 `docs/upper_computer_maintenance_manual.md` 和 `xingshu ops`：
 
 ```bash
-# 每日 02:00 cron 备份（须在 daemon 停止期间，或搭配维护窗口）
-# 注意：当前实现是 fs::copy，不是 SQLite backup API；运行中调用可能
-# 留下半事务状态。生产侧建议每周用 systemd 的 --quiet 停 5 分钟跑一次。
+# release 包默认安装每日 systemd timer：
+systemctl status reactor-edge-backup.timer
+systemctl list-timers reactor-edge-backup.timer
+
+# 立即触发一次在线 SQLite 快照。内部使用 VACUUM INTO，不需要停 daemon。
+systemctl start reactor-edge-backup.service
+
+# 手动备份示例：
 xingshu ops backup --db /opt/xingshu/data/reactor.sqlite3 \
-  --out /opt/xingshu/backups/$(date +%Y%m%d).sqlite3.snapshot
+  --out /opt/xingshu/backups/reactor.sqlite3.$(date -u +%Y%m%d-%H%M%S).snapshot
 
 # 季度全量归档（脱机存储）
 xingshu ops backup --db /opt/xingshu/data/reactor.sqlite3 \
-  --out /mnt/nfs/xingshu-archive/$(date +%Y%m%d).sqlite3.snapshot
+  --out /mnt/nfs/xingshu-archive/reactor.sqlite3.$(date -u +%Y%m%d-%H%M%S).snapshot
 
-# 退役设备前安全擦除（只擦 SQLite 主文件；WAL/SHM/backup/key 需手动清）
+# 退役设备前安全擦除。ops wipe 会覆盖/删除 SQLite 主文件、
+# WAL/SHM/JOURNAL、<db>.key 和同级 backups/ 中匹配快照。
 xingshu ops wipe --db /opt/xingshu/data/reactor.sqlite3 --yes
-shred -vzn 3 /opt/xingshu/backups/*.snapshot
-rm -f /opt/xingshu/data/reactor.sqlite3-wal /opt/xingshu/data/reactor.sqlite3-shm
-rm -f /opt/xingshu/data/reactor.sqlite3.key
 blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM，物理擦除
 ```
 
@@ -206,7 +209,7 @@ blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM，物理擦除
 
 ## 9. 升级与回滚
 
-- 升级前先 `xingshu ops backup` 一次 SQLite 文件快照（daemon 必须停止）。
+- 升级前先 `xingshu ops backup` 一次 SQLite `VACUUM INTO` 在线快照；恢复时必须停止 daemon。
 - 部署新二进制到 `/opt/xingshu/bin/reactor-edge-daemon.new`，
   `chmod 0750`，`chown xingshu:xingshu`。
 - 切流：`systemctl stop reactor-edge-daemon && mv ...new ... && systemctl start`。
@@ -236,7 +239,7 @@ blkdiscard /dev/nvme0n1   # SSD 全盘 TRIM，物理擦除
 1. daemon 崩溃 → systemd 自动重启 → 上位机自动恢复（30s 内）。
 2. 数据库被损坏 → `xingshu ops restore` 从备份恢复。
 3. 物理急停触发 → 急停信号到 UI 提示 ≤ 1s；复位流程验证。
-4. 密钥泄露 → `xingshu key generate --db <path> --yes` → 重启 daemon → 验证新写入。注意旧 ciphertext 行将不可读，需离线脚本迁移。
+4. 密钥泄露 → 停止 daemon → 备份 SQLite → `xingshu key generate --db <path> --yes` → `xingshu key rekey-integration-tasks --db <path> --old-key-file <old.env> --new-key-file <new.env> --dry-run` → 确认后 `--yes` 提交 → 用新 `XINGSHU_DB_ENCRYPTION_KEY` 重启 daemon → 验证历史 integration task 可读。
 5. Modbus TCP 中断 → 上位机降级显示"PLC offline"。
 
 ## 13. 参考
