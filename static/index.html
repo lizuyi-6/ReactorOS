@@ -1795,7 +1795,7 @@
       .export { top: auto; right: 10px; bottom: 12px; }
     }
 
-    /* 浼佷笟澶х洏鍏ㄥ眬鎸囨爣鍗＄墖 */
+    /* Enterprise dashboard global KPI cards. */
     .global-kpi-grid {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1860,7 +1860,7 @@
       margin-left: 2px;
     }
 
-    /* 鏁呴殰璇婃柇闈㈡澘 */
+    /* Fault diagnostics panel. */
     .diagnostics-panel {
       display: grid;
       grid-template-rows: 52px auto;
@@ -1907,7 +1907,7 @@
       display: block;
     }
 
-    /* 浼犳劅鍣ㄥ畨鍏ㄥ埢搴︽粦锟?*/
+    /* Sensor safety scale bar. */
     .sensor-limit-bar-wrapper {
       margin-top: 8px;
       display: flex;
@@ -1933,7 +1933,7 @@
       position: absolute;
       top: 0;
       bottom: 0;
-      background: rgba(0, 230, 118, 0.12); /* 姝ｅ父鍖洪棿缁胯壊 */
+      background: rgba(0, 230, 118, 0.12); /* Normal range green overlay. */
       border-left: 1px solid rgba(0, 230, 118, 0.4);
       border-right: 1px solid rgba(0, 230, 118, 0.4);
     }
@@ -1956,7 +1956,7 @@
       margin-top: 2px;
     }
 
-    /* AI 鎺ㄧ悊鎬濊€冮摼缃戠粶 */
+    /* AI reasoning flow network. */
     .ai-reasoning-flow-wrapper {
       margin-top: 14px;
       border-top: 1px solid var(--line);
@@ -2183,7 +2183,7 @@
     .demo-banner[hidden] { display: none; }
 
     /* Push sidebar/main content down to clear the status strip + demo banner */
-    /* statusStrip: top=112px h=44px, demo-banner: top=156px h=28px 锟?sidebar starts at 184px */
+    /* statusStrip: top=112px h=44px, demo-banner: top=156px h=28px; sidebar starts at 184px */
     body.demo-banner-on .screen-shell > .sidebar {
       top: 184px;
       height: calc(100vh - 184px);
@@ -2201,9 +2201,10 @@
     }
 
     /* ==========================================
-       宸ユ帶澶у睆涓撲笟閲嶆瀯锛氶珮搴﹀畬鍏ㄩ摵婊′笌闆舵粦灞忔牱锟?       ========================================== */
+       Industrial screen layout compaction.
+       ========================================== */
     @media (min-width: 900px) and (max-width: 899px) {
-      /* 闄愬埗椤甸潰涓绘鏋讹紝闃叉鍏ㄥ眬婧㈠嚭 */
+      /* Constrain the main page frame to prevent global overflow. */
       .main {
         height: calc(100vh - var(--nav-h));
         overflow: hidden;
@@ -2216,12 +2217,12 @@
         min-height: 0 !important;
       }
 
-      /* AI杈呭姪鍐崇瓥涓績锛氬己鍒堕殣钘忔€濊€冮摼缃戠粶涓庢帶鍒跺彴鏃ュ織锛屽ぇ骞呭帇缂╁叾鐗╃悊楂樺害 */
+      /* Hide dense AI reasoning and control logs in the compact layout. */
       .ai-reasoning-flow-wrapper {
         display: none !important;
       }
 
-      /* HMI涓荤綉鏍煎竷灞€鎷夋弧 */
+      /* Stretch the main HMI grid. */
       .hmi-grid {
         height: 100% !important;
         flex: 1 !important;
@@ -2234,9 +2235,9 @@
         height: 100% !important;
       }
 
-      /* 宸︿笅瑙扝MI鍚勯潰鏉垮绉版帓鍒楀苟鎷変几锛岀粷鏃犲簳閮ㄧ暀锟?*/
+      /* Keep lower-left HMI panels aligned and stretched without bottom gaps. */
       .left-stack {
-        grid-template-rows: 1fr auto auto !important; /* 鏀逛负涓夎锛氱涓€琛屾媺浼革紝绗簩琛宒iagnostics锛岀涓夎control */
+        grid-template-rows: 1fr auto auto !important; /* Three rows: stretched content, diagnostics, control. */
         height: 100% !important;
         align-items: stretch !important;
       }
@@ -2267,7 +2268,7 @@
         grid-column: 1 / -1 !important;
       }
 
-      /* 浼犳劅鍣ㄥ垪琛ㄥ湪闈㈡澘鍐呭潎鍖€鎷変几骞跺畬鍏ㄥ睍鐜帮紝褰诲簳娑堥櫎婊氬姩锟?*/
+      /* Stretch sensor rows evenly inside the panel and remove scrolling. */
       .hmi-sensors {
         grid-template-rows: repeat(4, 1fr) !important;
         height: 100% !important;
@@ -2304,9 +2305,9 @@
         display: none !important;
       }
 
-      /* 鍙充晶闈㈡澘鎷変几 */
+      /* Stretch the right-side panels. */
       .right-stack {
-        grid-template-rows: auto auto 1fr !important; /* 鍓嶄袱涓崱鐗囪嚜閫傚簲锛屾渶鍚庝竴涓崱鐗囨媺婊″埌搴曢儴 */
+        grid-template-rows: auto auto 1fr !important; /* First two cards fit content; the final card fills the rest. */
         height: 100% !important;
       }
       .right-stack .alarm-card {
@@ -2320,7 +2321,7 @@
         overflow-y: hidden !important;
       }
 
-      /* 鎵规鏁版嵁绠＄悊椤甸潰鎷夋弧涓庡崟灞忚嚜閫傚簲 */
+      /* Stretch the batch data page for a single-screen layout. */
       .batch-table-layout {
         display: flex !important;
         flex-direction: column !important;
@@ -2341,7 +2342,7 @@
         min-height: 52px !important;
       }
 
-      /* 宸ヨ壓鎺у埗椤甸潰鎷夋弧涓庡崟灞忚嚜閫傚簲 */
+      /* Stretch the process control page for a single-screen layout. */
       .program-layout {
         display: flex !important;
         flex-direction: column !important;
@@ -2373,7 +2374,7 @@
         overflow-y: hidden !important;
       }
 
-      /* 鍘嗗彶鍒嗘瀽椤甸潰鎷夋弧涓庡崟灞忚嚜閫傚簲 */
+      /* Stretch the history analysis page for a single-screen layout. */
       .history-grid {
         display: flex !important;
         flex-direction: column !important;
@@ -2397,7 +2398,7 @@
         overflow-y: hidden !important;
       }
 
-      /* 绯荤粺鎶ヨ绠＄悊椤甸潰鎷夌揣鎷夋弧锛屾秷闄ゅ浣欐粴鍔ㄦ潯 */
+      /* Tighten and stretch the alarm management page while removing excess scrollbars. */
       .alarm-center-grid {
         display: grid !important;
         grid-template-columns: 1.3fr 1fr !important;
@@ -2415,7 +2416,7 @@
         overflow-y: hidden !important;
       }
 
-      /* 寮哄埗闅愯棌鎵€鏈夌殑灞€閮ㄧ旱鍚戝拰妯悜婊氬姩鏉★紝淇濊瘉鍗曞睆涓€灞忛€氱殑宸ユ帶鍝佽川 */
+      /* Hide local scrollbars to preserve a single-screen control-room layout. */
       ::-webkit-scrollbar {
         display: none !important;
       }
@@ -4119,7 +4120,7 @@
           Monitor
           <div class="monitor-subheading">Realtime reactor state, AI recommendation, and process history</div>
         </div>
-        <!-- 鍏ㄥ眬澶х洏 KPI 鍗＄墖 -->
+        <!-- Global dashboard KPI cards. -->
         <!-- Global KPI cards -->
         <div class="global-kpi-grid">
           <div class="kpi-card" id="kpi-oee">
@@ -4296,7 +4297,7 @@
                       <span class="node-txt">Dispatch</span>
                     </div>
                   </div>
-                  <!-- 娴佸紡鏃ュ織缁堢 -->
+                  <!-- Streaming log terminal. -->
                   <div class="ai-terminal-console" id="aiTerminalConsole">
                     <div class="terminal-line">[SYSTEM] Active Node: Data Ingestion. Subscribed to live telemetry flow.</div>
                   </div>
@@ -6118,7 +6119,7 @@
               <div class="sensor-number" data-sensor-value="${item.key}"></div>
               <div class="sensor-meta" data-sensor-meta="${item.key}"></div>
 
-              <!-- 鍒诲害灏虹粨锟?-->
+              <!-- Sensor safety scale. -->
               <div class="sensor-limit-bar-wrapper">
                 <div class="sensor-limit-range">
                   <span>${item.min}</span>
@@ -6155,7 +6156,7 @@
           const metaNode = $(`[data-sensor-meta="${item.key}"]`);
           if (metaNode) metaNode.textContent = meta;
 
-          // 鍔ㄦ€佹洿鏂版粦杞ㄥ拰鎸囬拡浣嶇疆
+          // Update the scale and pointer position dynamically.
           const val = toNumber(item.value);
           const valPercent = val !== null ? clamp(((val - item.min) / (item.max - item.min)) * 100, 0, 100) : 0;
           const pointer = $(`#pointer-${item.key}`);
@@ -6728,7 +6729,6 @@
         state.processesLoaded = true;
         state.processError = null;
       } catch (err) {
-        state.processError = { code: err.code || 500, message: err.message || "鐠囪褰囧銉ㄥ閸掓銆冩径杈Е" };
         state.processError = { code: err.code || 500, message: err.message || "load process list failed" };
         state.processLoading = false;
         if (state.activeTab === "program") renderProgram();
@@ -7919,7 +7919,7 @@
       ctx.fillStyle = "rgba(14,14,14,.62)";
       ctx.fillRect(0, 0, w, h);
 
-      // 璁＄畻涓績绾垮拰姘存祦
+      // Calculate the center line and flow path.
       const y = h * 0.52;
       const boxW = Math.min(86, Math.max(64, w * 0.2));
       const tankW = Math.min(110, Math.max(76, w * 0.24));
@@ -7927,22 +7927,22 @@
       const tx = w * 0.5;
       const ty = y;
 
-      // 缁樺埗娴佷綋绠￠亾
+      // Draw the fluid pipe.
       ctx.strokeStyle = c.lineStrong;
       ctx.lineWidth = 2;
 
-      // 杩涙枡锟?(FEED A/B/C)
+      // Draw the feed box.
       drawProcessBox(ctx, 20, y - 38, boxW, 76, "FEED", "A/B/C");
-      // 鍑烘枡锟?(COND.)
+      // Draw the condenser box.
       drawProcessBox(ctx, w - boxW - 20, y - 38, boxW, 76, "COND.", "FLOW");
 
-      // 缁樺埗娴佷綋绾挎潯
+      // Draw the fluid lines.
       ctx.beginPath();
       ctx.moveTo(20 + boxW, y); ctx.lineTo(w * 0.5 - tankW / 2 - 10, y);
       ctx.moveTo(w * 0.5 + tankW / 2 + 10, y); ctx.lineTo(w - boxW - 20, y);
       ctx.stroke();
 
-      // 娴佸姩鐨勫皬绮掑瓙 (娴佷綋鍔ㄧ敾)
+      // Draw moving particles for the fluid animation.
       if (state.running) {
         ctx.fillStyle = c.success;
         const particleTick = (state.programElapsed * 15) % 40;
@@ -7962,7 +7962,7 @@
       const tiltVal = toNumber(sensor("tilt").value) || 0;
       const shakeVal = toNumber(sensor("shake").value) || 0;
 
-      // 1. 杩涜鍊捐鏃嬭浆
+      // 1. Apply vessel tilt rotation.
       ctx.save();
       // Rotate around the bottom center of the vessel.
       const rx = tx;
@@ -7976,12 +7976,12 @@
       ctx.rotate(angleRad);
       ctx.translate(-rx, -ry);
 
-      // 2. 缁樺埗鍙屽眰甯﹀す濂楅嚋浣撳強鍐呴儴鍙嶅簲
+      // 2. Draw the jacketed vessel and internal reaction.
       drawProcessTankExtended(ctx, tx - tankW / 2, ty - 68, tankW, tankH, tempVal, rpmVal);
 
       ctx.restore();
 
-      // 缁樺埗鏍囩
+      // Draw the label.
       ctx.fillStyle = c.success;
       ctx.fillRect(w * 0.5 - 28, y + tankH / 2 + 15, 56, 10);
       ctx.fillStyle = c.text;
@@ -8000,7 +8000,7 @@
     function drawProcessTankExtended(ctx, x, y, w, h, temp, rpm) {
       const c = themeColors();
 
-      // 1. 缁樺埗澶栭儴淇濇俯澶瑰 (Jacket)
+      // 1. Draw the outer insulation jacket.
       ctx.lineWidth = 2.5;
       ctx.strokeStyle = "rgba(134,149,129,.4)";
       ctx.fillStyle = "rgba(20, 20, 25, 0.65)";
@@ -8018,7 +8018,7 @@
       ctx.fill();
       ctx.stroke();
 
-      // 2. 缁樺埗鍐呯瓛鐡惰韩
+      // 2. Draw the inner vessel body.
       ctx.strokeStyle = c.lineStrong;
       ctx.fillStyle = "rgba(10, 10, 12, 0.8)";
       ctx.beginPath();
@@ -8029,7 +8029,7 @@
       ctx.fill();
       ctx.stroke();
 
-      // 3. 缁樺埗鍐呴儴娑蹭綋 (鏍规嵁娓╁害杩涜棰滆壊杩囨浮)
+      // 3. Draw the internal liquid, with color varying by temperature.
       let liquidColor = "rgba(46, 134, 222, 0.4)";
       if (temp >= 50 && temp < 130) {
         const ratio = (temp - 50) / 80;
@@ -8050,7 +8050,7 @@
       const liqH = (h - 20) * 0.65;
       const liqY = y + h - liqH - 12;
 
-      // 缁樺埗娑蹭綋娉㈡氮
+      // Draw the liquid wave.
       ctx.fillStyle = liquidColor;
       ctx.beginPath();
       ctx.moveTo(x, y + h);
@@ -8067,7 +8067,7 @@
       ctx.closePath();
       ctx.fill();
 
-      // 4. 缁樺埗鎼呮媽妗ㄤ富杞翠笌鍙剁墖
+      // 4. Draw the stirrer shaft and blades.
       ctx.strokeStyle = "#888";
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -8093,7 +8093,7 @@
         ctx.stroke();
       }
 
-      // 5. 鎼呮媽浜х敓鐨勬皵娉′笌绮掑瓙婕╂丁
+      // 5. Draw bubbles and particles generated by stirring.
       if (rpm > 0) {
         ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
         const bubbleCount = Math.min(15, Math.floor(rpm / 50));
@@ -8263,7 +8263,7 @@
       const c = themeColors();
       ctx.clearRect(0, 0, w, h);
 
-      // 鑳屾櫙缃戞牸锟?      ctx.strokeStyle = "rgba(134,149,129,.15)";
+      // Draw the background grid.      ctx.strokeStyle = "rgba(134,149,129,.15)";
       ctx.lineWidth = 0.8;
       for (let i = 0; i < w; i += 30) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
@@ -8272,7 +8272,7 @@
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
       }
 
-      // 鑾峰彇褰撳墠杞拷?      const rpmVal = toNumber(sensor("rpm").value) || 0;
+      // Read the current stirrer speed.      const rpmVal = toNumber(sensor("rpm").value) || 0;
       const t = Date.now() * 0.001;
 
       ctx.strokeStyle = c.blue || "#00d2ff";
@@ -8281,11 +8281,11 @@
       ctx.shadowBlur = state.running ? 5 : 0;
       ctx.beginPath();
 
-      // FFT 娉㈠舰缁樺埗锛氫富棰戝湪杞€熷搴斿
+      // Draw the FFT waveform, with the main frequency tied to stirrer speed.
       const centerFreqX = rpmVal > 0 ? (30 + (rpmVal / 1200) * (w - 80)) : 0;
 
       for (let x = 0; x < w; x++) {
-        let val = h - 12; // 鍩虹嚎鍦ㄦ渶搴曢儴浠ヤ笂12鍍忕礌
+        let val = h - 12; // Baseline 12 pixels above the bottom.
 
         let noise = Math.sin(x * 0.4 + t * 45) * 1.5 + Math.cos(x * 0.95 - t * 30) * 1.2;
         if (state.running) {
@@ -8294,17 +8294,17 @@
         val += noise;
 
         if (rpmVal > 0) {
-          // 涓婚锟?(1鍊嶉)
+          // Main frequency.
           const distMain = Math.abs(x - centerFreqX);
           if (distMain < 12) {
             val -= (12 - distMain) * (h * 0.05 + (rpmVal / 1200) * (h * 0.55));
           }
-          // 2鍊嶉璋愭尝
+          // Second harmonic.
           const distHarm1 = Math.abs(x - centerFreqX * 2);
           if (centerFreqX * 2 < w && distHarm1 < 8) {
             val -= (8 - distHarm1) * (h * 0.02 + (rpmVal / 1200) * (h * 0.22));
           }
-          // 3鍊嶉璋愭尝
+          // Third harmonic.
           const distHarm2 = Math.abs(x - centerFreqX * 3);
           if (centerFreqX * 3 < w && distHarm2 < 6) {
             val -= (6 - distHarm2) * (h * 0.01 + (rpmVal / 1200) * (h * 0.12));
@@ -8316,9 +8316,9 @@
         else ctx.lineTo(x, val);
       }
       ctx.stroke();
-      ctx.shadowBlur = 0; // 閲嶇疆闃村奖
+      ctx.shadowBlur = 0; // Reset shadow.
 
-      // 缁樺埗棰戠巼鏍囨敞鏂囧瓧
+      // Draw frequency labels.
       ctx.fillStyle = c.dim;
       ctx.font = "500 8px JetBrains Mono, monospace";
       ctx.fillText("0Hz", 5, h - 4);
@@ -8333,7 +8333,7 @@
       const c = themeColors();
       ctx.clearRect(0, 0, w, h);
 
-      // 鑳屾櫙缃戞牸锟?      ctx.strokeStyle = "rgba(134,149,129,.15)";
+      // Draw the background grid.      ctx.strokeStyle = "rgba(134,149,129,.15)";
       ctx.lineWidth = 0.8;
       for (let i = 0; i < w; i += 30) {
         ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, h); ctx.stroke();
@@ -8342,9 +8342,9 @@
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
       }
 
-      // 鑾峰彇浼犳劅鍣ㄦ祦閲忓強杩愯鐘讹拷?      const flowVal = toNumber(sensor("flow").value) || 0;
+      // Read coolant flow and runtime state.      const flowVal = toNumber(sensor("flow").value) || 0;
 
-      // 妯℃嫙 10 涓椂闂存鐨勬崲鐑樆锟?U-value 鍘嗗彶璧板娍锛堜粠鍙冲線宸︽祦锟?      ctx.strokeStyle = c.green || "#00e676";
+      // Simulate a 10-step heat-transfer U-value trend.      ctx.strokeStyle = c.green || "#00e676";
       ctx.lineWidth = 2;
       ctx.beginPath();
 
@@ -8359,7 +8359,7 @@
         points.push(val);
       }
 
-      // 缁樺埗杩欐潯鍘嗗彶锟?      const pad = { l: 20, r: 10, t: 15, b: 15 };
+      // Draw the trend line.      const pad = { l: 20, r: 10, t: 15, b: 15 };
       points.forEach((val, index) => {
         const x = pad.l + (index / 9) * (w - pad.l - pad.r);
         const y = pad.t + (1 - (val - 50) / 50) * (h - pad.t - pad.b);
@@ -8368,7 +8368,7 @@
       });
       ctx.stroke();
 
-      // 缁樺埗璀︽垝绾㈢嚎 (U-value = 70%)
+      // Draw the alarm threshold line (U-value = 70%).
       ctx.strokeStyle = c.danger || "#ff3d00";
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
@@ -8379,7 +8379,7 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // 缁樺埗鏂囧瓧鏍囨敞
+      // Draw text labels.
       ctx.fillStyle = c.dim;
       ctx.font = "500 8px JetBrains Mono, monospace";
       ctx.fillText("10m ago", pad.l, h - 4);

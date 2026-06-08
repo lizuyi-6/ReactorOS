@@ -3412,8 +3412,8 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
     let process_id = body["data"]["id"].as_i64().unwrap();
 
     for (name, temp, duration, rpm, pressure) in [
-        ("鍔犵儹", 120.0, 45.0, 150.0, 0.5),
-        ("淇濇俯", 120.0, 120.0, 300.0, 2.4),
+        ("heat", 120.0, 45.0, 150.0, 0.5),
+        ("hold", 120.0, 120.0, 300.0, 2.4),
     ] {
         let response = app
             .clone()
@@ -3432,7 +3432,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
                             "target_stirrer_rpm": rpm,
                             "target_shake_speed_cpm": 30,
                             "target_pressure_mpa": pressure,
-                            "cooling_mode": "鑷劧"
+                            "cooling_mode": "natural"
                         })
                         .to_string(),
                     ))

@@ -365,7 +365,7 @@ async function selectProcessInUi(page, processName, processId) {
     log("overflow-en", result.horizontalOverflow.ok ? "ok" : "fail", JSON.stringify(overflow));
 
     // 9. Switch to Chinese and re-check.
-    // The language switch is an el-segmented with two options: 中文 and EN.
+    // The language switch is an el-segmented control with Chinese and EN options.
     const zhSeg = page.locator(".el-segmented .el-segmented__item", { hasText: "中文" });
     await zhSeg.waitFor({ timeout: 5_000 });
     await zhSeg.click();

@@ -11,19 +11,19 @@ async function main() {
   const browser = await chromium.launch();
   const page = await browser.newPage();
   
-  // 设置标准的桌面端分辨率宽度
+  // Use a standard desktop viewport.
   await page.setViewportSize({ width: 1440, height: 900 });
   
-  // 加载本地静态落地页
+  // Load the local static landing page.
   const filePath = `file://${path.join(repoRoot, "static", "landing.html").replace(/\\/g, "/")}`;
   console.log(`Navigating to: ${filePath}`);
   await page.goto(filePath);
   
-  // 等待字体和渐变微动效加载完毕
+  // Wait for fonts and subtle animations to finish rendering.
   console.log("Waiting for rendering and animations...");
   await page.waitForTimeout(2500);
   
-  // 截取全页长图
+  // Capture a full-page screenshot.
   const outputPath = path.join(repoRoot, "output", "landing-fullpage.png");
   console.log(`Saving full page screenshot to: ${outputPath}`);
   await page.screenshot({ path: outputPath, fullPage: true });

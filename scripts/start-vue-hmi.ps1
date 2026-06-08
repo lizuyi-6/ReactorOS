@@ -1,7 +1,7 @@
-# 启动带 Vue HMI 的 reactor-edge-daemon。
-# 使用方法：
+# Start reactor-edge-daemon with the Vue HMI.
+# Usage:
 #   powershell -ExecutionPolicy Bypass -File scripts\start-vue-hmi.ps1
-# 或带环境变量：
+# Or with environment variables:
 #   $env:XINGSHU_PORT=8000; powershell -File scripts\start-vue-hmi.ps1
 param(
     [string]$Port = $env:XINGSHU_PORT ?? "8000",
@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 $root = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
 Set-Location -LiteralPath $root
 
-# 1. 确保 Vue 产物已构建。
+# 1. Ensure the Vue assets have been built.
 if (-not (Test-Path "frontend/dist/index.html")) {
     Write-Host "frontend/dist/index.html missing; running npm run frontend:build..." -ForegroundColor Yellow
     npm run frontend:build | Out-Host
@@ -24,7 +24,7 @@ if (-not (Test-Path "frontend/dist/index.html")) {
     }
 }
 
-# 2. 启动 daemon（auto 模式自动选择 frontend/dist）。
+# 2. Start the daemon. Auto mode prefers frontend/dist when available.
 $args = @(
     "run", "--bin", "reactor-edge-daemon", "--",
     "--config", "config/device.toml",
