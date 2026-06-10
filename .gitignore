@@ -1,4 +1,8 @@
 /target/
+# Cross-compile output dirs from the board package builds (e.g.
+# target-lubancat2-arm64-buster, target-a55-arm64-buster). These are 1GB+
+# build artifacts that must never enter the repo.
+/target-*/
 /.idea/
 /.vscode/
 /.env
