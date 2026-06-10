@@ -127,6 +127,8 @@ export const usePlantStore = defineStore("plant", () => {
   const batches = ref<ApiRecord | null>(null);
   const recommendation = ref<ApiRecord | null>(null);
   const runtimeFallback = ref<ApiRecord | null>(null);
+  const liveStatus = ref<"fresh" | "unavailable">("unavailable");
+  const liveLastUpdated = ref<string | null>(null);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const lastUpdated = ref<string | null>(null);
@@ -167,14 +169,26 @@ export const usePlantStore = defineStore("plant", () => {
     if (options.body !== undefined) headers.set("Content-Type", "application/json");
     if (options.auth !== false && token.value) headers.set("Authorization", `Bearer ${token.value}`);
 
-    const response = await fetch(path, {
-      method: options.method ?? (options.body === undefined ? "GET" : "POST"),
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      cache: "no-store"
-    });
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method: options.method ?? (options.body === undefined ? "GET" : "POST"),
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        cache: "no-store"
+      });
+    } catch (error) {
+      if (options.allowFailure) return null as T;
+      throw error;
+    }
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : null;
+    let payload: unknown = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+      if (options.allowFailure) return null as T;
+      payload = { message: text };
+    }
     if (!response.ok && options.allowFailure) {
       return null as T;
     }
@@ -242,6 +256,8 @@ export const usePlantStore = defineStore("plant", () => {
     batches.value = null;
     recommendation.value = null;
     runtimeFallback.value = null;
+    liveStatus.value = "unavailable";
+    liveLastUpdated.value = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   }
@@ -251,13 +267,24 @@ export const usePlantStore = defineStore("plant", () => {
   }
 
   async function refreshLive(): Promise<void> {
-    const nextLive = await request<ApiRecord>("/api/live?sample_limit=36&include_processes=true&include_batches=true&include_events=false", {
-      auth: false,
-      allowFailure: true
-    });
+    let nextLive: ApiRecord | null = null;
+    try {
+      nextLive = await request<ApiRecord>("/api/live?sample_limit=36&include_processes=true&include_batches=true&include_events=false", {
+        auth: false,
+        allowFailure: true
+      });
+    } catch {
+      nextLive = null;
+    }
     live.value = nextLive;
     const runtime = runtimeFromLive(nextLive);
-    if (runtime) runtimeFallback.value = runtime;
+    if (runtime) {
+      runtimeFallback.value = runtime;
+      liveStatus.value = "fresh";
+      liveLastUpdated.value = new Date().toLocaleTimeString();
+    } else {
+      liveStatus.value = "unavailable";
+    }
   }
 
   async function refreshProtected(): Promise<void> {
@@ -283,6 +310,7 @@ export const usePlantStore = defineStore("plant", () => {
     error.value = null;
     try {
       await refreshPublic();
+      await refreshLive();
       await refreshProtected();
       lastUpdated.value = new Date().toLocaleTimeString();
     } catch (nextError) {
@@ -317,7 +345,7 @@ export const usePlantStore = defineStore("plant", () => {
       method: "POST",
       body: { locked }
     });
-    mergeRuntimeFallback({ manual_lock: locked });
+    mergeRuntimeFallback(locked ? { manual_lock: true, auto_enabled: false } : { manual_lock: false });
     await refreshLive();
   }
 
@@ -329,7 +357,13 @@ export const usePlantStore = defineStore("plant", () => {
 
   async function resetEmergencyStop(): Promise<void> {
     await request<void>("/api/control/emergency-stop/reset", { method: "POST" });
-    mergeRuntimeFallback({ emergency_stop: false });
+    mergeRuntimeFallback({ emergency_stop: false, auto_enabled: false });
+    await refreshLive();
+  }
+
+  async function resetControlFault(): Promise<void> {
+    await request<void>("/api/control/fault/reset", { method: "POST" });
+    mergeRuntimeFallback({ last_control_error: null, auto_enabled: false });
     await refreshLive();
   }
 
@@ -490,6 +524,8 @@ export const usePlantStore = defineStore("plant", () => {
     batches,
     recommendation,
     runtimeFallback,
+    liveStatus,
+    liveLastUpdated,
     loading,
     error,
     lastUpdated,
@@ -507,6 +543,7 @@ export const usePlantStore = defineStore("plant", () => {
     setManualLocked,
     triggerEmergencyStop,
     resetEmergencyStop,
+    resetControlFault,
     readModbusRegister,
     writeModbusRegister,
     loadAudit,

@@ -152,11 +152,19 @@ for i in $(seq 1 30); do
   fi
   sleep 1
 done
+ENGINEER_TOKEN="$(curl -fsS -H "Content-Type: application/json" \
+  -d '{"username":"engineer","password":"engineer123"}' \
+  "http://127.0.0.1:18200/api/auth/login" |
+  python -c 'import json,sys; body=json.load(sys.stdin); print((body.get("data") or body).get("token",""))')"
+if [ -z "$ENGINEER_TOKEN" ]; then
+  echo "engineer login returned no token for simulator sample ingest" >&2
+  exit 1
+fi
 
 # Feed the daemon with live samples so the status/alert path has runtime
 # data while MQTT is being exercised.
 AINAS_LOG="$LOG_DIR/mqtt-acceptance-ainas.log"
-node "$ROOT/scripts/simulate-device.js" \
+REACTOR_OS_TOKEN="$ENGINEER_TOKEN" node "$ROOT/scripts/simulate-device.js" \
   --url http://127.0.0.1:18200 \
   --profile production \
   --interval-ms 1000 \

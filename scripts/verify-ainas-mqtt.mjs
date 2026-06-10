@@ -44,7 +44,7 @@ async function jsonRequest(path, init = {}) {
   return { status: response.status, body };
 }
 
-async function seedFreshSample() {
+async function seedFreshSample(token) {
   const payload = {
     temperature_c: 60.2,
     pressure_mpa: 0.55,
@@ -57,6 +57,7 @@ async function seedFreshSample() {
   };
   const response = await jsonRequest("/api/v1/reactor/reactor_001/samples", {
     method: "POST",
+    token,
     body: payload
   });
   if (response.status !== 200) {
@@ -92,7 +93,12 @@ async function seedFreshSample() {
     };
     log("config-summary", "ok", JSON.stringify(flags));
 
-    // 3. AINAS task dispatch path: GET list and POST a new task, then GET it back.
+    // 3. Seed a fresh sample before any target mutation path. Industrial fail-closed
+    // rules reject target changes unless the field state is currently proven.
+    const seeded = await seedFreshSample(token);
+    log("seed-live-sample", "ok", JSON.stringify({ temperature_c: seeded.temperature_c, pressure_mpa: seeded.pressure_mpa }));
+
+    // 4. AINAS task dispatch path: GET list and POST a new task, then GET it back.
     const list = await jsonRequest("/api/integrations/ainas/tasks?limit=1", { token });
     if (list.status !== 200) throw new Error(`ainas list failed: ${list.status}`);
     const create = await jsonRequest("/api/integrations/ainas/tasks", {
@@ -119,7 +125,7 @@ async function seedFreshSample() {
     if (detail.status !== 200) throw new Error(`ainas detail failed: ${detail.status}`);
     log("ainas-detail", "ok", `task_id=${taskId}`);
 
-    // 4. MQTT status (read from integration config).
+    // 5. MQTT status (read from integration config).
     const mqttStatus = integrations.mqtt_status ?? {};
     log("mqtt-status", mqttStatus.connected ? "ok" : "info", JSON.stringify({
       enabled: !!integrations.mqtt,
@@ -129,9 +135,7 @@ async function seedFreshSample() {
       last_error: mqttStatus.last_error ?? null
     }));
 
-    // 5. /api/live realtime check through the formal pipeline sample ingress.
-    const seeded = await seedFreshSample();
-    log("seed-live-sample", "ok", JSON.stringify({ temperature_c: seeded.temperature_c, pressure_mpa: seeded.pressure_mpa }));
+    // 6. /api/live realtime check through the formal pipeline sample ingress.
     const live = await jsonRequest("/api/live?sample_limit=1");
     const liveOk = live.status === 200;
     log("live-realtime", liveOk ? "ok" : "fail", `status=${live.status}`);

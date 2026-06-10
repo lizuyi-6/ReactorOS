@@ -259,12 +259,192 @@ try {
     $fail++
   }
 
+  $installBoardPreflightLog = Join-Path $logDir "install-board-preflight.log"
+  $installBoardPreflightExit = Invoke-CapturedCommand -LogPath $installBoardPreflightLog -Command {
+    & bash scripts/verify-install-board-preflight.sh
+  }
+  if ($installBoardPreflightExit -eq 0) {
+    Record-Step "verify-install-board-preflight" "ok" "board installer validates package completeness before stopping services"
+    $pass++
+  } else {
+    Record-Step "verify-install-board-preflight" "fail" (Last-Log-Line $installBoardPreflightLog)
+    $fail++
+  }
+
+  $otaAbLog = Join-Path $logDir "ota-ab-release-path.log"
+  $otaAbExit = Invoke-CapturedCommand -LogPath $otaAbLog -Command {
+    & node scripts/verify-ota-ab-release-path.mjs
+  }
+  if ($otaAbExit -eq 0) {
+    Record-Step "verify-ota-ab-release-path" "ok" "application A/B OTA path checks checksum, busy state, backup, health, and rollback"
+    $pass++
+  } else {
+    Record-Step "verify-ota-ab-release-path" "fail" (Last-Log-Line $otaAbLog)
+    $fail++
+  }
+
+  $otaSystemdBootGateLog = Join-Path $logDir "ota-systemd-boot-gate.log"
+  $otaSystemdBootGateExit = Invoke-CapturedCommand -LogPath $otaSystemdBootGateLog -Command {
+    & node scripts/verify-ota-systemd-boot-gate.mjs
+  }
+  if ($otaSystemdBootGateExit -eq 0) {
+    Record-Step "verify-ota-systemd-boot-gate" "ok" "backend service runs OTA boot-check before every start and boot-check does not stay active"
+    $pass++
+  } else {
+    Record-Step "verify-ota-systemd-boot-gate" "fail" (Last-Log-Line $otaSystemdBootGateLog)
+    $fail++
+  }
+
+  $otaTarSafetyLog = Join-Path $logDir "ota-tar-safety.log"
+  $otaTarSafetyExit = Invoke-CapturedCommand -LogPath $otaTarSafetyLog -Command {
+    & bash scripts/verify-ota-tar-safety.sh
+  }
+  if ($otaTarSafetyExit -eq 0) {
+    Record-Step "verify-ota-tar-safety" "ok" "OTA rejects path traversal, multiple top-level roots, and link members before extraction"
+    $pass++
+  } else {
+    Record-Step "verify-ota-tar-safety" "fail" (Last-Log-Line $otaTarSafetyLog)
+    $fail++
+  }
+
+  $otaBusyStateLog = Join-Path $logDir "ota-busy-state.log"
+  $otaBusyStateExit = Invoke-CapturedCommand -LogPath $otaBusyStateLog -Command {
+    & bash scripts/verify-ota-busy-state.sh
+  }
+  if ($otaBusyStateExit -eq 0) {
+    Record-Step "verify-ota-busy-state" "ok" "OTA fails closed unless device status proves the reactor is idle"
+    $pass++
+  } else {
+    Record-Step "verify-ota-busy-state" "fail" (Last-Log-Line $otaBusyStateLog)
+    $fail++
+  }
+
+  $otaInputGuardsLog = Join-Path $logDir "ota-input-guards.log"
+  $otaInputGuardsExit = Invoke-CapturedCommand -LogPath $otaInputGuardsLog -Command {
+    & bash scripts/verify-ota-input-guards.sh
+  }
+  if ($otaInputGuardsExit -eq 0) {
+    Record-Step "verify-ota-input-guards" "ok" "OTA rejects mismatched checksum sidecars and invalid health-check parameters"
+    $pass++
+  } else {
+    Record-Step "verify-ota-input-guards" "fail" (Last-Log-Line $otaInputGuardsLog)
+    $fail++
+  }
+
+  $otaDangerousOptionsLog = Join-Path $logDir "ota-dangerous-options.log"
+  $otaDangerousOptionsExit = Invoke-CapturedCommand -LogPath $otaDangerousOptionsLog -Command {
+    & bash scripts/verify-ota-dangerous-options.sh
+  }
+  if ($otaDangerousOptionsExit -eq 0) {
+    Record-Step "verify-ota-dangerous-options" "ok" "OTA requires explicit confirmation for unsafe checksum, backup, and maintenance bypasses"
+    $pass++
+  } else {
+    Record-Step "verify-ota-dangerous-options" "fail" (Last-Log-Line $otaDangerousOptionsLog)
+    $fail++
+  }
+
+  $otaPreSwitchRejectionLog = Join-Path $logDir "ota-pre-switch-rejection.log"
+  $otaPreSwitchRejectionExit = Invoke-CapturedCommand -LogPath $otaPreSwitchRejectionLog -Command {
+    & bash scripts/verify-ota-pre-switch-rejection.sh
+  }
+  if ($otaPreSwitchRejectionExit -eq 0) {
+    Record-Step "verify-ota-pre-switch-rejection" "ok" "OTA records checksum/tar pre-switch failures as rejected while keeping current slot active"
+    $pass++
+  } else {
+    Record-Step "verify-ota-pre-switch-rejection" "fail" (Last-Log-Line $otaPreSwitchRejectionLog)
+    $fail++
+  }
+
+  $otaCleanupLog = Join-Path $logDir "ota-cleanup.log"
+  $otaCleanupExit = Invoke-CapturedCommand -LogPath $otaCleanupLog -Command {
+    & bash scripts/verify-ota-cleanup.sh
+  }
+  if ($otaCleanupExit -eq 0) {
+    Record-Step "verify-ota-cleanup" "ok" "OTA removes staging leftovers and fallback lock directories after failed runs"
+    $pass++
+  } else {
+    Record-Step "verify-ota-cleanup" "fail" (Last-Log-Line $otaCleanupLog)
+    $fail++
+  }
+
+  $otaSlotIntegrityLog = Join-Path $logDir "ota-slot-integrity.log"
+  $otaSlotIntegrityExit = Invoke-CapturedCommand -LogPath $otaSlotIntegrityLog -Command {
+    & bash scripts/verify-ota-slot-integrity.sh
+  }
+  if ($otaSlotIntegrityExit -eq 0) {
+    Record-Step "verify-ota-slot-integrity" "ok" "OTA refuses current/previous links that point outside managed slots"
+    $pass++
+  } else {
+    Record-Step "verify-ota-slot-integrity" "fail" (Last-Log-Line $otaSlotIntegrityLog)
+    $fail++
+  }
+
+  $otaCommandPreflightLog = Join-Path $logDir "ota-command-preflight.log"
+  $otaCommandPreflightExit = Invoke-CapturedCommand -LogPath $otaCommandPreflightLog -Command {
+    & bash scripts/verify-ota-command-preflight.sh
+  }
+  if ($otaCommandPreflightExit -eq 0) {
+    Record-Step "verify-ota-command-preflight" "ok" "OTA fails early when required board commands are missing"
+    $pass++
+  } else {
+    Record-Step "verify-ota-command-preflight" "fail" (Last-Log-Line $otaCommandPreflightLog)
+    $fail++
+  }
+
+  $otaDurabilitySyncLog = Join-Path $logDir "ota-durability-sync.log"
+  $otaDurabilitySyncExit = Invoke-CapturedCommand -LogPath $otaDurabilitySyncLog -Command {
+    & bash scripts/verify-ota-durability-sync.sh
+  }
+  if ($otaDurabilitySyncExit -eq 0) {
+    Record-Step "verify-ota-durability-sync" "ok" "OTA syncs state, slot, unit, tool, and symlink writes before relying on them"
+    $pass++
+  } else {
+    Record-Step "verify-ota-durability-sync" "fail" (Last-Log-Line $otaDurabilitySyncLog)
+    $fail++
+  }
+
+  $otaBootCheckLog = Join-Path $logDir "ota-boot-check.log"
+  $otaBootCheckExit = Invoke-CapturedCommand -LogPath $otaBootCheckLog -Command {
+    & bash scripts/verify-ota-boot-check.sh
+  }
+  if ($otaBootCheckExit -eq 0) {
+    Record-Step "verify-ota-boot-check" "ok" "OTA boot-check keeps current before slot switch and restores previous after interrupted health checking"
+    $pass++
+  } else {
+    Record-Step "verify-ota-boot-check" "fail" (Last-Log-Line $otaBootCheckLog)
+    $fail++
+  }
+
+  $otaFailedStateLog = Join-Path $logDir "ota-failed-state.log"
+  $otaFailedStateExit = Invoke-CapturedCommand -LogPath $otaFailedStateLog -Command {
+    & bash scripts/verify-ota-failed-state.sh
+  }
+  if ($otaFailedStateExit -eq 0) {
+    Record-Step "verify-ota-failed-state" "ok" "OTA failed state clears health-check bypass and stops production services"
+    $pass++
+  } else {
+    Record-Step "verify-ota-failed-state" "fail" (Last-Log-Line $otaFailedStateLog)
+    $fail++
+  }
+
+  $otaDryRunLog = Join-Path $logDir "ota-dry-run.log"
+  $otaDryRunExit = Invoke-CapturedCommand -LogPath $otaDryRunLog -Command {
+    & bash scripts/verify-ota-dry-run.sh
+  }
+  if ($otaDryRunExit -eq 0) {
+    Record-Step "verify-ota-dry-run" "ok" "OTA dry-run validates candidate packages without switching slots"
+    $pass++
+  } else {
+    Record-Step "verify-ota-dry-run" "fail" (Last-Log-Line $otaDryRunLog)
+    $fail++
+  }
+
   $backupScriptLog = Join-Path $logDir "production-backup-script.log"
   $backupScriptExit = Invoke-CapturedCommand -LogPath $backupScriptLog -Command {
     & powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-production-backup-script.ps1
   }
   if ($backupScriptExit -eq 0) {
-    Record-Step "verify-production-backup-script" "ok" "backup script writes timestamped SQLite snapshots and latest link"
+    Record-Step "verify-production-backup-script" "ok" "backup script validates temporary snapshots before publishing latest links"
     $pass++
   } else {
     Record-Step "verify-production-backup-script" "fail" (Last-Log-Line $backupScriptLog)
@@ -369,6 +549,9 @@ max_pdu_bytes = 260
   if (-not (Wait-HttpOk -Url "http://127.0.0.1:$Port/health" -TimeoutSeconds 30)) {
     throw "daemon did not become healthy on $Port"
   }
+  $engineerLogin = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$Port/api/auth/login" -ContentType "application/json" -Body (@{ username = "engineer"; password = "engineer123" } | ConvertTo-Json -Compress)
+  $engineerToken = $engineerLogin.data.token
+  if (-not $engineerToken) { throw "engineer login returned no token for simulator sample ingest" }
 
   $vite = Start-LoggedProcess -FilePath "cmd.exe" -ArgumentList @(
     "/c", "npm", "run", "frontend:dev", "--", "--port", "$VitePort", "--strictPort"
@@ -388,7 +571,7 @@ max_pdu_bytes = 260
     "--url", "http://127.0.0.1:$Port",
     "--profile", "production",
     "--interval-ms", "1000"
-  ) -LogPath $simLog
+  ) -LogPath $simLog -Env @{ REACTOR_OS_TOKEN = $engineerToken }
   Start-Sleep -Seconds 4
 
   $rbacLog = Join-Path $logDir "load-and-rbac.log"

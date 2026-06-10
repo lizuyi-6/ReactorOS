@@ -240,7 +240,7 @@ max_pdu_bytes = 260
   if (-not (Test-Path -LiteralPath "$backup.sha256")) { throw "backup sha256 sidecar was not created" }
 
   Stop-Daemon
-  $restoreOutput = & $xingshuBin ops restore --backup $backup --db $restoredDb --yes 2>&1 | Out-String
+  $restoreOutput = & $xingshuBin ops restore --backup $backup --db $restoredDb --yes --confirm-daemon-stopped 2>&1 | Out-String
   $restoreOutput | Set-Content -LiteralPath (Join-Path $logDir "restore.log") -Encoding UTF8
   if ($restoreOutput -notmatch "integrity:\s+ok") {
     throw "restore output did not report integrity ok: $restoreOutput"

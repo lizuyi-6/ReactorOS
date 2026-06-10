@@ -151,9 +151,144 @@ else
   api_fail=$((api_fail + 1))
 fi
 
+install_board_preflight_log="$LOG_DIR/install-board-preflight.log"
+if bash scripts/verify-install-board-preflight.sh > "$install_board_preflight_log" 2>&1; then
+  record "verify-install-board-preflight" "ok" "board installer validates package completeness before stopping services"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-install-board-preflight" "fail" "$(tail_summary "$install_board_preflight_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_ab_log="$LOG_DIR/ota-ab-release-path.log"
+if node scripts/verify-ota-ab-release-path.mjs > "$ota_ab_log" 2>&1; then
+  record "verify-ota-ab-release-path" "ok" "application A/B OTA path checks checksum, busy state, backup, health, and rollback"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-ab-release-path" "fail" "$(tail_summary "$ota_ab_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_systemd_boot_gate_log="$LOG_DIR/ota-systemd-boot-gate.log"
+if node scripts/verify-ota-systemd-boot-gate.mjs > "$ota_systemd_boot_gate_log" 2>&1; then
+  record "verify-ota-systemd-boot-gate" "ok" "backend service runs OTA boot-check before every start and boot-check does not stay active"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-systemd-boot-gate" "fail" "$(tail_summary "$ota_systemd_boot_gate_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_tar_safety_log="$LOG_DIR/ota-tar-safety.log"
+if bash scripts/verify-ota-tar-safety.sh > "$ota_tar_safety_log" 2>&1; then
+  record "verify-ota-tar-safety" "ok" "OTA rejects path traversal, multiple top-level roots, and link members before extraction"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-tar-safety" "fail" "$(tail_summary "$ota_tar_safety_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_busy_state_log="$LOG_DIR/ota-busy-state.log"
+if bash scripts/verify-ota-busy-state.sh > "$ota_busy_state_log" 2>&1; then
+  record "verify-ota-busy-state" "ok" "OTA fails closed unless device status proves the reactor is idle"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-busy-state" "fail" "$(tail_summary "$ota_busy_state_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_input_guards_log="$LOG_DIR/ota-input-guards.log"
+if bash scripts/verify-ota-input-guards.sh > "$ota_input_guards_log" 2>&1; then
+  record "verify-ota-input-guards" "ok" "OTA rejects mismatched checksum sidecars and invalid health-check parameters"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-input-guards" "fail" "$(tail_summary "$ota_input_guards_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_dangerous_options_log="$LOG_DIR/ota-dangerous-options.log"
+if bash scripts/verify-ota-dangerous-options.sh > "$ota_dangerous_options_log" 2>&1; then
+  record "verify-ota-dangerous-options" "ok" "OTA requires explicit confirmation for unsafe checksum, backup, and maintenance bypasses"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-dangerous-options" "fail" "$(tail_summary "$ota_dangerous_options_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_pre_switch_rejection_log="$LOG_DIR/ota-pre-switch-rejection.log"
+if bash scripts/verify-ota-pre-switch-rejection.sh > "$ota_pre_switch_rejection_log" 2>&1; then
+  record "verify-ota-pre-switch-rejection" "ok" "OTA records checksum/tar pre-switch failures as rejected while keeping current slot active"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-pre-switch-rejection" "fail" "$(tail_summary "$ota_pre_switch_rejection_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_cleanup_log="$LOG_DIR/ota-cleanup.log"
+if bash scripts/verify-ota-cleanup.sh > "$ota_cleanup_log" 2>&1; then
+  record "verify-ota-cleanup" "ok" "OTA removes staging leftovers and fallback lock directories after failed runs"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-cleanup" "fail" "$(tail_summary "$ota_cleanup_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_slot_integrity_log="$LOG_DIR/ota-slot-integrity.log"
+if bash scripts/verify-ota-slot-integrity.sh > "$ota_slot_integrity_log" 2>&1; then
+  record "verify-ota-slot-integrity" "ok" "OTA refuses current/previous links that point outside managed slots"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-slot-integrity" "fail" "$(tail_summary "$ota_slot_integrity_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_command_preflight_log="$LOG_DIR/ota-command-preflight.log"
+if bash scripts/verify-ota-command-preflight.sh > "$ota_command_preflight_log" 2>&1; then
+  record "verify-ota-command-preflight" "ok" "OTA fails early when required board commands are missing"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-command-preflight" "fail" "$(tail_summary "$ota_command_preflight_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_durability_sync_log="$LOG_DIR/ota-durability-sync.log"
+if bash scripts/verify-ota-durability-sync.sh > "$ota_durability_sync_log" 2>&1; then
+  record "verify-ota-durability-sync" "ok" "OTA syncs state, slot, unit, tool, and symlink writes before relying on them"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-durability-sync" "fail" "$(tail_summary "$ota_durability_sync_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_boot_check_log="$LOG_DIR/ota-boot-check.log"
+if bash scripts/verify-ota-boot-check.sh > "$ota_boot_check_log" 2>&1; then
+  record "verify-ota-boot-check" "ok" "OTA boot-check keeps current before slot switch and restores previous after interrupted health checking"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-boot-check" "fail" "$(tail_summary "$ota_boot_check_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_failed_state_log="$LOG_DIR/ota-failed-state.log"
+if bash scripts/verify-ota-failed-state.sh > "$ota_failed_state_log" 2>&1; then
+  record "verify-ota-failed-state" "ok" "OTA failed state clears health-check bypass and stops production services"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-failed-state" "fail" "$(tail_summary "$ota_failed_state_log")"
+  api_fail=$((api_fail + 1))
+fi
+
+ota_dry_run_log="$LOG_DIR/ota-dry-run.log"
+if bash scripts/verify-ota-dry-run.sh > "$ota_dry_run_log" 2>&1; then
+  record "verify-ota-dry-run" "ok" "OTA dry-run validates candidate packages without switching slots"
+  api_pass=$((api_pass + 1))
+else
+  record "verify-ota-dry-run" "fail" "$(tail_summary "$ota_dry_run_log")"
+  api_fail=$((api_fail + 1))
+fi
+
 backup_script_log="$LOG_DIR/production-backup-script.log"
 if powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-production-backup-script.ps1 > "$backup_script_log" 2>&1; then
-  record "verify-production-backup-script" "ok" "backup script writes timestamped SQLite snapshots and latest link"
+  record "verify-production-backup-script" "ok" "backup script validates temporary snapshots before publishing latest links"
   api_pass=$((api_pass + 1))
 else
   record "verify-production-backup-script" "fail" "$(tail_summary "$backup_script_log")"
@@ -255,6 +390,16 @@ if [[ "$DAEMON_OK" != "200" ]]; then
   echo "daemon did not become healthy on ${PORT}; see $DAEMON_LOG" >&2
   exit 1
 fi
+ENGINEER_TOKEN="$(
+  curl -fsS -H "Content-Type: application/json" \
+    -d '{"username":"engineer","password":"engineer123"}' \
+    "http://127.0.0.1:${PORT}/api/auth/login" |
+  python -c 'import json,sys; body=json.load(sys.stdin); print((body.get("data") or body).get("token",""))'
+)"
+if [[ -z "$ENGINEER_TOKEN" ]]; then
+  echo "engineer login returned no token for simulator sample ingest" >&2
+  exit 1
+fi
 
 if start_vite; then
   record "vite-dev" "ok" "vite dev on ${VUE_PORT} proxied to ${PORT}"
@@ -265,7 +410,7 @@ else
   exit 1
 fi
 
-node scripts/simulate-device.js \
+REACTOR_OS_TOKEN="$ENGINEER_TOKEN" node scripts/simulate-device.js \
   --url "http://127.0.0.1:${PORT}" \
   --profile production \
   --interval-ms 1000 \

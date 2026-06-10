@@ -29,7 +29,7 @@
 | 星宿边缘中枢 Rust 守护程序 ARM64/AMD64 | `src/main.rs`、`src/api.rs`、`src/modbus_registers.rs`、`docs/lubancat2_debian10_deploy.md`、`docs/upper_computer_rk_deployment_acceptance_guide.md` | 部分完成 | 需最终 ARM64/RK release 包、SHA256、RK 实机运行记录 |
 | Web 控制台静态资源 | `frontend/dist/index.html`、`static/index.html` legacy fallback、`scripts/verify-vue-release-assets.mjs`、`scripts/verify-vue-mobile.mjs`、`scripts/verify-vue-browser-matrix.mjs`、视觉证据 `output/playwright/vue-*.png`、`output/playwright/vue-mobile-verification.json`、`output/playwright/vue-browser-matrix-verification.json` 和 `output/visual-i18n/*.png`；Chromium/Chrome/Edge/Firefox/WebKit 本地严格矩阵已通过 | 本地完成 | 需 release/RK、macOS Safari、iOS/Android 真机和用户最终验收截图 |
 | 配置文件模板 | `config/device.toml`、`config/safety.toml`、`config/integration.toml`、`config/ai_memory.toml` | 本地完成 | 需生产脱敏配置、真实证书、STM32 串口和寄存器最终值 |
-| 安装脚本与升级脚本 | `docs/lubancat2_debian10_deploy.md`、`deploy/install-board.sh`、`deploy/reactor-edge-backup.service`、`deploy/reactor-edge-backup.timer`、`deploy/reactor-edge-backup.sh` | 部分完成 | 安装和每日备份 timer 路径已补；仍需在全新 RK/PC 设备执行部署计时、升级/回滚和恢复演练 |
+| 安装脚本与升级脚本 | `docs/lubancat2_debian10_deploy.md`、`deploy/install-board.sh`、`deploy/reactor-edge-backup.service`、`deploy/reactor-edge-backup.timer`、`deploy/reactor-edge-backup.sh` | 部分完成 | 安装前包完整性预检、每日备份 timer、应用级 A/B OTA 和失败回滚路径已补；仍需在全新 RK/PC 设备执行部署计时、升级/回滚和恢复演练 |
 | STM32 Modbus RTU 从站控制器固件 | 非上位机范围 | 不计入李祖祎本地完成项 | 需硬件负责人提供固件、寄存器手册和联调记录 |
 
 ## 3. 文档交付物对照

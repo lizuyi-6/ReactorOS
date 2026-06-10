@@ -94,7 +94,7 @@ if (-not (Test-Path -LiteralPath $XingshuBin)) {
 }
 if (-not (Test-Path -LiteralPath $XingshuBin)) { throw "missing xingshu binary: $XingshuBin" }
 
-& $XingshuBin --db $db data delete --yes | Out-Null
+& $XingshuBin --db $db data delete --yes --confirm-daemon-stopped | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "failed to create/migrate temporary database" }
 
 & $XingshuBin --db $db ops backup --out $realBackup | Out-Host
@@ -114,6 +114,10 @@ $bash = Find-UsableBash
 
 $mockBin = Join-Path $workDir "mock-xingshu.sh"
 $mockLog = Join-Path $workDir "mock-xingshu-args.log"
+$mockToolDir = Join-Path $workDir "mock-bin"
+$mockSync = Join-Path $mockToolDir "sync"
+$mockSyncLog = Join-Path $workDir "mock-sync.log"
+New-Item -ItemType Directory -Force -Path $mockToolDir | Out-Null
 $mockText = @'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -133,18 +137,30 @@ if [[ -z "$out" ]]; then
 fi
 mkdir -p "$(dirname "$out")"
 printf 'SQLite format 3\000mock-backup\n' > "$out"
-printf 'mockhash  %s\n' "$out" > "${out}.sha256"
+sha256sum "$out" > "${out}.sha256"
 '@
 [System.IO.File]::WriteAllText($mockBin, $mockText, [System.Text.UTF8Encoding]::new($false))
+$mockSyncText = @'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "sync" >> "$MOCK_SYNC_LOG"
+'@
+[System.IO.File]::WriteAllText($mockSync, $mockSyncText, [System.Text.UTF8Encoding]::new($false))
 
 $bashScript = Convert-ToBashPath -Path (Join-Path $root "deploy\reactor-edge-backup.sh") -BashPath $bash
 $mockBinWsl = Convert-ToBashPath -Path $mockBin -BashPath $bash
+$mockToolDirWsl = Convert-ToBashPath -Path $mockToolDir -BashPath $bash
+$mockSyncWsl = Convert-ToBashPath -Path $mockSync -BashPath $bash
+$mockSyncLogWsl = Convert-ToBashPath -Path $mockSyncLog -BashPath $bash
 $mockLogWsl = Convert-ToBashPath -Path $mockLog -BashPath $bash
 $dbWsl = Convert-ToBashPath -Path $db -BashPath $bash
 $backupDirWsl = Convert-ToBashPath -Path $backupDir -BashPath $bash
+$lockWsl = "$backupDirWsl/.reactor-edge-backup.lock"
 
-$cmd = "chmod +x $(Quote-Bash $mockBinWsl) && " + (@(
+$cmd = "chmod +x $(Quote-Bash $mockBinWsl) $(Quote-Bash $mockSyncWsl) && " + (@(
     "MOCK_XINGSHU_LOG=$(Quote-Bash $mockLogWsl)",
+    "MOCK_SYNC_LOG=$(Quote-Bash $mockSyncLogWsl)",
+    "PATH=$(Quote-Bash $mockToolDirWsl):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "REACTOR_EDGE_DB=$(Quote-Bash $dbWsl)",
     "REACTOR_EDGE_BACKUP_DIR=$(Quote-Bash $backupDirWsl)",
     "REACTOR_EDGE_XINGSHU_BIN=$(Quote-Bash $mockBinWsl)",
@@ -167,9 +183,45 @@ if (-not (Test-Path -LiteralPath "$($snapshot.FullName).sha256")) {
 }
 $latest = Join-Path $backupDir "latest.snapshot"
 if (-not (Test-Path -LiteralPath $latest)) { throw "missing latest snapshot link/file" }
+$latestSha = Join-Path $backupDir "latest.snapshot.sha256"
+if (-not (Test-Path -LiteralPath $latestSha)) { throw "missing latest snapshot sha256 link/file" }
+if (Get-ChildItem -LiteralPath $backupDir -Filter "*.tmp.*" -File) {
+  throw "backup script left temporary files in backup directory"
+}
+$sidecarLine = Get-Content -LiteralPath "$($snapshot.FullName).sha256" -Raw
+if ($sidecarLine -match "\.tmp\.") {
+  throw "published sha256 sidecar still references temporary path: $sidecarLine"
+}
 $mockArgs = Get-Content -LiteralPath $mockLog -Raw
 if ($mockArgs -notmatch "--db" -or $mockArgs -notmatch "ops backup" -or $mockArgs -notmatch "--out") {
   throw "mock xingshu did not receive expected backup args: $mockArgs"
+}
+if ($mockArgs -notmatch "\.tmp\.") {
+  throw "backup script did not write through a temporary snapshot path: $mockArgs"
+}
+$syncCalls = @(Get-Content -LiteralPath $mockSyncLog)
+if ($syncCalls.Count -lt 2) {
+  throw "backup script did not call sync after publishing snapshot and latest links"
+}
+
+$contentBeforeLockCheck = @(Get-ChildItem -LiteralPath $backupDir -Filter "reactor.sqlite3.*.snapshot" -File).Count
+$lockedCmd = "flock -n $(Quote-Bash $lockWsl) -c " + (Quote-Bash ((@(
+      "MOCK_XINGSHU_LOG=$(Quote-Bash $mockLogWsl)",
+      "MOCK_SYNC_LOG=$(Quote-Bash $mockSyncLogWsl)",
+      "PATH=$(Quote-Bash $mockToolDirWsl):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "REACTOR_EDGE_DB=$(Quote-Bash $dbWsl)",
+      "REACTOR_EDGE_BACKUP_DIR=$(Quote-Bash $backupDirWsl)",
+      "REACTOR_EDGE_XINGSHU_BIN=$(Quote-Bash $mockBinWsl)",
+      "REACTOR_EDGE_BACKUP_RETAIN_DAYS=30",
+      "$(Quote-Bash $bashScript)"
+    ) -join " ")))
+& $bash -lc $lockedCmd
+if ($LASTEXITCODE -ne 75) {
+  throw "backup script did not fail with 75 while lock was held; exit=$LASTEXITCODE"
+}
+$contentAfterLockCheck = @(Get-ChildItem -LiteralPath $backupDir -Filter "reactor.sqlite3.*.snapshot" -File).Count
+if ($contentAfterLockCheck -ne $contentBeforeLockCheck) {
+  throw "locked backup attempt wrote a new timestamped snapshot"
 }
 
 Write-Host "production backup script ok: $($snapshot.FullName)"

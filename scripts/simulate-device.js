@@ -10,6 +10,7 @@ const DEFAULTS = {
   mode: process.env.REACTOR_OS_SIM_MODE || "pipeline",
   baseUrl: process.env.REACTOR_OS_URL || "http://127.0.0.1:8000",
   deviceId: process.env.REACTOR_OS_DEVICE_ID || "reactor_001",
+  token: process.env.REACTOR_OS_TOKEN || process.env.XINGSHU_TOKEN || "",
   intervalMs: Number(process.env.REACTOR_OS_SIM_INTERVAL_MS || 1000),
   profile: process.env.REACTOR_OS_SIM_PROFILE || "normal",
   statePath:
@@ -30,6 +31,7 @@ const config = {
   mode: normalizeMode(args.mode ?? DEFAULTS.mode),
   baseUrl: String(args.url ?? DEFAULTS.baseUrl).replace(/\/+$/, ""),
   deviceId: String(args["device-id"] ?? DEFAULTS.deviceId),
+  token: String(args.token ?? DEFAULTS.token).trim(),
   intervalMs: positiveInt(args["interval-ms"] ?? DEFAULTS.intervalMs, "interval-ms"),
   profile: String(args.profile ?? DEFAULTS.profile),
   statePath: path.resolve(String(args.state ?? DEFAULTS.statePath)),
@@ -75,6 +77,11 @@ async function main() {
     log(`control.json <- ${config.controlPath}`);
   }
   if (config.mode === "pipeline" || config.mode === "both") {
+    if (!config.token) {
+      throw new Error(
+        "pipeline mode requires --token, REACTOR_OS_TOKEN, or XINGSHU_TOKEN with ingest_sensor_sample permission",
+      );
+    }
     log(`pipeline POST -> ${sampleUrl()}`);
   }
 
@@ -247,7 +254,11 @@ async function postPipelineSample(sample) {
   try {
     const response = await fetch(sampleUrl(), {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
+      headers: {
+        authorization: `Bearer ${config.token}`,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
       body: JSON.stringify(sample),
     });
     const text = await response.text();
@@ -491,6 +502,7 @@ Options:
   --mode pipeline|json-bridge|both   Output mode. Default: pipeline
   --url http://127.0.0.1:8000        ReactorOS base URL for pipeline mode
   --device-id reactor_001            Device id for pipeline mode
+  --token TOKEN                       Bearer token with ingest_sensor_sample permission
   --state path/to/state.json         JSON bridge state output path
   --control path/to/control.json     JSON bridge control input path
   --interval-ms 1000                 Sample interval
@@ -503,6 +515,7 @@ Environment:
   REACTOR_OS_SIM_MODE
   REACTOR_OS_URL
   REACTOR_OS_DEVICE_ID
+  REACTOR_OS_TOKEN / XINGSHU_TOKEN
   REACTOR_OS_SIM_INTERVAL_MS
   REACTOR_OS_SIM_PROFILE
   REACTOR_OS_SIM_STATE

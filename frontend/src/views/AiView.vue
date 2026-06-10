@@ -438,11 +438,22 @@ async function loadPlan(): Promise<void> {
 
 const safetyBlock = computed(() => {
   const runtime = objectAt(store.live, "runtime") ?? store.runtimeFallback;
+  const unfinishedBatchIds = textAt(runtime, "unfinished_batch_ids", "");
   return {
+    live_unavailable: store.liveStatus !== "fresh",
     emergency_stop: textAt(runtime, "emergency_stop", "false") === "true",
-    manual_lock: textAt(runtime, "manual_lock", "false") === "true"
+    manual_lock: textAt(runtime, "manual_lock", "false") === "true",
+    batch_recovery_required: textAt(runtime, "batch_recovery_required", "false") === "true",
+    unfinished_batch_ids: unfinishedBatchIds
   };
 });
+const executeBlocked = computed(
+  () =>
+    safetyBlock.value.live_unavailable ||
+    safetyBlock.value.emergency_stop ||
+    safetyBlock.value.manual_lock ||
+    safetyBlock.value.batch_recovery_required
+);
 
 const localAiModeLabel = computed(() => translatedFrom(localAiModeLabels, rawAt(localAi.value, "mode"), store.tr("未就绪", "not ready")));
 const localAiTagType = computed(() => {
@@ -533,11 +544,18 @@ const localAiTagType = computed(() => {
       <div>
         <h2>{{ store.tr("AI 主控", "AI Master Control") }}</h2>
         <p>{{ store.tr("默认仅 dry-run，operator 复核后再以 execute 提交；执行会受 RBAC、急停、人工锁定、传感器新鲜度共同约束。", "Dry-run is the default. Operators review then submit execute; the action is gated by RBAC, emergency stop, manual lock, and sensor freshness.") }}</p>
-        <p v-if="safetyBlock.emergency_stop" class="muted">
+        <p v-if="safetyBlock.live_unavailable" class="muted">
+          {{ store.tr("实时现场状态不可用：AI 执行被阻断。", "Live field state is unavailable: AI execution is blocked.") }}
+        </p>
+        <p v-else-if="safetyBlock.emergency_stop" class="muted">
           {{ store.tr("急停已触发：AI 主控被阻断。", "Emergency stop is active: AI master control is blocked.") }}
         </p>
         <p v-else-if="safetyBlock.manual_lock" class="muted">
           {{ store.tr("人工锁定已开启：AI 主控被阻断。", "Manual lock is active: AI master control is blocked.") }}
+        </p>
+        <p v-else-if="safetyBlock.batch_recovery_required" class="muted">
+          {{ store.tr("未完成批次恢复中：AI 执行被阻断。", "Unfinished batch recovery is active: AI execution is blocked.") }}
+          <span v-if="safetyBlock.unfinished_batch_ids"> {{ safetyBlock.unfinished_batch_ids }}</span>
         </p>
       </div>
       <el-form label-position="top" class="control-form">
@@ -562,7 +580,7 @@ const localAiTagType = computed(() => {
           <el-button :loading="submitting" :disabled="!store.isAuthenticated" @click="runDryRun">
             {{ store.tr("Dry-run", "Dry-run") }}
           </el-button>
-          <el-button type="primary" :loading="submitting" :disabled="!store.isAuthenticated || safetyBlock.emergency_stop || safetyBlock.manual_lock" @click="executeAi">
+          <el-button type="primary" :loading="submitting" :disabled="!store.isAuthenticated || executeBlocked" @click="executeAi">
             {{ store.tr("Execute (受 RBAC 约束)", "Execute (gated by RBAC)") }}
           </el-button>
           <span v-if="actionMessage" class="muted">{{ actionMessage }}</span>

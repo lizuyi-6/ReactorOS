@@ -1,5 +1,8 @@
 use reactor_edge_daemon::{
-    config::{load_device_config, DeviceConfig, DeviceMode, SafetyConfig},
+    config::{
+        load_device_config, load_safety_config, validate_device_config, validate_safety_config,
+        DeviceConfig, DeviceMode, SafetyConfig,
+    },
     memory::load_ai_memory,
 };
 
@@ -114,10 +117,62 @@ fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
 
 #[test]
 fn safety_template_exposes_production_retry_guard_and_ai_stop_bounds() {
-    let safety: SafetyConfig =
-        toml::from_str(&std::fs::read_to_string("config/safety.toml").unwrap()).unwrap();
+    let safety = load_safety_config("config/safety.toml").unwrap();
 
     assert_eq!(safety.control.write_retry_backoff_ms, 5000);
     assert_eq!(safety.control.safety_guard_timeout_ms, 1000);
+    assert!(safety.control.require_device_status_for_control);
     assert_eq!(safety.control.ai_stop_product_concentration_percent, 95.0);
+}
+
+#[test]
+fn safety_config_rejects_non_positive_timing_values() {
+    let mut safety = load_safety_config("config/safety.toml").unwrap();
+    safety.control.sensor_timeout_ms = 0;
+    let err = validate_safety_config(&safety).unwrap_err().to_string();
+    assert!(err.contains("control.sensor_timeout_ms"));
+
+    let mut safety = load_safety_config("config/safety.toml").unwrap();
+    safety.control.control_interval_ms = 0;
+    let err = validate_safety_config(&safety).unwrap_err().to_string();
+    assert!(err.contains("control.control_interval_ms"));
+
+    let mut safety = load_safety_config("config/safety.toml").unwrap();
+    safety.control.ai_stop_product_concentration_percent = 101.0;
+    let err = validate_safety_config(&safety).unwrap_err().to_string();
+    assert!(err.contains("ai_stop_product_concentration_percent"));
+}
+
+#[test]
+fn device_config_rejects_unreliable_io_and_register_scaling() {
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.serial.timeout_ms = 0;
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("serial.timeout_ms"));
+
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.serial.parity = "bad".to_string();
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("serial.parity"));
+
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.json_bridge.max_state_age_ms = -1;
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("json_bridge.max_state_age_ms"));
+
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.modbus.registers.temperature_c.scale = 0.0;
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("modbus.registers.temperature_c.scale"));
+
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.modbus.registers.temperature_c.min_valid = 200.0;
+    config.modbus.registers.temperature_c.max_valid = 100.0;
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("modbus.registers.temperature_c.min_valid"));
+
+    let mut config = load_device_config("config/device.toml").unwrap();
+    config.modbus.registers.target_temperature_c.scale = 0.0;
+    let err = validate_device_config(&config).unwrap_err().to_string();
+    assert!(err.contains("modbus.registers.target_temperature_c.scale"));
 }

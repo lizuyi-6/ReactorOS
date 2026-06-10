@@ -17,11 +17,25 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const consoleErrors = [];
 const pageErrors = [];
 const liveUrls = [];
+const token = await loginEngineer();
+
+async function loginEngineer() {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "engineer", password: "engineer123" }),
+  });
+  if (!response.ok) {
+    throw new Error(`login failed ${response.status}: ${await response.text()}`);
+  }
+  const body = await response.json();
+  return body.data?.token ?? body.token;
+}
 
 async function injectSample() {
   const response = await fetch(`${baseUrl}/api/v1/reactor/reactor_001/samples`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(sample),
   });
   if (!response.ok) {

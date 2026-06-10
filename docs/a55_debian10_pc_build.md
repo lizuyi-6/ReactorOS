@@ -87,10 +87,15 @@ cd reactor-os-a55-arm64-debian10-chromium-kiosk-*
 sudo ./install.sh
 ```
 
+`install.sh` validates the extracted package before stopping existing services.
+If the copied package is missing a required binary, OTA helper, backup helper,
+unit file, config, build metadata, or HMI asset, it fails before touching the
+running service.
+
 This enables boot autostart for:
 
 - `reactor-edge`: backend, API, database, safety control loop with isolated safety guard, Vue HMI with legacy static fallback.
-- `reactor-edge-backup.timer`: daily online SQLite snapshot schedule writing `/var/lib/reactor-edge/backups`.
+- `reactor-edge-backup.timer`: daily online SQLite snapshot schedule writing `/var/lib/reactor-edge/backups`; snapshots are serialized with a lock, written through a temporary file, and verified before `latest.snapshot` is updated.
 - `reactor-os-chromium`: Chromium kiosk opening `http://127.0.0.1:8000/`.
 
 Install runtime apt dependencies at the same time:

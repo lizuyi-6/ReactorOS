@@ -121,7 +121,7 @@ GET  /api/ai/experiment-plan
 
 GET  /api/live
 GET  /api/v1/devices/status
-POST /api/v1/reactor/:device_id/samples
+POST /api/v1/reactor/:device_id/samples        # requires bearer token with ingest_sensor_sample permission
 GET  /api/v1/reactor/:device_id/realtime        # requires bearer token with monitor permission
 GET  /api/v1/reactor/:device_id/history
 POST /api/v1/reactor/:device_id/control
@@ -211,6 +211,7 @@ tls = true
 - task payload 复用 AINAS 安全执行路径。
 - receipt topic 发布执行结果。
 - alert topic 按 `alert_interval_s` 发布 retained 报警快照。
+- alert 快照复用 `/api/live` 的报警生成逻辑；样本缺失、样本过期或现场输入错误会生成 `sensor_data_unavailable` 高危报警，`sensor_fresh=false` 只作为摘要位，不能单独代表完整报警状态。
 - `/api/config/summary` 暴露状态摘要。
 - `use_tls = true` 时必须配置非空 `ca_cert`，缺失时启动 MQTT TLS 连接会 fail-closed，不会隐式信任系统根证书。
 
@@ -246,8 +247,9 @@ cargo run --bin xingshu -- --help
 cargo run --bin xingshu -- status
 cargo run --bin xingshu -- config --local --json
 cargo run --bin xingshu -- modbus map
-cargo run --bin xingshu -- data sample --duration-s 180 --interval-ms 500
-cargo run --bin xingshu -- data delete --yes
+cargo run --bin xingshu -- auth login --username engineer --password engineer123
+cargo run --bin xingshu -- --token <engineer-token> data sample --duration-s 180 --interval-ms 500
+cargo run --bin xingshu -- data delete --yes --confirm-daemon-stopped
 cargo run --bin xingshu -- ai train
 cargo run --bin xingshu -- perf smoke --iterations 20 --json
 ```
@@ -256,7 +258,11 @@ cargo run --bin xingshu -- perf smoke --iterations 20 --json
 
 `xingshu perf smoke` 会测量本机只读 API 往返和安全计算耗时，并输出 p50/p95/max。该命令默认不写控制目标、不启动工艺；`safety_guard_process_spawn` 仅作为独立进程启动/JSON 往返诊断项，不用于替代真实硬件控制延迟验收。
 
-`xingshu data sample` 通过正式 `/api/v1/reactor/:device_id/samples` 外部样本入口注入演示数据，不写控制目标、不绕过 safety。无硬件本地演示时建议使用 `--duration-s 180 --interval-ms 500` 保持样本新鲜；当前 `sensor_timeout_ms=6000`，单条样本超过 6 秒后 `/api/live` 会按预期返回 503。
+`xingshu data sample` 通过正式 `/api/v1/reactor/:device_id/samples` 外部样本入口注入演示数据，不写控制目标、不绕过 safety。正式样本会更新 `runtime.latest_sample`，但只证明传感器样本新鲜且已落库；生产默认 `require_device_status_for_control = true`，危险控制还需要下位机状态健康证明。无硬件本地演示时建议使用 `--duration-s 180 --interval-ms 500` 保持样本新鲜；当前 `sensor_timeout_ms=6000`，单条样本超过 6 秒后 `/api/live` 会按预期返回 503。
+
+严格生产模式下，只有新鲜样本但没有下位机状态证明时，`/api/live` 仍可用于查看已落库传感器值，但响应中的 `device_status.online_count` 为 `0`、设备 `status` 为 `offline`，`alarms` 包含高危 `device_status_unavailable`。`/api/v1/reactor/:device_id/realtime` 和 WebSocket 使用同一语义，返回 `status=offline`、`device_online=false`、`data.phase=offline`，不能被 HMI 或第三方系统解释为可生产控制状态；即使软件运行态残留 `active_batch_id`，也不能在下位机状态未证明时显示 `heating`。
+
+v1 realtime HTTP 和 WebSocket 共用同一新鲜样本门槛。样本缺失或超过 `sensor_timeout_ms` 时，HTTP 返回 `503` 错误信封；WebSocket 发送同样的错误信封后断开，不使用当前系统时间伪造 `timestamp`，也不继续推送包含旧样本值的实时帧。
 
 ## 11. 本地运行
 
@@ -282,7 +288,7 @@ http://127.0.0.1:8000/
 无硬件实时监控演示：
 
 ```powershell
-cargo run --bin xingshu -- data sample --duration-s 180 --interval-ms 500
+cargo run --bin xingshu -- --token <engineer-token> data sample --duration-s 180 --interval-ms 500
 ```
 
 该命令需要在打开 HMI 前或同时运行；停止样本流后，实时监控会在 `sensor_timeout_ms` 后恢复为 pipeline stale/503，这是安全新鲜度检查的预期行为。

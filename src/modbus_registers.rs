@@ -1,13 +1,16 @@
-use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 
-use super::{ensure_targets_allowed, AppError, AppState};
+use super::{
+    alarms_for, clean_label, ensure_persisted_batch_state_consistent,
+    ensure_target_update_interlock_clear, ensure_targets_allowed, AppError, AppState,
+    UnfinishedBatchStatus,
+};
 use crate::{
     config::{RegistersConfig, WriteRegister},
-    control::{clamp_operator_targets, SafeCommand},
+    control::SafeCommand,
     modbus_tcp::ModbusTcpStatus,
     number::round2,
-    state::{ControlTargets, RuntimeState},
+    state::{downstream_command_fault_reason, timestamp_is_fresh, ControlTargets, RuntimeState},
 };
 
 struct ModbusRegisterValue {
@@ -19,9 +22,35 @@ struct ModbusRegisterValue {
     source: &'static str,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum TargetUpdateInterlockMode {
+    AutoEnable,
+    BatchStart,
+    DesiredTargets,
+    ModbusDebugWrite,
+    ComponentControl,
+    ProcessStart,
+    V1ProcessLoad,
+}
+
+impl TargetUpdateInterlockMode {
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            TargetUpdateInterlockMode::AutoEnable => "automatic control enable",
+            TargetUpdateInterlockMode::BatchStart => "batch start",
+            TargetUpdateInterlockMode::DesiredTargets => "target update",
+            TargetUpdateInterlockMode::ModbusDebugWrite => "Modbus target write",
+            TargetUpdateInterlockMode::ComponentControl => "component control",
+            TargetUpdateInterlockMode::ProcessStart => "process start",
+            TargetUpdateInterlockMode::V1ProcessLoad => "v1 process load",
+        }
+    }
+}
+
 pub(super) fn registers_payload(
     state: &AppState,
     runtime: &RuntimeState,
+    batch_status: &UnfinishedBatchStatus,
     tcp_status: &ModbusTcpStatus,
 ) -> Value {
     json!({
@@ -49,8 +78,8 @@ pub(super) fn registers_payload(
             write_register_json("hold_time_s", "hold time", state, runtime),
             write_register_json("cool_time_s", "cool time", state, runtime)
         ],
-        "coils": coils_json(runtime),
-        "discrete_inputs": discrete_inputs_json(state, runtime)
+        "coils": coils_json(runtime, batch_status),
+        "discrete_inputs": discrete_inputs_json(state, runtime, batch_status)
     })
 }
 
@@ -83,14 +112,21 @@ pub(crate) async fn apply_modbus_register_write(
     if !value.is_finite() {
         return Err(AppError::bad_request("value must be finite"));
     }
-    let reason = reason
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            AppError::bad_request("modbus write reason is required for an auditable target change")
-        })?
-        .to_string();
+    let reason = clean_label(reason, "", 240);
+    if reason.is_empty() {
+        return Err(AppError::bad_request(
+            "modbus write reason is required for an auditable target change",
+        ));
+    }
+    validate_modbus_register_write_value(state, register, value)?;
+    let Some(register_config) =
+        write_register_config(&state.device_config.modbus.registers, register)
+    else {
+        return Err(AppError::bad_request(
+            "register is not writable through the Modbus debug API",
+        ));
+    };
+
     let current = state.runtime.read().await.targets.clone();
     let requested = match register {
         "target_temperature_c" => ControlTargets {
@@ -127,24 +163,29 @@ pub(crate) async fn apply_modbus_register_write(
             ))
         }
     };
-    let targets = clamp_operator_targets(&state.safety, requested);
+    let targets = validate_modbus_register_targets(state, requested)?;
     ensure_targets_allowed(&state.safety, &targets)?;
-    let Some(register_config) =
-        write_register_config(&state.device_config.modbus.registers, register)
-    else {
-        return Err(AppError::bad_request(
-            "register is not writable through the Modbus debug API",
-        ));
-    };
     let applied_value = write_register_applied_value(&targets, register)?;
     let address = register_config.address;
     let scale = register_config.scale;
     let offset = register_config.offset;
     let raw = encode_modbus_raw(applied_value, scale, offset)?;
-    {
+    let runtime = {
         let mut runtime = state.runtime.write().await;
-        runtime.targets = targets.clone();
-    }
+        runtime.auto_enabled = false;
+        runtime.clone()
+    };
+    ensure_target_update_interlock_clear(
+        state,
+        &runtime,
+        TargetUpdateInterlockMode::ModbusDebugWrite,
+    )?;
+    ensure_persisted_batch_state_consistent(
+        state,
+        &runtime,
+        TargetUpdateInterlockMode::ModbusDebugWrite,
+    )
+    .await?;
     state
         .db
         .insert_control_event_sqlx(
@@ -163,6 +204,14 @@ pub(crate) async fn apply_modbus_register_write(
             &reason,
         )
         .await?;
+    crate::api::commit_targets_after_final_interlock(
+        state,
+        &targets,
+        TargetUpdateInterlockMode::ModbusDebugWrite,
+        Some(&current),
+        Some(crate::api::SafetyLatchGenerations::from_runtime(&runtime)),
+    )
+    .await?;
     Ok(json!({
         "register": register,
         "address": address,
@@ -194,7 +243,7 @@ fn bool_point_json(
     })
 }
 
-fn coils_json(runtime: &RuntimeState) -> Vec<Value> {
+fn coils_json(runtime: &RuntimeState, batch_status: &UnfinishedBatchStatus) -> Vec<Value> {
     vec![
         bool_point_json(
             "auto_enabled",
@@ -225,29 +274,48 @@ fn coils_json(runtime: &RuntimeState) -> Vec<Value> {
             "process running coil",
             3,
             "read",
-            runtime.active_batch_id.is_some(),
-            "runtime_state",
+            batch_status.has_unfinished_batch(runtime),
+            "runtime_state,persisted_batches",
         ),
     ]
 }
 
-fn discrete_inputs_json(state: &AppState, runtime: &RuntimeState) -> Vec<Value> {
+fn discrete_inputs_json(
+    state: &AppState,
+    runtime: &RuntimeState,
+    batch_status: &UnfinishedBatchStatus,
+) -> Vec<Value> {
     let sample_fresh = runtime
         .latest_sample
         .as_ref()
         .map(|sample| {
-            Utc::now().signed_duration_since(sample.captured_at)
-                <= Duration::milliseconds(state.safety.control.sensor_timeout_ms)
+            timestamp_is_fresh(sample.captured_at, state.safety.control.sensor_timeout_ms)
         })
         .unwrap_or(false);
     let device_connected = runtime
         .device_status
         .as_ref()
-        .map(|device| device.connected)
-        .unwrap_or_else(|| runtime.latest_sample.is_some());
-    let alarm_active = runtime.emergency_stop
-        || runtime.last_sensor_error.is_some()
-        || runtime.last_control_error.is_some();
+        .map(|device| {
+            device.connected
+                && device.last_frame_ok
+                && downstream_command_fault_reason(device).is_none()
+                && device
+                    .last_seen_at
+                    .as_ref()
+                    .map(|last_seen| {
+                        timestamp_is_fresh(*last_seen, state.safety.control.sensor_timeout_ms)
+                    })
+                    .unwrap_or(false)
+        })
+        .unwrap_or_else(|| !state.safety.control.require_device_status_for_control && sample_fresh);
+    let alarm_active = batch_status.recovery_required()
+        || !alarms_for(
+            state.safety.as_ref(),
+            runtime,
+            runtime.latest_sample.as_ref(),
+            state.ai_memory.as_ref(),
+        )
+        .is_empty();
     let tilt_state = runtime
         .latest_sample
         .as_ref()
@@ -260,8 +328,8 @@ fn discrete_inputs_json(state: &AppState, runtime: &RuntimeState) -> Vec<Value> 
             "device connected input",
             0,
             "read",
-            device_connected,
-            "runtime_state",
+            device_connected && !batch_status.recovery_required(),
+            "runtime_state,persisted_batches",
         ),
         bool_point_json(
             "sensor_fresh",
@@ -292,8 +360,8 @@ fn discrete_inputs_json(state: &AppState, runtime: &RuntimeState) -> Vec<Value> 
             "active batch input",
             4,
             "read",
-            runtime.active_batch_id.is_some(),
-            "runtime_state",
+            batch_status.has_unfinished_batch(runtime),
+            "runtime_state,persisted_batches",
         ),
     ]
 }
@@ -529,6 +597,71 @@ fn write_register_config<'a>(
         "cool_time_s" => Some(&registers.cool_time_s),
         _ => None,
     }
+}
+
+fn validate_modbus_register_write_value(
+    state: &AppState,
+    register: &str,
+    value: f64,
+) -> Result<(), AppError> {
+    match register {
+        "target_temperature_c" => {
+            crate::api::validate_target_temperature(&state.safety, value)?;
+        }
+        "target_stirrer_rpm" => {
+            crate::api::validate_stir_speed(&state.safety, value)?;
+        }
+        "target_shake_speed_cpm" => {
+            crate::api::validate_range("target_shake_speed_cpm", value, 0.0, 60.0)?;
+        }
+        "target_pressure_mpa" => {
+            crate::api::validate_range("target_pressure_mpa", value, 0.0, 10.0)?;
+        }
+        "heat_time_s" => {
+            crate::api::validate_range("heat_time_s", value, 0.0, 3600.0)?;
+        }
+        "hold_time_s" => {
+            crate::api::validate_range("hold_time_s", value, 0.0, 7200.0)?;
+        }
+        "cool_time_s" => {
+            crate::api::validate_range("cool_time_s", value, 0.0, 3600.0)?;
+        }
+        _ => {
+            return Err(AppError::bad_request(
+                "register is not writable through the Modbus debug API",
+            ))
+        }
+    }
+    Ok(())
+}
+
+fn validate_modbus_register_targets(
+    state: &AppState,
+    targets: ControlTargets,
+) -> Result<ControlTargets, AppError> {
+    crate::api::validate_target_temperature(&state.safety, targets.temperature_c)
+        .map_err(|err| err.with_message_prefix("target_temperature_c"))?;
+    crate::api::validate_stir_speed(&state.safety, targets.stirrer_rpm)
+        .map_err(|err| err.with_message_prefix("target_stirrer_rpm"))?;
+    crate::api::validate_range("target_shake_speed_cpm", targets.shake_speed_cpm, 0.0, 60.0)?;
+    crate::api::validate_range(
+        "target_pressure_mpa",
+        targets.target_pressure_mpa,
+        0.0,
+        10.0,
+    )?;
+    crate::api::validate_range("heat_time_s", targets.heat_time_s, 0.0, 3600.0)?;
+    crate::api::validate_range("hold_time_s", targets.hold_time_s, 0.0, 7200.0)?;
+    crate::api::validate_range("cool_time_s", targets.cool_time_s, 0.0, 3600.0)?;
+    Ok(ControlTargets {
+        temperature_c: round2(targets.temperature_c),
+        heat_time_s: round2(targets.heat_time_s),
+        hold_time_s: round2(targets.hold_time_s),
+        cool_time_s: round2(targets.cool_time_s),
+        stirrer_rpm: round2(targets.stirrer_rpm),
+        shake_speed_cpm: round2(targets.shake_speed_cpm),
+        target_pressure_mpa: round2(targets.target_pressure_mpa),
+    })
 }
 
 fn write_register_applied_value(targets: &ControlTargets, register: &str) -> Result<f64, AppError> {

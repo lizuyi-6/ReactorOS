@@ -20,7 +20,7 @@ const checks = [
   },
   {
     file: "deploy/install-board.sh",
-    mustContain: ['"${ROOT}/frontend"', '"${PREFIX}/frontend"', '"${ROOT}/static"'],
+    mustContain: ['"${ROOT}/frontend"', '"${SLOT_DIR}/frontend"', '"${ROOT}/static"'],
     label: "board installer copies Vue assets and legacy fallback",
   },
   {
@@ -29,7 +29,7 @@ const checks = [
       "Missing frontend/dist/index.html",
       'cp -r frontend/dist "${PACKAGE_DIR}/frontend/"',
       "--assets auto",
-      "sudo cp -r bin static frontend kiosk /opt/reactor-edge/",
+      "sudo ./install.sh",
     ],
     mustNotContain: ['--assets "${ROOT}/static"'],
     label: "ARM64 package carries Vue dist and starts auto assets",

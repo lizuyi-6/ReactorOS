@@ -2,6 +2,8 @@
 Description=ReactorOS Qt HMI Kiosk
 After=graphical.target reactor-edge.service
 Wants=graphical.target reactor-edge.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -15,7 +17,7 @@ Environment=XAUTHORITY=/home/pi/.Xauthority
 Environment=REACTOR_OS_URL=http://127.0.0.1:8000/
 ExecStart=/opt/reactor-edge/qt-client/build/reactor-os-qt --url ${REACTOR_OS_URL}
 Restart=always
-RestartSec=3
+RestartSec=5
 
 [Install]
 WantedBy=graphical.target

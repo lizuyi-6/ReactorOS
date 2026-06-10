@@ -678,6 +678,10 @@ select {
   flex-wrap: wrap;
 }
 
+.control-alert {
+  margin-top: 12px;
+}
+
 .target-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -12,6 +12,11 @@ const navItems = routes.filter((item) => item.path !== "/" && item.meta);
 const healthStatus = computed(() => String(store.health?.status ?? store.health?.service ?? "unknown"));
 const activePath = computed(() => route.path);
 const lastUpdatedText = computed(() => store.lastUpdated ?? "--");
+const liveStatusText = computed(() =>
+  store.liveStatus === "fresh"
+    ? store.tr(`现场 ${store.liveLastUpdated ?? "--"}`, `Live ${store.liveLastUpdated ?? "--"}`)
+    : store.tr("现场不可用", "Live unavailable")
+);
 
 function routeText(item: (typeof navItems)[number], zhKey: "zh" | "subZh", enKey: "en" | "subEn"): string {
   const meta = item.meta as Record<string, unknown> | undefined;
@@ -93,6 +98,9 @@ onBeforeUnmount(() => {
           />
           <el-tag :type="healthStatus === 'healthy' || healthStatus === 'ok' ? 'success' : 'warning'">
             {{ healthStatus }}
+          </el-tag>
+          <el-tag :type="store.liveStatus === 'fresh' ? 'success' : 'danger'">
+            {{ liveStatusText }}
           </el-tag>
           <span class="muted">{{ store.tr("更新于", "Updated") }} {{ lastUpdatedText }}</span>
           <el-button :loading="store.loading" @click="store.refreshAll()">{{ store.tr("刷新", "Refresh") }}</el-button>

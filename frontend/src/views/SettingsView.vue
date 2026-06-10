@@ -38,6 +38,7 @@ const endpointGroups = [
       "POST /api/control/targets",
       "POST /api/control/auto",
       "POST /api/control/manual-lock",
+      "POST /api/control/fault/reset",
       "POST /api/control/emergency-stop",
       "POST /api/control/emergency-stop/reset"
     ]

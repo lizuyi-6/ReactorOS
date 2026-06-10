@@ -1,6 +1,6 @@
 {
-    "base":  "http://127.0.0.1:18300",
-    "concurrent_writers":  20,
+    "base":  "http://127.0.0.1:8000",
+    "concurrent_writers":  50,
     "steps":  [
                   {
                       "status":  "ok",
@@ -15,12 +15,12 @@
                   {
                       "status":  "ok",
                       "name":  "concurrent-writes",
-                      "info":  "accepted=20 rejected=0 server5xx=0"
+                      "info":  "accepted=50 rejected=0 server5xx=0"
                   },
                   {
                       "status":  "ok",
                       "name":  "audit-chain",
-                      "info":  "events=20 valid=True"
+                      "info":  "events=12751 valid=True"
                   },
                   {
                       "status":  "ok",
@@ -126,7 +126,7 @@
                  ],
     "ok":  true,
     "concurrent_result":  {
-                              "accepted":  20,
+                              "accepted":  50,
                               "rejected":  0,
                               "note":  "no contention observed",
                               "server5xx":  0

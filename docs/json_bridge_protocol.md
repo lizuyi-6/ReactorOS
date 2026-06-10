@@ -152,8 +152,12 @@ curl -X POST http://127.0.0.1:8000/api/devices/reactor_001/components/stirrer_mo
 Safety behavior:
 
 - Unknown devices/components/actions return JSON error codes.
-- Emergency stop and manual lock block component control.
-- Invalid or stale `state.json` blocks JSON bridge writes.
+- Component actions that start hardware, turn outputs on, increase speed, or change target values require a fresh field sample, no emergency stop, no manual lock, and no uncleared device write fault.
+- `stop` and `off` remain available as risk-reducing actions during abnormal states.
+- Device write faults are latched as `last_control_error` and disable automatic control. New sensor samples, emergency-stop reset, and manual-lock changes do not clear the fault; clear it only after field verification with `POST /api/control/fault/reset` or `xingshu control fault-reset`.
+- If `state.json` reports `last_command_ok=false`, ReactorOS treats it as a downstream command fault and blocks fault reset until the downstream status no longer reports the failed command.
+- Missing/stale sensor data, `connected=false`, `last_frame_ok=false`, or stale `last_seen_ms` disables automatic control and records the reason in runtime status. Later healthy samples do not automatically re-enable automatic control.
+- Invalid or stale `state.json` blocks JSON bridge writes that start hardware, turn outputs on, increase speed, or change setpoints. Risk-reducing direct `stop`/`off` commands can still write `control.json`.
 - Successful writes generate `control_events` audit records.
 - Sensor values are still never fabricated by component control.
 

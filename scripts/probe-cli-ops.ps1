@@ -120,6 +120,25 @@ try {
     $engineerLogin = ($engineerResp.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json)
     $engineerToken = $engineerLogin.data.token
     $null = $client2.GetAsync("http://127.0.0.1:18189/api/audit/logs?page=1&page_size=1").GetAwaiter().GetResult()
+    $sampleBody = @{
+        temperature_c = 60.2
+        pressure_mpa = 0.55
+        stirrer_rpm = 300
+        shake_speed_cpm = 0
+        tilt_state = 0
+        flow_rate_l_min = 2.2
+        product_concentration_percent = 12.4
+        ph = 6.8
+    } | ConvertTo-Json -Compress
+    $sampleContent = New-Object System.Net.Http.StringContent($sampleBody, [System.Text.Encoding]::UTF8, "application/json")
+    $sampleReq = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, "http://127.0.0.1:18189/api/v1/reactor/reactor_001/samples")
+    $sampleReq.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $engineerToken)
+    $sampleReq.Content = $sampleContent
+    $sampleResp = $client2.SendAsync($sampleReq).GetAwaiter().GetResult()
+    $sampleText = $sampleResp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if ([int]$sampleResp.StatusCode -lt 200 -or [int]$sampleResp.StatusCode -ge 300) {
+        throw "failed to seed fresh sample before batch start: status=$([int]$sampleResp.StatusCode) body=$sampleText"
+    }
     $batchBody = @{
         name = "cli ops lora dataset"
         target_temperature_c = 72
@@ -160,6 +179,15 @@ try {
     if ([int]$resultResp.StatusCode -lt 200 -or [int]$resultResp.StatusCode -ge 300) {
         $resultText = $resultResp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         throw "failed to seed product result for lora dataset: status=$([int]$resultResp.StatusCode) body=$resultText"
+    }
+    $sampleContent = New-Object System.Net.Http.StringContent($sampleBody, [System.Text.Encoding]::UTF8, "application/json")
+    $sampleReq = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, "http://127.0.0.1:18189/api/v1/reactor/reactor_001/samples")
+    $sampleReq.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $engineerToken)
+    $sampleReq.Content = $sampleContent
+    $sampleResp = $client2.SendAsync($sampleReq).GetAwaiter().GetResult()
+    $sampleText = $sampleResp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    if ([int]$sampleResp.StatusCode -lt 200 -or [int]$sampleResp.StatusCode -ge 300) {
+        throw "failed to seed fresh sample before AINAS target update: status=$([int]$sampleResp.StatusCode) body=$sampleText"
     }
     $ainasBody = @{
         external_task_id = "cli-rekey-legacy-001"
@@ -210,7 +238,7 @@ $bogus = Join-Path $workDir "bogus.bin"
 $bogusExit = 0
 $bogusOutput = ""
 try {
-    $bogusOutput = & $bin ops restore --backup $bogus --db (Join-Path $workDir "rejected.sqlite3") --yes 2>&1 | Out-String
+    $bogusOutput = & $bin ops restore --backup $bogus --db (Join-Path $workDir "rejected.sqlite3") --yes --confirm-daemon-stopped 2>&1 | Out-String
     $bogusExit = $LASTEXITCODE
 } catch {
     $bogusExit = 1
@@ -221,7 +249,7 @@ if ($bogusOutput -notmatch "SQLite" -or $bogusOutput -notmatch "magic header") {
 Write-Host "restore rejects non-sqlite input: ok"
 
 $restoredTarget = Join-Path $workDir "restored.sqlite3"
-$restoreOutput = & $bin ops restore --backup $tmpBackup --db $restoredTarget --yes 2>&1 | Out-String
+$restoreOutput = & $bin ops restore --backup $tmpBackup --db $restoredTarget --yes --confirm-daemon-stopped 2>&1 | Out-String
 $restoreOutput | Write-Host
 if (-not (Test-Path $restoredTarget)) { throw "ops restore did not produce $restoredTarget" }
 if ($restoreOutput -notmatch "integrity:\s+ok") { throw "restore output must show integrity ok: $restoreOutput" }
@@ -316,7 +344,7 @@ $backupDir = Join-Path $workDir "backups"
 New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 $tmpWipedBackup = Join-Path $backupDir "ops-real.wiped.snapshot"
 Copy-Item $tmpDb $tmpWipedBackup -Force
-$wipeOutput = & $bin ops wipe --db $tmpWiped --yes 2>&1 | Out-String
+$wipeOutput = & $bin ops wipe --db $tmpWiped --yes --confirm-daemon-stopped 2>&1 | Out-String
 $wipeOutput | Write-Host
 if (Test-Path $tmpWiped) { throw "ops wipe did not remove $tmpWiped" }
 foreach ($removed in @($tmpWipedWal, $tmpWipedShm, $tmpWipedKeyBefore, $tmpWipedBackup)) {
@@ -337,7 +365,7 @@ $env:XINGSHU_DB_ENCRYPTION_KEY_OLD = $env:XINGSHU_DB_ENCRYPTION_KEY
 $keyExit = 0
 $keyOutput = ""
 try {
-    $keyOutput = & $bin key generate --db $tmpWiped --yes 2>&1 | Out-String
+    $keyOutput = & $bin key generate --db $tmpWiped --yes --confirm-daemon-stopped 2>&1 | Out-String
     $keyExit = $LASTEXITCODE
 } catch {
     $keyExit = 1
@@ -368,7 +396,7 @@ if ($LASTEXITCODE -ne 0) { throw "key rekey dry-run failed: $dryRekeyOutput" }
 $dryRekeyJson = $dryRekeyOutput | ConvertFrom-Json
 if ($dryRekeyJson.mode -ne "dry-run") { throw "key rekey dry-run returned unexpected mode: $dryRekeyOutput" }
 if ([int]$dryRekeyJson.plaintext_fields_encrypted -lt 2) { throw "key rekey dry-run did not count plaintext payloads: $dryRekeyOutput" }
-$rekeyOutput = & $bin --json key rekey-integration-tasks --db $tmpDb --old-key-file $oldKeyFile --new-key-file $tmpWipedKey --yes 2>&1 | Out-String
+$rekeyOutput = & $bin --json key rekey-integration-tasks --db $tmpDb --old-key-file $oldKeyFile --new-key-file $tmpWipedKey --yes --confirm-daemon-stopped 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) { throw "key rekey commit failed: $rekeyOutput" }
 if ($rekeyOutput -match "[0-9a-f]{64}") {
     throw "key rekey must not print key material (got match: $($Matches[0]))"

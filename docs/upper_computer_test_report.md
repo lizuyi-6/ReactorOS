@@ -187,7 +187,7 @@ cargo test --all-targets -- --nocapture --test-threads=1
 | `xingshu status` | 可获取服务、设备、联锁和 AI 状态 |
 | `xingshu config --local --json` | 可读取本地 device/safety/integration 摘要 |
 | `xingshu data export` / `export-xlsx` / `report` | 支持数据导出 |
-| `xingshu data sample --duration-s 180 --interval-ms 500` | 可通过正式 v1 样本入口驱动无硬件实时监控演示 |
+| `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` | 可通过正式 v1 样本入口驱动无硬件实时监控演示；token 需具备 `ingest_sensor_sample` 权限 |
 | `xingshu data delete --yes` | 支持清理本地 SQLite 运行数据，需显式确认 |
 | `xingshu ai plan` | 支持查看安全门控实验 SOP 草案 |
 | `xingshu perf smoke` | 支持生成本地 API 和安全计算性能冒烟报告 |
@@ -197,7 +197,7 @@ cargo test --all-targets -- --nocapture --test-threads=1
 
 无硬件实时监控演示验证：
 
-- `xingshu data sample --duration-s 180 --interval-ms 500` 启动后，`GET /api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false` 返回 200。
+- `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` 启动后，`GET /api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false` 返回 200。
 - 浏览器显示 `SYSTEM HEALTH: NORMAL`、`DEVICES 1/1 IDLE`、实时温度 `35.9degC`、压力 `0.47MPa`，控制台 0 error。
 - 截图归档：`output/upper-computer-hmi-live-sample-final.png`。
 - 停止样本流后，超过 `sensor_timeout_ms=6000` 再返回 503 属于安全新鲜度检查预期行为。

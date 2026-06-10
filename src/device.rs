@@ -30,9 +30,11 @@ use crate::{
         DeviceConfig, DeviceMode, JsonBridgeAdcSensor, JsonBridgeConfig, ReadRegister,
         SafetyConfig, WriteRegister,
     },
-    control::{clamp_operator_targets, SafeCommand},
+    control::SafeCommand,
     number::round2,
-    state::{fit_tilt_angle_deg, ControlTargets, DeviceStatusSnapshot, SensorSnapshot},
+    state::{
+        fit_tilt_angle_deg, timestamp_age_ms, ControlTargets, DeviceStatusSnapshot, SensorSnapshot,
+    },
 };
 
 #[async_trait::async_trait]
@@ -138,8 +140,24 @@ struct Esp32SerialDevice {
 struct JsonBridgeDevice {
     config: JsonBridgeConfig,
     last_commanded_shake_speed_cpm: Arc<StdMutex<Option<f64>>>,
-    last_temperature_command: Arc<StdMutex<Option<f64>>>,
     last_stirrer_command: Arc<StdMutex<Option<f64>>>,
+}
+
+#[derive(Debug, Default)]
+struct JsonBridgePendingCacheUpdate {
+    shake_speed_cpm: Option<f64>,
+    stirrer_rpm: Option<f64>,
+}
+
+struct JsonBridgePendingControl {
+    control: JsonBridgeControl,
+    cache_update: JsonBridgePendingCacheUpdate,
+}
+
+struct JsonBridgePendingComponentOutcome {
+    response: ComponentControlOutcome,
+    command: Option<JsonBridgeControl>,
+    cache_update: JsonBridgePendingCacheUpdate,
 }
 
 impl Esp32SerialDevice {
@@ -169,7 +187,6 @@ impl JsonBridgeDevice {
         Self {
             config,
             last_commanded_shake_speed_cpm: Arc::new(StdMutex::new(None)),
-            last_temperature_command: Arc::new(StdMutex::new(None)),
             last_stirrer_command: Arc::new(StdMutex::new(None)),
         }
     }
@@ -395,7 +412,6 @@ impl ReactorDevice for JsonBridgeDevice {
         let config = self.config.clone();
         let command = command.clone();
         let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
-        let last_temperature_command = Arc::clone(&self.last_temperature_command);
         let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
         tokio::task::spawn_blocking(move || {
             let current = read_json_bridge_state(&config.state_path)?;
@@ -404,11 +420,15 @@ impl ReactorDevice for JsonBridgeDevice {
                 &current,
                 &command,
                 &last_commanded_shake_speed_cpm,
-                &last_temperature_command,
                 &last_stirrer_command,
             )?;
             if let Some(control) = control {
-                write_json_bridge_control(&config.control_path, &control)?;
+                write_json_bridge_control(&config.control_path, &control.control)?;
+                apply_json_bridge_cache_update(
+                    &control.cache_update,
+                    &last_commanded_shake_speed_cpm,
+                    &last_stirrer_command,
+                )?;
             }
             Ok(())
         })
@@ -479,9 +499,21 @@ impl ReactorDevice for JsonBridgeDevice {
         let targets = targets.clone();
         let safety = safety.clone();
         let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
-        let last_temperature_command = Arc::clone(&self.last_temperature_command);
         let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
         tokio::task::spawn_blocking(move || {
+            if json_bridge_direct_control_is_risk_reducing(&request) {
+                let outcome =
+                    json_bridge_component_control_outcome_without_state(&config, &request)?;
+                if let Some(control) = &outcome.command {
+                    write_json_bridge_control(&config.control_path, control)?;
+                    apply_json_bridge_cache_update(
+                        &outcome.cache_update,
+                        &last_commanded_shake_speed_cpm,
+                        &last_stirrer_command,
+                    )?;
+                }
+                return Ok(outcome.response);
+            }
             let state = read_json_bridge_state(&config.state_path)?;
             validate_json_bridge_state(&config, &state)?;
             let outcome = json_bridge_component_control_outcome(
@@ -491,13 +523,17 @@ impl ReactorDevice for JsonBridgeDevice {
                 &targets,
                 &safety,
                 &last_commanded_shake_speed_cpm,
-                &last_temperature_command,
                 &last_stirrer_command,
             )?;
             if let Some(control) = &outcome.command {
                 write_json_bridge_control(&config.control_path, control)?;
+                apply_json_bridge_cache_update(
+                    &outcome.cache_update,
+                    &last_commanded_shake_speed_cpm,
+                    &last_stirrer_command,
+                )?;
             }
-            Ok(outcome)
+            Ok(outcome.response)
         })
         .await?
         .map(Some)
@@ -555,13 +591,23 @@ fn targets_for_component(
     let mut next = current.clone();
     match (command.component_id.as_str(), command.action.as_str()) {
         ("temperature_controller", "set_target_temperature") => {
-            next.temperature_c = component_number(command, "value")?;
+            next.temperature_c = component_number_in_range(
+                command,
+                "value",
+                safety.temperature.min_c,
+                safety.temperature.max_c,
+            )?;
         }
         ("stirrer_motor", "set_rpm") => {
-            next.stirrer_rpm = component_number(command, "value")?;
+            next.stirrer_rpm = component_number_in_range(
+                command,
+                "value",
+                safety.stirrer.min_rpm,
+                safety.stirrer.max_rpm,
+            )?;
         }
         ("shake_stepper", "set_speed") => {
-            next.shake_speed_cpm = component_number(command, "value")?;
+            next.shake_speed_cpm = component_number_in_range(command, "value", 0.0, 60.0)?;
         }
         ("shake_stepper", "start") => {
             if next.shake_speed_cpm <= 0.01 {
@@ -579,7 +625,7 @@ fn targets_for_component(
             ));
         }
     }
-    Ok(clamp_operator_targets(safety, next))
+    Ok(round_component_targets(next))
 }
 
 fn component_number(command: &ComponentControlCommand, field: &str) -> Result<f64> {
@@ -596,6 +642,33 @@ fn component_number(command: &ComponentControlCommand, field: &str) -> Result<f6
         return Err(anyhow!("component control {field} must be finite"));
     }
     Ok(number)
+}
+
+fn component_number_in_range(
+    command: &ComponentControlCommand,
+    field: &str,
+    min: f64,
+    max: f64,
+) -> Result<f64> {
+    let number = component_number(command, field)?;
+    if !(min..=max).contains(&number) {
+        return Err(anyhow!(
+            "component control {field} must be between {min} and {max}"
+        ));
+    }
+    Ok(number)
+}
+
+fn round_component_targets(targets: ControlTargets) -> ControlTargets {
+    ControlTargets {
+        temperature_c: round2(targets.temperature_c),
+        heat_time_s: round2(targets.heat_time_s),
+        hold_time_s: round2(targets.hold_time_s),
+        cool_time_s: round2(targets.cool_time_s),
+        stirrer_rpm: round2(targets.stirrer_rpm),
+        shake_speed_cpm: round2(targets.shake_speed_cpm),
+        target_pressure_mpa: round2(targets.target_pressure_mpa),
+    }
 }
 
 fn safe_command_from_targets(targets: &ControlTargets, reason: &str) -> SafeCommand {
@@ -618,16 +691,19 @@ fn json_bridge_component_control_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     if let Some(control) = json_bridge_direct_component_control(config, request) {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: Some(control.clone()),
+                targets: None,
+                message: "component command written to json bridge control.json".to_string(),
+            },
             command: Some(control),
-            targets: None,
-            message: "component command written to json bridge control.json".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     }
 
@@ -648,7 +724,6 @@ fn json_bridge_component_control_outcome(
                 targets,
                 safety,
                 last_commanded_shake_speed_cpm,
-                last_temperature_command,
                 last_stirrer_command,
             )
         }
@@ -706,6 +781,56 @@ fn json_bridge_direct_component_control(
     Some(control)
 }
 
+fn json_bridge_direct_control_is_risk_reducing(request: &ComponentControlCommand) -> bool {
+    matches!(
+        (request.component_id.as_str(), request.action.as_str()),
+        ("shake_stepper", "stop") | ("heater_relay", "off")
+    )
+}
+
+fn json_bridge_component_control_outcome_without_state(
+    config: &JsonBridgeConfig,
+    request: &ComponentControlCommand,
+) -> Result<JsonBridgePendingComponentOutcome> {
+    let Some(control) = json_bridge_direct_component_control(config, request) else {
+        return Err(anyhow!(
+            "component control {}:{} requires valid json bridge state",
+            request.component_id,
+            request.action
+        ));
+    };
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.clone()),
+            targets: None,
+            message: "risk-reducing component command written to json bridge control.json"
+                .to_string(),
+        },
+        command: Some(control),
+        cache_update: JsonBridgePendingCacheUpdate::default(),
+    })
+}
+
+fn apply_json_bridge_cache_update(
+    update: &JsonBridgePendingCacheUpdate,
+    last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
+    last_stirrer_command: &StdMutex<Option<f64>>,
+) -> Result<()> {
+    if let Some(value) = update.shake_speed_cpm {
+        *last_commanded_shake_speed_cpm
+            .lock()
+            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? = Some(value);
+    }
+    if let Some(value) = update.stirrer_rpm {
+        *last_stirrer_command
+            .lock()
+            .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? = Some(value);
+    }
+    Ok(())
+}
+
 fn json_bridge_stirrer_component_outcome(
     config: &JsonBridgeConfig,
     state: &JsonBridgeState,
@@ -713,7 +838,7 @@ fn json_bridge_stirrer_component_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     let next_targets = targets_for_component(request, targets, safety)?;
     let safe = safe_command_from_targets(&next_targets, "manual component control");
     let rpm = safe.target_stirrer_rpm;
@@ -724,12 +849,16 @@ fn json_bridge_stirrer_component_outcome(
         .map(|current| (rpm - current).abs() <= 0.01)
         .unwrap_or(false)
     {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: None,
+                targets: Some(safe),
+                message: "stirrer target already matches json bridge state".to_string(),
+            },
             command: None,
-            targets: Some(safe),
-            message: "stirrer target already matches json bridge state".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     }
     let control = build_json_bridge_control(
@@ -738,15 +867,19 @@ fn json_bridge_stirrer_component_outcome(
         Some(serde_json::json!(rpm)),
         Some("stirrer_motor"),
     );
-    *last_stirrer_command
-        .lock()
-        .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? = Some(rpm);
-    Ok(ComponentControlOutcome {
-        component_id: request.component_id.clone(),
-        action: request.action.clone(),
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.clone()),
+            targets: Some(safe),
+            message: "stirrer RPM written to json bridge control.json".to_string(),
+        },
         command: Some(control),
-        targets: Some(safe),
-        message: "stirrer RPM written to json bridge control.json".to_string(),
+        cache_update: JsonBridgePendingCacheUpdate {
+            stirrer_rpm: Some(rpm),
+            ..JsonBridgePendingCacheUpdate::default()
+        },
     })
 }
 
@@ -757,9 +890,8 @@ fn json_bridge_target_component_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     let next_targets = targets_for_component(request, targets, safety)?;
     let safe = safe_command_from_targets(&next_targets, "manual component control");
     let Some(control) = next_json_bridge_control(
@@ -767,24 +899,31 @@ fn json_bridge_target_component_outcome(
         state,
         &safe,
         last_commanded_shake_speed_cpm,
-        last_temperature_command,
         last_stirrer_command,
     )?
     else {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: None,
+                targets: Some(safe),
+                message: "component target already inside json bridge deadband".to_string(),
+            },
             command: None,
-            targets: Some(safe),
-            message: "component target already inside json bridge deadband".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     };
-    Ok(ComponentControlOutcome {
-        component_id: request.component_id.clone(),
-        action: request.action.clone(),
-        command: Some(control),
-        targets: Some(safe),
-        message: "component target translated to json bridge command".to_string(),
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.control.clone()),
+            targets: Some(safe),
+            message: "component target translated to json bridge command".to_string(),
+        },
+        command: Some(control.control),
+        cache_update: control.cache_update,
     })
 }
 
@@ -927,7 +1066,7 @@ pub fn write_json_bridge_control(path: &Path, control: &JsonBridgeControl) -> Re
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create json bridge dir {}", parent.display()))?;
     }
-    let tmp_path = path.with_extension("json.tmp");
+    let tmp_path = json_bridge_control_tmp_path(path, control);
     let bytes = serde_json::to_vec_pretty(control)?;
     {
         let mut file = File::create(&tmp_path)
@@ -943,6 +1082,54 @@ pub fn write_json_bridge_control(path: &Path, control: &JsonBridgeControl) -> Re
             tmp_path.display()
         )
     })?;
+    sync_json_bridge_parent_dir(parent)?;
+    Ok(())
+}
+
+fn json_bridge_control_tmp_path(path: &Path, control: &JsonBridgeControl) -> std::path::PathBuf {
+    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("control.json");
+    let request_id = sanitize_tmp_path_segment(&control.request_id);
+    path.with_file_name(format!("{file_name}.{request_id}.{sequence}.tmp"))
+}
+
+fn sanitize_tmp_path_segment(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    if sanitized.is_empty() {
+        "request".to_string()
+    } else {
+        sanitized
+    }
+}
+
+#[cfg(unix)]
+fn sync_json_bridge_parent_dir(parent: Option<&Path>) -> Result<()> {
+    if let Some(parent) = parent {
+        let directory = File::open(parent)
+            .with_context(|| format!("failed to open json bridge dir {}", parent.display()))?;
+        directory
+            .sync_all()
+            .with_context(|| format!("failed to sync json bridge dir {}", parent.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_json_bridge_parent_dir(_parent: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
@@ -1040,9 +1227,13 @@ fn validate_json_bridge_state(config: &JsonBridgeConfig, state: &JsonBridgeState
     }
     let last_seen = timestamp_ms_to_utc(state.last_seen_ms)
         .ok_or_else(|| anyhow!("json bridge state last_seen_ms is out of range"))?;
-    let age = Utc::now()
-        .signed_duration_since(last_seen)
-        .num_milliseconds();
+    let age = timestamp_age_ms(last_seen);
+    if age < 0 {
+        return Err(anyhow!(
+            "json bridge state timestamp is {} ms in the future; check controller clock synchronization",
+            -age
+        ));
+    }
     if age > config.max_state_age_ms {
         return Err(anyhow!(
             "json bridge state stale; last_seen_ms is {age} ms old, max {} ms",
@@ -1057,9 +1248,8 @@ fn next_json_bridge_control(
     state: &JsonBridgeState,
     command: &SafeCommand,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<Option<JsonBridgeControl>> {
+) -> Result<Option<JsonBridgePendingControl>> {
     if let Err(err) = validate_json_bridge_state(config, state) {
         return Err(anyhow!(
             "json bridge refuses control because state is not valid: {err}"
@@ -1068,27 +1258,32 @@ fn next_json_bridge_control(
 
     let motor = bit_or_field(state.motor, state.status, 1).unwrap_or(0);
     if command.target_shake_speed_cpm <= 0.01 && motor != 0 {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? = Some(0.0);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "motor",
-            Some(serde_json::json!(0)),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "motor",
+                Some(serde_json::json!(0)),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(0.0),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
     if command.target_shake_speed_cpm > 0.01 && motor == 0 {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? =
-            Some(command.target_shake_speed_cpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "motor",
-            Some(serde_json::json!(1)),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "motor",
+                Some(serde_json::json!(1)),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(command.target_shake_speed_cpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     let cached_speed = *last_commanded_shake_speed_cpm
@@ -1101,20 +1296,22 @@ fn next_json_bridge_control(
         .unwrap_or(0.0);
     let speed_delta = command.target_shake_speed_cpm - current_speed;
     if speed_delta.abs() > config.speed_deadband_cpm {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? =
-            Some(command.target_shake_speed_cpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "speed",
-            Some(serde_json::json!(if speed_delta > 0.0 {
-                "up"
-            } else {
-                "down"
-            })),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "speed",
+                Some(serde_json::json!(if speed_delta > 0.0 {
+                    "up"
+                } else {
+                    "down"
+                })),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(command.target_shake_speed_cpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     if config.relay_temperature_control {
@@ -1144,22 +1341,17 @@ fn next_json_bridge_control(
             relay
         };
         if desired_relay != relay {
-            *last_temperature_command
-                .lock()
-                .map_err(|_| anyhow!("json bridge temperature cache lock poisoned"))? =
-                Some(command.target_temperature_c);
-            return Ok(Some(build_json_bridge_control(
-                &config.request_id_prefix,
-                "relay",
-                Some(serde_json::json!(desired_relay)),
-                None,
-            )));
+            return Ok(Some(JsonBridgePendingControl {
+                control: build_json_bridge_control(
+                    &config.request_id_prefix,
+                    "relay",
+                    Some(serde_json::json!(desired_relay)),
+                    None,
+                ),
+                cache_update: JsonBridgePendingCacheUpdate::default(),
+            }));
         }
     } else {
-        *last_temperature_command
-            .lock()
-            .map_err(|_| anyhow!("json bridge temperature cache lock poisoned"))? =
-            Some(command.target_temperature_c);
     }
 
     let cached_stirrer = *last_stirrer_command
@@ -1170,16 +1362,18 @@ fn next_json_bridge_control(
         .map(|current| (command.target_stirrer_rpm - current).abs() > 0.01)
         .unwrap_or(true)
     {
-        *last_stirrer_command
-            .lock()
-            .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? =
-            Some(command.target_stirrer_rpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "stir_speed",
-            Some(serde_json::json!(command.target_stirrer_rpm)),
-            Some("stirrer_motor"),
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "stir_speed",
+                Some(serde_json::json!(command.target_stirrer_rpm)),
+                Some("stirrer_motor"),
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                stirrer_rpm: Some(command.target_stirrer_rpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     Ok(None)

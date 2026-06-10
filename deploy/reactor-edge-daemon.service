@@ -3,6 +3,8 @@ Description=Xingshu Reactor Edge Daemon
 Documentation=https://github.com/lizuyi-6/ReactorOS
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -23,7 +25,7 @@ ExecStart=/opt/xingshu/bin/reactor-edge-daemon \
   --bind 0.0.0.0:8443 \
   --tls-cert /etc/xingshu/tls/server.pem \
   --tls-key /etc/xingshu/tls/server-key.pem
-Restart=always
+Restart=on-failure
 RestartSec=5
 TimeoutStopSec=20
 KillMode=mixed

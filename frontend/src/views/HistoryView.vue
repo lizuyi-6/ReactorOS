@@ -6,6 +6,14 @@ import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
 const store = usePlantStore();
 const batches = computed(() => arrayAt(store.batches, "batches"));
 const outcomes = computed(() => arrayAt(store.batches, "outcomes"));
+const runtime = computed(() => objectAt(store.live, "runtime") ?? store.runtimeFallback);
+const liveAlarms = computed(() => arrayAt(store.live, "alarms"));
+const liveUnavailable = computed(() => store.liveStatus !== "fresh");
+const activeBatchId = computed(() => numberAt(runtime.value, "active_batch_id"));
+const unfinishedBatchRecoveryAlarm = computed(
+  () => liveAlarms.value.find((alarm) => textAt(alarm, "type", "") === "unfinished_batch_recovery") ?? null
+);
+const batchRecoveryBlocked = computed(() => Boolean(unfinishedBatchRecoveryAlarm.value));
 const historyFilters = reactive({
   search: "",
   status: "all",
@@ -52,6 +60,12 @@ function lower(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
+function hasFinishedAt(row: unknown): boolean {
+  if (!row || typeof row !== "object") return false;
+  const value = (row as Record<string, unknown>).finished_at;
+  return value !== null && value !== undefined && value !== "";
+}
+
 function outcomeForBatchId(batchId: number | null): Record<string, unknown> | null {
   if (batchId === null) return null;
   return outcomes.value.find((row) => numberAt(row, "batch_id") === batchId) ?? null;
@@ -67,9 +81,57 @@ const ratioBandOptions = [
 const batchOptions = computed(() =>
   batches.value.map((row) => ({
     id: numberAt(row, "id"),
-    label: `#${textAt(row, "id")} - ${textAt(row, "name")}`
+    label: `#${textAt(row, "id")} - ${textAt(row, "name")}`,
+    finished: hasFinishedAt(row),
+    active: activeBatchId.value !== null && numberAt(row, "id") === activeBatchId.value
   }))
 );
+
+const selectedProductBatch = computed(
+  () => batches.value.find((row) => String(numberAt(row, "id")) === productResultForm.batch_id) ?? null
+);
+const selectedProductBatchFinished = computed(() => hasFinishedAt(selectedProductBatch.value));
+const selectedProductBatchActive = computed(() => {
+  const selectedId = numberAt(selectedProductBatch.value, "id");
+  return selectedId !== null && activeBatchId.value === selectedId;
+});
+const productResultBlocked = computed(
+  () =>
+    !store.isAuthenticated ||
+    !productResultForm.batch_id ||
+    liveUnavailable.value ||
+    batchRecoveryBlocked.value ||
+    activeBatchId.value !== null ||
+    !selectedProductBatchFinished.value ||
+    selectedProductBatchActive.value
+);
+const productResultBlockReason = computed(() => {
+  if (!store.isAuthenticated) return store.tr("需要登录后录入产物结果。", "Sign in before saving product results.");
+  if (!productResultForm.batch_id) return store.tr("请选择一个已完成批次。", "Select a finished batch.");
+  if (liveUnavailable.value) {
+    return store.tr(
+      "实时现场状态不可用，产物结果录入已锁定，避免把未知状态写入 AI 依据。",
+      "Live field state is unavailable; product result entry is locked to avoid contaminating AI evidence."
+    );
+  }
+  if (batchRecoveryBlocked.value) {
+    const ids = textAt(unfinishedBatchRecoveryAlarm.value, "unfinished_batch_ids", "");
+    return store.tr(
+      `未完成批次恢复未决，先核对现场并修复批次记录。${ids}`,
+      `Unfinished batch recovery is unresolved; verify the field and repair batch records first. ${ids}`
+    );
+  }
+  if (activeBatchId.value !== null) {
+    return store.tr(
+      `当前仍有活动批次 #${activeBatchId.value}，先结束并确认生产状态。`,
+      `Batch #${activeBatchId.value} is still active; finish and verify production first.`
+    );
+  }
+  if (!selectedProductBatchFinished.value || selectedProductBatchActive.value) {
+    return store.tr("只能给已完成且非活动的批次录入结果。", "Only finished, inactive batches can receive product results.");
+  }
+  return "";
+});
 
 function outcomeText(outcome: Record<string, unknown> | null, key: string, fallback = "--"): string {
   return outcome ? textAt(outcome, key, fallback) : fallback;
@@ -371,7 +433,7 @@ watch(
               :key="batch.id ?? batch.label"
               :label="batch.label"
               :value="String(batch.id)"
-              :disabled="batch.id === null"
+              :disabled="batch.id === null || !batch.finished || batch.active"
             />
           </el-select>
         </el-form-item>
@@ -390,12 +452,21 @@ watch(
           />
         </el-form-item>
         <div class="control-actions">
-          <el-button type="primary" :disabled="!store.isAuthenticated || !productResultForm.batch_id" @click="saveProductResult">
+          <el-button type="primary" :disabled="productResultBlocked" @click="saveProductResult">
             {{ store.tr("保存产物结果", "Save Product Result") }}
           </el-button>
           <span v-if="actionMessage" class="muted">{{ actionMessage }}</span>
         </div>
       </el-form>
+      <el-alert
+        v-if="productResultBlockReason"
+        class="inline-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="store.tr('产物结果录入已锁定', 'Product result entry locked')"
+        :description="productResultBlockReason"
+      />
     </section>
 
     <section class="panel">

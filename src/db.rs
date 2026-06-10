@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, fmt,
     io::Read,
     path::{Path, PathBuf},
     sync::{
@@ -29,7 +29,11 @@ use sqlx::{
 };
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::{control::SafeCommand, optimizer::Recommendation, state::SensorSnapshot};
+use crate::{
+    control::SafeCommand,
+    optimizer::Recommendation,
+    state::{validate_sensor_snapshot, SensorRange, SensorSnapshot},
+};
 
 const READ_CONNECTIONS: usize = 2;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(15);
@@ -37,6 +41,67 @@ pub const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
 pub const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
 const DB_ENCRYPTION_AAD: &[u8] = b"xingshu:integration_tasks:json:v1";
 const AUDIT_CHAIN_CHECK_LIMIT: usize = 10_000;
+const TARGET_TEMPERATURE_C_RANGE: SensorRange = SensorRange {
+    field: "target_temperature_c",
+    min: 0.0,
+    max: 500.0,
+};
+const TARGET_STIRRER_RPM_RANGE: SensorRange = SensorRange {
+    field: "target_stirrer_rpm",
+    min: 0.0,
+    max: 2000.0,
+};
+const BATCH_HEATING_MINUTES_RANGE: SensorRange = SensorRange {
+    field: "heating_minutes",
+    min: 0.0,
+    max: 1440.0,
+};
+const BATCH_STIRRING_MINUTES_RANGE: SensorRange = SensorRange {
+    field: "stirring_minutes",
+    min: 0.0,
+    max: 1440.0,
+};
+const PROCESS_RAMP_RATE_C_MIN_RANGE: SensorRange = SensorRange {
+    field: "ramp_rate_c_min",
+    min: -20.0,
+    max: 20.0,
+};
+const PROCESS_DURATION_MINUTES_RANGE: SensorRange = SensorRange {
+    field: "duration_minutes",
+    min: 1.0,
+    max: 1440.0,
+};
+const PROCESS_SHAKE_SPEED_CPM_RANGE: SensorRange = SensorRange {
+    field: "target_shake_speed_cpm",
+    min: 0.0,
+    max: 60.0,
+};
+const PROCESS_PRESSURE_MPA_RANGE: SensorRange = SensorRange {
+    field: "target_pressure_mpa",
+    min: 0.0,
+    max: 10.0,
+};
+const PRODUCT_RESULT_YIELD_PERCENT_RANGE: SensorRange = SensorRange {
+    field: "yield_percent",
+    min: 0.0,
+    max: 100.0,
+};
+const PRODUCT_RESULT_RATIO_RANGE: SensorRange = SensorRange {
+    field: "product_ratio",
+    min: 0.0,
+    max: 1.0,
+};
+const RECOMMENDATION_EXPECTED_SCORE_RANGE: SensorRange = SensorRange {
+    field: "expected_score",
+    min: 0.0,
+    max: 100.0,
+};
+const INTEGRATION_TASK_SOURCE_MAX_CHARS: usize = 40;
+const INTEGRATION_TASK_EXTERNAL_ID_MAX_CHARS: usize = 120;
+const INTEGRATION_TASK_ACTIONS: &[&str] = &["set_targets", "start_process", "stop_process"];
+const INTEGRATION_TASK_STATUSES: &[&str] =
+    &["received", "executing", "executed", "failed", "rejected"];
+const INTEGRATION_TASK_TERMINAL_STATUSES: &[&str] = &["executed", "failed", "rejected"];
 const SCHEMA_SQL: &str = r#"
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -177,6 +242,10 @@ CREATE INDEX IF NOT EXISTS idx_integration_tasks_source_id
     ON integration_tasks(source, id);
 CREATE INDEX IF NOT EXISTS idx_integration_tasks_external_task_id
     ON integration_tasks(source, external_task_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_tasks_unique_active_external_task_id
+    ON integration_tasks(source, external_task_id)
+    WHERE external_task_id IS NOT NULL
+      AND status IN ('received', 'executing', 'executed');
 "#;
 const COLUMN_MIGRATIONS: [(&str, &str, &str); 11] = [
     ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
@@ -228,6 +297,10 @@ struct DbInner {
     sqlx_write_lock: AsyncMutex<()>,
     audit_write_lock: AsyncMutex<()>,
     process_write_lock: AsyncMutex<()>,
+    #[cfg(debug_assertions)]
+    fail_control_events_after: AtomicUsize,
+    #[cfg(debug_assertions)]
+    after_control_event_success: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// Path the main database file was opened from, captured by the
     /// `open_*` constructors so backup / restore can report it without
     /// re-deriving it from the runtime state.
@@ -243,6 +316,15 @@ impl std::ops::Deref for DbConnectionGuard<'_> {
     type Target = Connection;
 
     fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Write(conn) => conn,
+            Self::Read(conn) => conn,
+        }
+    }
+}
+
+impl std::ops::DerefMut for DbConnectionGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Write(conn) => conn,
             Self::Read(conn) => conn,
@@ -497,6 +579,10 @@ impl Db {
                 sqlx_write_lock: AsyncMutex::new(()),
                 audit_write_lock: AsyncMutex::new(()),
                 process_write_lock: AsyncMutex::new(()),
+                #[cfg(debug_assertions)]
+                fail_control_events_after: AtomicUsize::new(usize::MAX),
+                #[cfg(debug_assertions)]
+                after_control_event_success: Mutex::new(None),
                 db_path,
             }),
         }
@@ -606,58 +692,87 @@ impl Db {
             }
         }
 
-        let mut preserved_existing = None;
-        if destination.exists() {
-            let backup_existing = path_with_file_suffix(destination, "pre-restore");
-            std::fs::copy(destination, &backup_existing).with_context(|| {
+        let restore_tmp = restore_tmp_path(destination);
+        remove_restore_tmp_if_present(&restore_tmp)?;
+        let restore_result = (|| {
+            std::fs::copy(source, &restore_tmp).with_context(|| {
                 format!(
-                    "failed to preserve existing db {} -> {}",
-                    destination.display(),
-                    backup_existing.display()
+                    "failed to copy {} -> temporary restore file {}",
+                    source.display(),
+                    restore_tmp.display()
                 )
             })?;
-            preserved_existing = Some(backup_existing.display().to_string());
-        }
-
-        let mut removed_sidecars = Vec::new();
-        for suffix in ["-wal", "-shm", "-journal"] {
-            let sidecar = path_with_raw_suffix(destination, suffix);
-            if sidecar.exists() {
-                std::fs::remove_file(&sidecar).with_context(|| {
-                    format!(
-                        "failed to remove stale SQLite sidecar {}",
-                        sidecar.display()
-                    )
-                })?;
-                removed_sidecars.push(sidecar.display().to_string());
+            sync_file(&restore_tmp).with_context(|| {
+                format!(
+                    "failed to sync temporary restore file {}",
+                    restore_tmp.display()
+                )
+            })?;
+            let (integrity, tables) = validate_restored_db_file(&restore_tmp)?;
+            Ok((integrity, tables))
+        })();
+        let (integrity, tables) = match restore_result {
+            Ok(result) => result,
+            Err(err) => {
+                let _ = std::fs::remove_file(&restore_tmp);
+                return Err(err);
             }
-        }
+        };
 
-        std::fs::copy(source, destination).with_context(|| {
-            format!(
-                "failed to copy {} -> {}",
-                source.display(),
-                destination.display()
-            )
-        })?;
-        let conn = rusqlite::Connection::open(destination)
-            .with_context(|| format!("restored db is unreadable: {}", destination.display()))?;
-        let integrity: String = conn
-            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
-            .context("failed to run SQLite integrity_check")?;
-        if integrity != "ok" {
-            return Err(anyhow!("restored db failed integrity_check: {integrity}"));
-        }
-        let tables = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("failed to list restored tables")?;
+        let publish_result = (|| {
+            let mut preserved_existing = None;
+            if destination.exists() {
+                let backup_existing =
+                    unique_path(path_with_file_suffix(destination, "pre-restore"))?;
+                copy_evidence_file_atomic(destination, &backup_existing, "existing db")?;
+                preserved_existing = Some(backup_existing.display().to_string());
+            }
+
+            let mut removed_sidecars = Vec::new();
+            let mut preserved_sidecars = Vec::new();
+            for suffix in ["-wal", "-shm", "-journal"] {
+                let sidecar = path_with_raw_suffix(destination, suffix);
+                if sidecar.exists() {
+                    let preserved_sidecar = unique_path(path_with_raw_suffix(
+                        destination,
+                        &format!("{suffix}.pre-restore"),
+                    ))?;
+                    copy_evidence_file_atomic(&sidecar, &preserved_sidecar, "SQLite sidecar")?;
+                    std::fs::remove_file(&sidecar).with_context(|| {
+                        format!(
+                            "failed to remove stale SQLite sidecar {}",
+                            sidecar.display()
+                        )
+                    })?;
+                    preserved_sidecars.push(preserved_sidecar.display().to_string());
+                    removed_sidecars.push(sidecar.display().to_string());
+                }
+            }
+
+            std::fs::rename(&restore_tmp, destination).with_context(|| {
+                format!("failed to publish restored db {}", destination.display())
+            })?;
+            sync_parent_dir(destination).with_context(|| {
+                format!(
+                    "restored db {} was published but directory sync failed; target_may_have_changed=true",
+                    destination.display()
+                )
+            })?;
+            Ok((preserved_existing, removed_sidecars, preserved_sidecars))
+        })();
+        let (preserved_existing, removed_sidecars, preserved_sidecars) = match publish_result {
+            Ok(result) => result,
+            Err(err) => {
+                let _ = std::fs::remove_file(&restore_tmp);
+                return Err(err);
+            }
+        };
         Ok(RestoreReport {
             source: source.display().to_string(),
             destination: destination.display().to_string(),
             preserved_existing,
             removed_sidecars,
+            preserved_sidecars,
             integrity_check: integrity,
             size_bytes: std::fs::metadata(destination).map(|m| m.len()).unwrap_or(0),
             sha256: sha256_hex(destination)?,
@@ -727,6 +842,16 @@ impl Db {
                 }
             }
         }
+        for statement in INDEX_SQL
+            .split(';')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            sqlx::query(statement)
+                .execute(pool)
+                .await
+                .with_context(|| format!("sqlx index migration step failed: {statement:.80}"))?;
+        }
         Ok(())
     }
 
@@ -767,6 +892,12 @@ impl Db {
         heating_minutes: f64,
         stirring_minutes: f64,
     ) -> Result<Batch> {
+        ensure_valid_batch_targets_for_insert(
+            target_temperature_c,
+            target_stirrer_rpm,
+            heating_minutes,
+            stirring_minutes,
+        )?;
         let now = Utc::now();
         let conn = self.write_conn()?;
         conn.execute(
@@ -808,6 +939,12 @@ impl Db {
         heating_minutes: f64,
         stirring_minutes: f64,
     ) -> Result<Batch> {
+        ensure_valid_batch_targets_for_insert(
+            target_temperature_c,
+            target_stirrer_rpm,
+            heating_minutes,
+            stirring_minutes,
+        )?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.create_batch_for_process(
                 process_id,
@@ -873,6 +1010,47 @@ impl Db {
         })
     }
 
+    pub fn create_process_with_audit(
+        &self,
+        name: &str,
+        description: &str,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<ProcessDefinition> {
+        let now = Utc::now();
+        let created_at = now.to_rfc3339();
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin process create transaction")?;
+        tx.execute(
+            r#"
+            INSERT INTO processes (name, description, status, version, created_at, updated_at)
+            VALUES (?1, ?2, 'draft', 1, ?3, ?3)
+            "#,
+            params![name, description, created_at],
+        )
+        .context("failed to create process")?;
+        let process_id = tx.last_insert_rowid();
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at)?;
+        let process = ProcessDefinition {
+            id: process_id,
+            name: name.to_string(),
+            description: description.to_string(),
+            status: "draft".to_string(),
+            version: 1,
+            step_count: 0,
+            created_at: now,
+            updated_at: now,
+            applied_at: None,
+        };
+        tx.commit()
+            .context("failed to commit process create transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(process)
+    }
+
     pub async fn create_process_sqlx(
         &self,
         name: &str,
@@ -908,6 +1086,59 @@ impl Db {
         })
     }
 
+    pub async fn create_process_with_audit_sqlx(
+        &self,
+        name: &str,
+        description: &str,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<ProcessDefinition> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.create_process_with_audit(name, description, event_type, reason);
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let created_at = now.to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process create transaction with SQLx")?;
+        let result = sqlx::query(
+            r#"
+            INSERT INTO processes (name, description, status, version, created_at, updated_at)
+            VALUES (?, ?, 'draft', 1, ?, ?)
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(&created_at)
+        .bind(&created_at)
+        .execute(&mut *tx)
+        .await
+        .context("failed to create process with SQLx")?;
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at)
+            .await?;
+        let process = ProcessDefinition {
+            id: result.last_insert_rowid(),
+            name: name.to_string(),
+            description: description.to_string(),
+            status: "draft".to_string(),
+            version: 1,
+            step_count: 0,
+            created_at: now,
+            updated_at: now,
+            applied_at: None,
+        };
+        tx.commit()
+            .await
+            .context("failed to commit process create transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(process)
+    }
+
     pub fn update_process(
         &self,
         process_id: i64,
@@ -929,6 +1160,45 @@ impl Db {
             return Ok(None);
         }
         process_summary_by_id(&conn, process_id).map_err(Into::into)
+    }
+
+    pub fn update_process_with_audit(
+        &self,
+        process_id: i64,
+        name: &str,
+        description: &str,
+        status: &str,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessDefinition>> {
+        let now = Utc::now();
+        let updated_at = now.to_rfc3339();
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin process update transaction")?;
+        let changed = tx
+            .execute(
+                r#"
+                UPDATE processes
+                SET name = ?1, description = ?2, status = ?3, version = version + 1, updated_at = ?4
+                WHERE id = ?5
+                "#,
+                params![name, description, status, updated_at, process_id],
+            )
+            .context("failed to update process")?;
+        if changed == 0 {
+            tx.commit()
+                .context("failed to commit empty process update transaction")?;
+            return Ok(None);
+        }
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at)?;
+        let process = process_summary_by_id(&tx, process_id).map_err(anyhow::Error::from)?;
+        tx.commit()
+            .context("failed to commit process update transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(process)
     }
 
     pub async fn update_process_sqlx(
@@ -974,6 +1244,68 @@ impl Db {
         tx.commit()
             .await
             .context("failed to commit process update transaction with SQLx")?;
+        Ok(process)
+    }
+
+    pub async fn update_process_with_audit_sqlx(
+        &self,
+        process_id: i64,
+        name: &str,
+        description: &str,
+        status: &str,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessDefinition>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.update_process_with_audit(
+                process_id,
+                name,
+                description,
+                status,
+                event_type,
+                reason,
+            );
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let updated_at = now.to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process update transaction with SQLx")?;
+        let result = sqlx::query(
+            r#"
+            UPDATE processes
+            SET name = ?, description = ?, status = ?, version = version + 1, updated_at = ?
+            WHERE id = ?
+            "#,
+        )
+        .bind(name)
+        .bind(description)
+        .bind(status)
+        .bind(&updated_at)
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .context("failed to update process with SQLx")?;
+        if result.rows_affected() == 0 {
+            tx.commit()
+                .await
+                .context("failed to commit empty process update transaction with SQLx")?;
+            return Ok(None);
+        }
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at)
+            .await?;
+        let process = self
+            .process_summary_by_id_sqlx_tx(&mut tx, process_id)
+            .await?;
+        tx.commit()
+            .await
+            .context("failed to commit process update transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
         Ok(process)
     }
 
@@ -1052,6 +1384,7 @@ impl Db {
         if process_summary_by_id(&conn, process_id)?.is_none() {
             return Ok(None);
         }
+        ensure_valid_process_step_for_insert(step)?;
         let next_index: i64 = conn.query_row(
             "SELECT COALESCE(MAX(step_index), 0) + 1 FROM process_steps WHERE process_id = ?1",
             [process_id],
@@ -1084,6 +1417,66 @@ impl Db {
         process_step_by_id(&conn, conn.last_insert_rowid()).map_err(Into::into)
     }
 
+    pub fn add_process_step_with_audit(
+        &self,
+        process_id: i64,
+        step: &NewProcessStep,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessStep>> {
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin process step insert transaction")?;
+        if process_summary_by_id(&tx, process_id)?.is_none() {
+            tx.commit()
+                .context("failed to commit empty process step insert transaction")?;
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
+        let next_index: i64 = tx
+            .query_row(
+                "SELECT COALESCE(MAX(step_index), 0) + 1 FROM process_steps WHERE process_id = ?1",
+                [process_id],
+                |row| row.get(0),
+            )
+            .context("failed to allocate process step index")?;
+        let now = Utc::now();
+        let created_at = now.to_rfc3339();
+        tx.execute(
+            r#"
+            INSERT INTO process_steps
+                (process_id, step_index, name, target_temperature_c, ramp_rate_c_min,
+                 duration_minutes, target_stirrer_rpm, target_shake_speed_cpm,
+                 target_pressure_mpa, cooling_mode, created_at, updated_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+            "#,
+            params![
+                process_id,
+                next_index,
+                step.name,
+                step.target_temperature_c,
+                step.ramp_rate_c_min,
+                step.duration_minutes,
+                step.target_stirrer_rpm,
+                step.target_shake_speed_cpm,
+                step.target_pressure_mpa,
+                step.cooling_mode,
+                created_at
+            ],
+        )
+        .context("failed to insert process step")?;
+        let step_id = tx.last_insert_rowid();
+        touch_process(&tx, process_id).context("failed to touch process")?;
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at)?;
+        let step = process_step_by_id(&tx, step_id).map_err(anyhow::Error::from)?;
+        tx.commit()
+            .context("failed to commit process step insert transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(step)
+    }
+
     pub async fn add_process_step_sqlx(
         &self,
         process_id: i64,
@@ -1107,6 +1500,7 @@ impl Db {
                 .context("failed to commit empty process step insert transaction with SQLx")?;
             return Ok(None);
         }
+        ensure_valid_process_step_for_insert(step)?;
         let next_index: i64 = sqlx::query_scalar(
             "SELECT COALESCE(MAX(step_index), 0) + 1 FROM process_steps WHERE process_id = ?",
         )
@@ -1147,6 +1541,79 @@ impl Db {
         Ok(step)
     }
 
+    pub async fn add_process_step_with_audit_sqlx(
+        &self,
+        process_id: i64,
+        step: &NewProcessStep,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessStep>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.add_process_step_with_audit(process_id, step, event_type, reason);
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process step insert transaction with SQLx")?;
+        if self
+            .process_summary_by_id_sqlx_tx(&mut tx, process_id)
+            .await?
+            .is_none()
+        {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step insert transaction with SQLx")?;
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
+        let next_index: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(step_index), 0) + 1 FROM process_steps WHERE process_id = ?",
+        )
+        .bind(process_id)
+        .fetch_one(&mut *tx)
+        .await
+        .context("failed to allocate process step index with SQLx")?;
+        let now = Utc::now();
+        let created_at = now.to_rfc3339();
+        let result = sqlx::query(
+            r#"
+            INSERT INTO process_steps
+                (process_id, step_index, name, target_temperature_c, ramp_rate_c_min,
+                 duration_minutes, target_stirrer_rpm, target_shake_speed_cpm,
+                 target_pressure_mpa, cooling_mode, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(process_id)
+        .bind(next_index)
+        .bind(&step.name)
+        .bind(step.target_temperature_c)
+        .bind(step.ramp_rate_c_min)
+        .bind(step.duration_minutes)
+        .bind(step.target_stirrer_rpm)
+        .bind(step.target_shake_speed_cpm)
+        .bind(step.target_pressure_mpa)
+        .bind(&step.cooling_mode)
+        .bind(&created_at)
+        .bind(&created_at)
+        .execute(&mut *tx)
+        .await
+        .context("failed to insert process step with SQLx")?;
+        touch_process_sqlx(&mut tx, process_id).await?;
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at)
+            .await?;
+        let step = process_step_by_id_sqlx_tx(&mut tx, result.last_insert_rowid()).await?;
+        tx.commit()
+            .await
+            .context("failed to commit process step insert transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(step)
+    }
+
     pub fn update_process_step(
         &self,
         process_id: i64,
@@ -1155,6 +1622,13 @@ impl Db {
     ) -> Result<Option<ProcessStep>> {
         let now = Utc::now();
         let conn = self.write_conn()?;
+        let Some(existing_step) = process_step_by_id(&conn, step_id)? else {
+            return Ok(None);
+        };
+        if existing_step.process_id != process_id {
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
         let changed = conn.execute(
             r#"
             UPDATE process_steps
@@ -1190,6 +1664,76 @@ impl Db {
         process_step_by_id(&conn, step_id).map_err(Into::into)
     }
 
+    pub fn update_process_step_with_audit(
+        &self,
+        process_id: i64,
+        step_id: i64,
+        step: &NewProcessStep,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessStep>> {
+        let now = Utc::now();
+        let updated_at = now.to_rfc3339();
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin process step update transaction")?;
+        let Some(existing_step) = process_step_by_id(&tx, step_id)? else {
+            tx.commit()
+                .context("failed to commit empty process step update transaction")?;
+            return Ok(None);
+        };
+        if existing_step.process_id != process_id {
+            tx.commit()
+                .context("failed to commit empty process step update transaction")?;
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
+        let changed = tx
+            .execute(
+                r#"
+                UPDATE process_steps
+                SET name = ?1,
+                    target_temperature_c = ?2,
+                    ramp_rate_c_min = ?3,
+                    duration_minutes = ?4,
+                    target_stirrer_rpm = ?5,
+                    target_shake_speed_cpm = ?6,
+                    target_pressure_mpa = ?7,
+                    cooling_mode = ?8,
+                    updated_at = ?9
+                WHERE id = ?10 AND process_id = ?11
+                "#,
+                params![
+                    step.name,
+                    step.target_temperature_c,
+                    step.ramp_rate_c_min,
+                    step.duration_minutes,
+                    step.target_stirrer_rpm,
+                    step.target_shake_speed_cpm,
+                    step.target_pressure_mpa,
+                    step.cooling_mode,
+                    updated_at,
+                    step_id,
+                    process_id
+                ],
+            )
+            .context("failed to update process step")?;
+        if changed == 0 {
+            tx.commit()
+                .context("failed to commit empty process step update transaction")?;
+            return Ok(None);
+        }
+        touch_process(&tx, process_id).context("failed to touch process")?;
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at)?;
+        let step = process_step_by_id(&tx, step_id).map_err(anyhow::Error::from)?;
+        tx.commit()
+            .context("failed to commit process step update transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(step)
+    }
+
     pub async fn update_process_step_sqlx(
         &self,
         process_id: i64,
@@ -1205,6 +1749,19 @@ impl Db {
             .begin()
             .await
             .context("failed to begin process step update transaction with SQLx")?;
+        let Some(existing_step) = process_step_by_id_sqlx_tx(&mut tx, step_id).await? else {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        };
+        if existing_step.process_id != process_id {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
         let result = sqlx::query(
             r#"
             UPDATE process_steps
@@ -1245,6 +1802,87 @@ impl Db {
         tx.commit()
             .await
             .context("failed to commit process step update transaction with SQLx")?;
+        Ok(step)
+    }
+
+    pub async fn update_process_step_with_audit_sqlx(
+        &self,
+        process_id: i64,
+        step_id: i64,
+        step: &NewProcessStep,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<Option<ProcessStep>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self
+                .update_process_step_with_audit(process_id, step_id, step, event_type, reason);
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let _process_guard = self.inner.process_write_lock.lock().await;
+        let now = Utc::now();
+        let updated_at = now.to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin process step update transaction with SQLx")?;
+        let Some(existing_step) = process_step_by_id_sqlx_tx(&mut tx, step_id).await? else {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        };
+        if existing_step.process_id != process_id {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        }
+        ensure_valid_process_step_for_insert(step)?;
+        let result = sqlx::query(
+            r#"
+            UPDATE process_steps
+            SET name = ?,
+                target_temperature_c = ?,
+                ramp_rate_c_min = ?,
+                duration_minutes = ?,
+                target_stirrer_rpm = ?,
+                target_shake_speed_cpm = ?,
+                target_pressure_mpa = ?,
+                cooling_mode = ?,
+                updated_at = ?
+            WHERE id = ? AND process_id = ?
+            "#,
+        )
+        .bind(&step.name)
+        .bind(step.target_temperature_c)
+        .bind(step.ramp_rate_c_min)
+        .bind(step.duration_minutes)
+        .bind(step.target_stirrer_rpm)
+        .bind(step.target_shake_speed_cpm)
+        .bind(step.target_pressure_mpa)
+        .bind(&step.cooling_mode)
+        .bind(&updated_at)
+        .bind(step_id)
+        .bind(process_id)
+        .execute(&mut *tx)
+        .await
+        .context("failed to update process step with SQLx")?;
+        if result.rows_affected() == 0 {
+            tx.commit()
+                .await
+                .context("failed to commit empty process step update transaction with SQLx")?;
+            return Ok(None);
+        }
+        touch_process_sqlx(&mut tx, process_id).await?;
+        self.consume_control_event_failure_for_tests()?;
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at)
+            .await?;
+        let step = process_step_by_id_sqlx_tx(&mut tx, step_id).await?;
+        tx.commit()
+            .await
+            .context("failed to commit process step update transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
         Ok(step)
     }
 
@@ -1329,6 +1967,7 @@ impl Db {
     }
 
     pub fn insert_sample(&self, batch_id: Option<i64>, sample: &SensorSnapshot) -> Result<()> {
+        ensure_valid_sensor_sample_for_insert(sample)?;
         let conn = self.write_conn()?;
         conn.execute(
             r#"
@@ -1359,6 +1998,7 @@ impl Db {
         batch_id: Option<i64>,
         sample: &SensorSnapshot,
     ) -> Result<()> {
+        ensure_valid_sensor_sample_for_insert(sample)?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_sample(batch_id, sample);
         };
@@ -1404,25 +2044,20 @@ impl Db {
             ORDER BY id ASC
             "#,
         )?;
-        let rows = stmt.query_map([limit as i64], |row| {
-            let captured_at: String = row.get(10)?;
-            Ok(SensorSnapshot {
-                temperature_c: row.get(1)?,
-                pressure_mpa: row.get(2)?,
-                stirrer_rpm: row.get(3)?,
-                shake_speed_cpm: row.get(4)?,
-                tilt_state: row.get(5)?,
-                tilt_angle_deg: row.get(6)?,
-                flow_rate_l_min: row.get(7)?,
-                product_concentration_percent: row.get(8)?,
-                ph: row.get(9)?,
-                captured_at: parse_dt(&captured_at)?,
-            })
-        })?;
+        let rows = stmt.query_map([limit as i64], |row| sensor_snapshot_from_row(row, 1, 10))?;
 
         let mut samples = Vec::new();
         for row in rows {
-            samples.push(row?);
+            match row {
+                Ok(sample) => samples.push(sample),
+                Err(err) => {
+                    if let Some(reason) = invalid_sensor_sample_reason_from_rusqlite(&err) {
+                        warn_invalid_sensor_sample_row("recent_samples", reason);
+                        continue;
+                    }
+                    return Err(err.into());
+                }
+            }
         }
         Ok(samples)
     }
@@ -1444,27 +2079,21 @@ impl Db {
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], |row| {
-            let captured_at: String = row.get(11)?;
-            Ok(SensorSampleRecord {
-                batch_id: row.get(1)?,
-                sample: SensorSnapshot {
-                    temperature_c: row.get(2)?,
-                    pressure_mpa: row.get(3)?,
-                    stirrer_rpm: row.get(4)?,
-                    shake_speed_cpm: row.get(5)?,
-                    tilt_state: row.get(6)?,
-                    tilt_angle_deg: row.get(7)?,
-                    flow_rate_l_min: row.get(8)?,
-                    product_concentration_percent: row.get(9)?,
-                    ph: row.get(10)?,
-                    captured_at: parse_dt(&captured_at)?,
-                },
-            })
+            sensor_sample_record_from_row(row, 1, 2, 11)
         })?;
 
         let mut samples = Vec::new();
         for row in rows {
-            samples.push(row?);
+            match row {
+                Ok(sample) => samples.push(sample),
+                Err(err) => {
+                    if let Some(reason) = invalid_sensor_sample_reason_from_rusqlite(&err) {
+                        warn_invalid_sensor_sample_row("recent_sample_records", reason);
+                        continue;
+                    }
+                    return Err(err.into());
+                }
+            }
         }
         Ok(samples)
     }
@@ -1494,9 +2123,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list recent sensor samples with SQLx")?;
-        rows.into_iter()
-            .map(sensor_sample_record_from_sqlx_row)
-            .collect()
+        collect_valid_sensor_sample_records_from_sqlx_rows(rows, "recent_sample_records_sqlx")
     }
 
     pub fn samples_between(
@@ -1524,29 +2151,21 @@ impl Db {
                 limit as i64,
                 offset as i64
             ],
-            |row| {
-                let captured_at: String = row.get(10)?;
-                Ok(SensorSampleRecord {
-                    batch_id: row.get(0)?,
-                    sample: SensorSnapshot {
-                        temperature_c: row.get(1)?,
-                        pressure_mpa: row.get(2)?,
-                        stirrer_rpm: row.get(3)?,
-                        shake_speed_cpm: row.get(4)?,
-                        tilt_state: row.get(5)?,
-                        tilt_angle_deg: row.get(6)?,
-                        flow_rate_l_min: row.get(7)?,
-                        product_concentration_percent: row.get(8)?,
-                        ph: row.get(9)?,
-                        captured_at: parse_dt(&captured_at)?,
-                    },
-                })
-            },
+            |row| sensor_sample_record_from_row(row, 0, 1, 10),
         )?;
 
         let mut samples = Vec::new();
         for row in rows {
-            samples.push(row?);
+            match row {
+                Ok(sample) => samples.push(sample),
+                Err(err) => {
+                    if let Some(reason) = invalid_sensor_sample_reason_from_rusqlite(&err) {
+                        warn_invalid_sensor_sample_row("samples_between", reason);
+                        continue;
+                    }
+                    return Err(err.into());
+                }
+            }
         }
         Ok(samples)
     }
@@ -1578,9 +2197,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list sensor history with SQLx")?;
-        rows.into_iter()
-            .map(sensor_sample_record_from_sqlx_row)
-            .collect()
+        collect_valid_sensor_sample_records_from_sqlx_rows(rows, "samples_between_sqlx")
     }
 
     pub fn insert_control_event(
@@ -1590,6 +2207,7 @@ impl Db {
         command: Option<&SafeCommand>,
         reason: &str,
     ) -> Result<()> {
+        self.consume_control_event_failure_for_tests()?;
         let conn = self.write_conn()?;
         let created_at = Utc::now().to_rfc3339();
         let previous_hash: Option<String> = conn
@@ -1608,6 +2226,11 @@ impl Db {
         let target_temperature_c = command.map(|cmd| cmd.target_temperature_c);
         let target_stirrer_rpm = command.map(|cmd| cmd.target_stirrer_rpm);
         let target_shake_speed_cpm = command.map(|cmd| cmd.target_shake_speed_cpm);
+        ensure_valid_control_event_targets_for_insert(
+            target_temperature_c,
+            target_stirrer_rpm,
+            target_shake_speed_cpm,
+        )?;
         let event_hash = control_event_hash(
             previous_hash.as_deref(),
             batch_id,
@@ -1637,6 +2260,7 @@ impl Db {
                 event_hash
             ],
         )?;
+        self.run_after_control_event_success_for_tests();
         Ok(())
     }
 
@@ -1650,6 +2274,7 @@ impl Db {
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_control_event(batch_id, event_type, command, reason);
         };
+        self.consume_control_event_failure_for_tests()?;
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
         let created_at = Utc::now().to_rfc3339();
@@ -1672,6 +2297,11 @@ impl Db {
         let target_temperature_c = command.map(|cmd| cmd.target_temperature_c);
         let target_stirrer_rpm = command.map(|cmd| cmd.target_stirrer_rpm);
         let target_shake_speed_cpm = command.map(|cmd| cmd.target_shake_speed_cpm);
+        ensure_valid_control_event_targets_for_insert(
+            target_temperature_c,
+            target_stirrer_rpm,
+            target_shake_speed_cpm,
+        )?;
         let event_hash = control_event_hash(
             previous_hash.as_deref(),
             batch_id,
@@ -1705,6 +2335,7 @@ impl Db {
         tx.commit()
             .await
             .context("failed to commit audit insert transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
         Ok(())
     }
 
@@ -1810,7 +2441,15 @@ impl Db {
         action: &str,
         request: &Value,
     ) -> Result<IntegrationTask> {
+        ensure_valid_integration_task_create_for_insert(source, external_task_id, action, request)?;
         let conn = self.write_conn()?;
+        if let Some(external_task_id) = external_task_id {
+            if let Some(task) =
+                self.integration_task_by_external_id_conn(&conn, source, external_task_id)?
+            {
+                return Ok(task);
+            }
+        }
         let now = Utc::now().to_rfc3339();
         let request_json = self.serialize_sensitive_json(request)?;
         let response_json = self.serialize_sensitive_json(&Value::Null)?;
@@ -1834,13 +2473,23 @@ impl Db {
         action: &str,
         request: &Value,
     ) -> Result<IntegrationTask> {
+        ensure_valid_integration_task_create_for_insert(source, external_task_id, action, request)?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.create_integration_task(source, external_task_id, action, request);
         };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        if let Some(external_task_id) = external_task_id {
+            if let Some(task) = self
+                .integration_task_by_external_id_sqlx(source, external_task_id)
+                .await?
+            {
+                return Ok(task);
+            }
+        }
         let now = Utc::now().to_rfc3339();
         let request_json = self.serialize_sensitive_json(request)?;
         let response_json = self.serialize_sensitive_json(&Value::Null)?;
-        let result = sqlx::query(
+        let insert_result = sqlx::query(
             r#"
             INSERT INTO integration_tasks
                 (external_task_id, source, action, status, request_json, response_json, created_at, updated_at)
@@ -1855,8 +2504,27 @@ impl Db {
         .bind(&now)
         .bind(&now)
         .execute(pool)
-        .await
-        .context("failed to create integration task with SQLx")?;
+        .await;
+        let result = match insert_result {
+            Ok(result) => result,
+            Err(err) if is_sqlite_unique_constraint_error(&err) => {
+                if let Some(external_task_id) = external_task_id {
+                    if let Some(task) = self
+                        .integration_task_by_external_id_sqlx(source, external_task_id)
+                        .await?
+                    {
+                        return Ok(task);
+                    }
+                }
+                return Err(anyhow::Error::from(err)
+                    .context("integration task insert hit unique constraint but existing task was not readable"));
+            }
+            Err(err) => {
+                return Err(
+                    anyhow::Error::from(err).context("failed to create integration task with SQLx")
+                );
+            }
+        };
         let id = result.last_insert_rowid();
         self.integration_task_sqlx(id)
             .await?
@@ -1869,7 +2537,11 @@ impl Db {
         status: &str,
         response: &Value,
     ) -> Result<Option<IntegrationTask>> {
+        ensure_valid_integration_task_update_for_insert(status, response)?;
         let conn = self.write_conn()?;
+        if self.integration_task_by_id_conn(&conn, id)?.is_none() {
+            return Ok(None);
+        }
         let response_json = self.serialize_sensitive_json(response)?;
         conn.execute(
             r#"
@@ -1888,9 +2560,14 @@ impl Db {
         status: &str,
         response: &Value,
     ) -> Result<Option<IntegrationTask>> {
+        ensure_valid_integration_task_update_for_insert(status, response)?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.update_integration_task(id, status, response);
         };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        if self.integration_task_sqlx(id).await?.is_none() {
+            return Ok(None);
+        }
         let response_json = self.serialize_sensitive_json(response)?;
         sqlx::query(
             r#"
@@ -1906,6 +2583,63 @@ impl Db {
         .execute(pool)
         .await
         .context("failed to update integration task with SQLx")?;
+        self.integration_task_sqlx(id).await
+    }
+
+    pub fn mark_integration_task_executing(&self, id: i64) -> Result<Option<IntegrationTask>> {
+        let conn = self.write_conn()?;
+        let Some(existing) = self.integration_task_by_id_conn(&conn, id)? else {
+            return Ok(None);
+        };
+        if existing.status != "received" {
+            return Ok(Some(existing));
+        }
+        let response_json = self.serialize_sensitive_json(&json!({
+            "status": "executing",
+            "message": "integration task action started; awaiting final receipt"
+        }))?;
+        conn.execute(
+            r#"
+            UPDATE integration_tasks
+            SET status = 'executing', response_json = ?1, updated_at = ?2
+            WHERE id = ?3 AND status = 'received'
+            "#,
+            params![response_json, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(self.integration_task_by_id_conn(&conn, id)?)
+    }
+
+    pub async fn mark_integration_task_executing_sqlx(
+        &self,
+        id: i64,
+    ) -> Result<Option<IntegrationTask>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.mark_integration_task_executing(id);
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let Some(existing) = self.integration_task_sqlx(id).await? else {
+            return Ok(None);
+        };
+        if existing.status != "received" {
+            return Ok(Some(existing));
+        }
+        let response_json = self.serialize_sensitive_json(&json!({
+            "status": "executing",
+            "message": "integration task action started; awaiting final receipt"
+        }))?;
+        sqlx::query(
+            r#"
+            UPDATE integration_tasks
+            SET status = 'executing', response_json = ?, updated_at = ?
+            WHERE id = ? AND status = 'received'
+            "#,
+        )
+        .bind(response_json)
+        .bind(Utc::now().to_rfc3339())
+        .bind(id)
+        .execute(pool)
+        .await
+        .context("failed to mark integration task executing with SQLx")?;
         self.integration_task_sqlx(id).await
     }
 
@@ -1956,7 +2690,16 @@ impl Db {
                 self.integration_task_from_row(row)
             })?;
             for row in rows {
-                tasks.push(row?);
+                match row {
+                    Ok(task) => tasks.push(task),
+                    Err(err) => {
+                        if let Some(reason) = invalid_integration_task_reason_from_rusqlite(&err) {
+                            warn_invalid_integration_task_row("integration_tasks", reason);
+                            continue;
+                        }
+                        return Err(err.into());
+                    }
+                }
             }
         } else {
             let mut stmt = conn.prepare(
@@ -1970,7 +2713,16 @@ impl Db {
             )?;
             let rows = stmt.query_map([limit as i64], |row| self.integration_task_from_row(row))?;
             for row in rows {
-                tasks.push(row?);
+                match row {
+                    Ok(task) => tasks.push(task),
+                    Err(err) => {
+                        if let Some(reason) = invalid_integration_task_reason_from_rusqlite(&err) {
+                            warn_invalid_integration_task_row("integration_tasks", reason);
+                            continue;
+                        }
+                        return Err(err.into());
+                    }
+                }
             }
         }
         Ok(tasks)
@@ -2015,12 +2767,11 @@ impl Db {
             .await
             .context("failed to list integration tasks with SQLx")?
         };
-        rows.into_iter()
-            .map(|row| self.integration_task_from_sqlx_row(row))
-            .collect()
+        self.collect_valid_integration_tasks_from_sqlx_rows(rows, "integration_tasks_sqlx")
     }
 
     pub fn insert_product_result(&self, result: &ProductResult) -> Result<()> {
+        ensure_valid_product_result_for_insert(result)?;
         let conn = self.write_conn()?;
         conn.execute(
             r#"
@@ -2043,7 +2794,54 @@ impl Db {
         Ok(())
     }
 
+    pub fn insert_product_result_with_audit(
+        &self,
+        result: &ProductResult,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<()> {
+        ensure_valid_product_result_for_insert(result)?;
+        self.consume_control_event_failure_for_tests()?;
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin product result transaction")?;
+        let created_at = Utc::now().to_rfc3339();
+        tx.execute(
+            r#"
+            INSERT INTO product_results (batch_id, yield_percent, product_ratio, notes, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(batch_id) DO UPDATE SET
+                yield_percent = excluded.yield_percent,
+                product_ratio = excluded.product_ratio,
+                notes = excluded.notes,
+                created_at = excluded.created_at
+            "#,
+            params![
+                result.batch_id,
+                result.yield_percent,
+                result.product_ratio,
+                result.notes,
+                created_at
+            ],
+        )
+        .context("failed to insert product result")?;
+        insert_control_event_in_rusqlite_tx(
+            &tx,
+            Some(result.batch_id),
+            event_type,
+            None,
+            reason,
+            &created_at,
+        )?;
+        tx.commit()
+            .context("failed to commit product result transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(())
+    }
+
     pub async fn insert_product_result_sqlx(&self, result: &ProductResult) -> Result<()> {
+        ensure_valid_product_result_for_insert(result)?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_product_result(result);
         };
@@ -2069,7 +2867,61 @@ impl Db {
         Ok(())
     }
 
+    pub async fn insert_product_result_with_audit_sqlx(
+        &self,
+        result: &ProductResult,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<()> {
+        ensure_valid_product_result_for_insert(result)?;
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_product_result_with_audit(result, event_type, reason);
+        };
+        self.consume_control_event_failure_for_tests()?;
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let created_at = Utc::now().to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin product result transaction with SQLx")?;
+        sqlx::query(
+            r#"
+            INSERT INTO product_results (batch_id, yield_percent, product_ratio, notes, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(batch_id) DO UPDATE SET
+                yield_percent = excluded.yield_percent,
+                product_ratio = excluded.product_ratio,
+                notes = excluded.notes,
+                created_at = excluded.created_at
+            "#,
+        )
+        .bind(result.batch_id)
+        .bind(result.yield_percent)
+        .bind(result.product_ratio)
+        .bind(&result.notes)
+        .bind(&created_at)
+        .execute(&mut *tx)
+        .await
+        .context("failed to insert product result with SQLx")?;
+        insert_control_event_in_sqlx_tx(
+            &mut tx,
+            Some(result.batch_id),
+            event_type,
+            None,
+            reason,
+            &created_at,
+        )
+        .await?;
+        tx.commit()
+            .await
+            .context("failed to commit product result transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(())
+    }
+
     pub fn insert_recommendation(&self, recommendation: &Recommendation) -> Result<()> {
+        ensure_valid_recommendation_for_insert(recommendation)?;
         let conn = self.write_conn()?;
         conn.execute(
             r#"
@@ -2093,6 +2945,7 @@ impl Db {
     }
 
     pub async fn insert_recommendation_sqlx(&self, recommendation: &Recommendation) -> Result<()> {
+        ensure_valid_recommendation_for_insert(recommendation)?;
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.insert_recommendation(recommendation);
         };
@@ -2118,31 +2971,132 @@ impl Db {
         Ok(())
     }
 
+    pub fn insert_recommendation_with_audit(
+        &self,
+        recommendation: &Recommendation,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<()> {
+        ensure_valid_recommendation_for_insert(recommendation)?;
+        let mut conn = self.write_conn()?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin AI recommendation transaction")?;
+        let created_at = Utc::now().to_rfc3339();
+        tx.execute(
+            r#"
+            INSERT INTO ai_recommendations
+                (based_on_batch_count, target_temperature_c, target_stirrer_rpm,
+                 heating_minutes, stirring_minutes, expected_score, rationale, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+            params![
+                recommendation.based_on_batch_count,
+                recommendation.target_temperature_c,
+                recommendation.target_stirrer_rpm,
+                recommendation.heating_minutes,
+                recommendation.stirring_minutes,
+                recommendation.expected_score,
+                recommendation.rationale,
+                created_at
+            ],
+        )
+        .context("failed to insert AI recommendation")?;
+        self.consume_control_event_failure_for_tests()?;
+        let command = safe_command_from_recommendation(recommendation, reason);
+        insert_control_event_in_rusqlite_tx(
+            &tx,
+            None,
+            event_type,
+            Some(&command),
+            reason,
+            &created_at,
+        )?;
+        tx.commit()
+            .context("failed to commit AI recommendation transaction")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(())
+    }
+
+    pub async fn insert_recommendation_with_audit_sqlx(
+        &self,
+        recommendation: &Recommendation,
+        event_type: &str,
+        reason: &str,
+    ) -> Result<()> {
+        ensure_valid_recommendation_for_insert(recommendation)?;
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.insert_recommendation_with_audit(recommendation, event_type, reason);
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        let _audit_guard = self.inner.audit_write_lock.lock().await;
+        let created_at = Utc::now().to_rfc3339();
+        let mut tx = pool
+            .begin()
+            .await
+            .context("failed to begin AI recommendation transaction with SQLx")?;
+        sqlx::query(
+            r#"
+            INSERT INTO ai_recommendations
+                (based_on_batch_count, target_temperature_c, target_stirrer_rpm,
+                 heating_minutes, stirring_minutes, expected_score, rationale, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(recommendation.based_on_batch_count)
+        .bind(recommendation.target_temperature_c)
+        .bind(recommendation.target_stirrer_rpm)
+        .bind(recommendation.heating_minutes)
+        .bind(recommendation.stirring_minutes)
+        .bind(recommendation.expected_score)
+        .bind(&recommendation.rationale)
+        .bind(&created_at)
+        .execute(&mut *tx)
+        .await
+        .context("failed to insert AI recommendation with SQLx")?;
+        self.consume_control_event_failure_for_tests()?;
+        let command = safe_command_from_recommendation(recommendation, reason);
+        insert_control_event_in_sqlx_tx(
+            &mut tx,
+            None,
+            event_type,
+            Some(&command),
+            reason,
+            &created_at,
+        )
+        .await?;
+        tx.commit()
+            .await
+            .context("failed to commit AI recommendation transaction with SQLx")?;
+        self.run_after_control_event_success_for_tests();
+        Ok(())
+    }
+
     pub fn latest_recommendation(&self) -> Result<Option<Recommendation>> {
         let conn = self.read_conn()?;
-        conn.query_row(
-            r#"
+        match conn
+            .query_row(
+                r#"
             SELECT based_on_batch_count, target_temperature_c, target_stirrer_rpm,
                    heating_minutes, stirring_minutes, expected_score, rationale
             FROM ai_recommendations
             ORDER BY id DESC
             LIMIT 1
             "#,
-            [],
-            |row| {
-                Ok(Recommendation {
-                    based_on_batch_count: row.get(0)?,
-                    target_temperature_c: row.get(1)?,
-                    target_stirrer_rpm: row.get(2)?,
-                    heating_minutes: row.get(3)?,
-                    stirring_minutes: row.get(4)?,
-                    expected_score: row.get(5)?,
-                    rationale: row.get(6)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(Into::into)
+                [],
+                recommendation_from_row,
+            )
+            .optional()
+        {
+            Ok(recommendation) => Ok(recommendation),
+            Err(err) => {
+                if let Some(reason) = invalid_recommendation_reason_from_rusqlite(&err) {
+                    warn_invalid_recommendation_row("latest_recommendation", reason);
+                    return Ok(None);
+                }
+                Err(err.into())
+            }
+        }
     }
 
     pub async fn latest_recommendation_sqlx(&self) -> Result<Option<Recommendation>> {
@@ -2161,7 +3115,16 @@ impl Db {
         .fetch_optional(pool)
         .await
         .context("failed to load latest AI recommendation with SQLx")?;
-        row.map(recommendation_from_sqlx_row).transpose()
+        match row.map(recommendation_from_sqlx_row).transpose() {
+            Ok(recommendation) => Ok(recommendation),
+            Err(err) => {
+                if let Some(reason) = invalid_recommendation_reason_from_anyhow(&err) {
+                    warn_invalid_recommendation_row("latest_recommendation_sqlx", reason);
+                    return Ok(None);
+                }
+                Err(err)
+            }
+        }
     }
 
     pub fn batch_outcomes(&self) -> Result<Vec<BatchOutcome>> {
@@ -2173,26 +3136,12 @@ impl Db {
                    p.yield_percent, p.product_ratio
             FROM batches b
             JOIN product_results p ON p.batch_id = b.id
+            WHERE b.finished_at IS NOT NULL
             ORDER BY b.id ASC
             "#,
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(BatchOutcome {
-                batch_id: row.get(0)?,
-                target_temperature_c: row.get(1)?,
-                target_stirrer_rpm: row.get(2)?,
-                heating_minutes: row.get(3)?,
-                stirring_minutes: row.get(4)?,
-                yield_percent: row.get(5)?,
-                product_ratio: row.get(6)?,
-            })
-        })?;
-
-        let mut outcomes = Vec::new();
-        for row in rows {
-            outcomes.push(row?);
-        }
-        Ok(outcomes)
+        let rows = stmt.query_map([], batch_outcome_from_row)?;
+        collect_valid_batch_outcomes_from_rusqlite_rows(rows, "batch_outcomes")
     }
 
     pub async fn batch_outcomes_sqlx(&self) -> Result<Vec<BatchOutcome>> {
@@ -2206,13 +3155,14 @@ impl Db {
                    p.yield_percent, p.product_ratio
             FROM batches b
             JOIN product_results p ON p.batch_id = b.id
+            WHERE b.finished_at IS NOT NULL
             ORDER BY b.id ASC
             "#,
         )
         .fetch_all(pool)
         .await
         .context("failed to list batch outcomes with SQLx")?;
-        rows.into_iter().map(batch_outcome_from_sqlx_row).collect()
+        collect_valid_batch_outcomes_from_sqlx_rows(rows, "batch_outcomes_sqlx")
     }
 
     pub fn recent_batch_outcomes(&self, limit: usize) -> Result<Vec<BatchOutcome>> {
@@ -2230,6 +3180,7 @@ impl Db {
                     SELECT b.id
                     FROM batches b
                     JOIN product_results p ON p.batch_id = b.id
+                    WHERE b.finished_at IS NOT NULL
                     ORDER BY b.id DESC
                     LIMIT ?1
                 )
@@ -2238,23 +3189,8 @@ impl Db {
             ORDER BY b.id ASC
             "#,
         )?;
-        let rows = stmt.query_map([limit as i64], |row| {
-            Ok(BatchOutcome {
-                batch_id: row.get(0)?,
-                target_temperature_c: row.get(1)?,
-                target_stirrer_rpm: row.get(2)?,
-                heating_minutes: row.get(3)?,
-                stirring_minutes: row.get(4)?,
-                yield_percent: row.get(5)?,
-                product_ratio: row.get(6)?,
-            })
-        })?;
-
-        let mut outcomes = Vec::new();
-        for row in rows {
-            outcomes.push(row?);
-        }
-        Ok(outcomes)
+        let rows = stmt.query_map([limit as i64], batch_outcome_from_row)?;
+        collect_valid_batch_outcomes_from_rusqlite_rows(rows, "recent_batch_outcomes")
     }
 
     pub async fn recent_batch_outcomes_sqlx(&self, limit: usize) -> Result<Vec<BatchOutcome>> {
@@ -2274,6 +3210,7 @@ impl Db {
                     SELECT b.id
                     FROM batches b
                     JOIN product_results p ON p.batch_id = b.id
+                    WHERE b.finished_at IS NOT NULL
                     ORDER BY b.id DESC
                     LIMIT ?
                 )
@@ -2286,7 +3223,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list recent batch outcomes with SQLx")?;
-        rows.into_iter().map(batch_outcome_from_sqlx_row).collect()
+        collect_valid_batch_outcomes_from_sqlx_rows(rows, "recent_batch_outcomes_sqlx")
     }
 
     pub fn recent_batches(&self, limit: usize) -> Result<Vec<Batch>> {
@@ -2305,30 +3242,8 @@ impl Db {
             ORDER BY id ASC
             "#,
         )?;
-        let rows = stmt.query_map([limit as i64], |row| {
-            let started_at: String = row.get(3)?;
-            let finished_at: Option<String> = row.get(4)?;
-            Ok(Batch {
-                id: row.get(0)?,
-                process_id: row.get(1)?,
-                name: row.get(2)?,
-                started_at: parse_dt(&started_at)?,
-                finished_at: match finished_at {
-                    Some(value) => Some(parse_dt(&value)?),
-                    None => None,
-                },
-                target_temperature_c: row.get(5)?,
-                target_stirrer_rpm: row.get(6)?,
-                heating_minutes: row.get(7)?,
-                stirring_minutes: row.get(8)?,
-            })
-        })?;
-
-        let mut batches = Vec::new();
-        for row in rows {
-            batches.push(row?);
-        }
-        Ok(batches)
+        let rows = stmt.query_map([limit as i64], batch_from_row)?;
+        collect_valid_batches_from_rusqlite_rows(rows, "recent_batches")
     }
 
     pub async fn recent_batches_sqlx(&self, limit: usize) -> Result<Vec<Batch>> {
@@ -2353,6 +3268,86 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list recent batches with SQLx")?;
+        collect_valid_batches_from_sqlx_rows(rows, "recent_batches_sqlx")
+    }
+
+    pub fn latest_unfinished_batch(&self) -> Result<Option<Batch>> {
+        let conn = self.read_conn()?;
+        conn.query_row(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM batches
+            WHERE finished_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+            [],
+            batch_from_row,
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub async fn latest_unfinished_batch_sqlx(&self) -> Result<Option<Batch>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.latest_unfinished_batch();
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM batches
+            WHERE finished_at IS NULL
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+        )
+        .fetch_optional(pool)
+        .await
+        .context("failed to read latest unfinished batch with SQLx")?;
+        row.map(batch_from_sqlx_row).transpose()
+    }
+
+    pub fn unfinished_batches(&self, limit: usize) -> Result<Vec<Batch>> {
+        let conn = self.read_conn()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM batches
+            WHERE finished_at IS NULL
+            ORDER BY id DESC
+            LIMIT ?1
+            "#,
+        )?;
+        let rows = stmt.query_map([limit as i64], batch_from_row)?;
+
+        let mut batches = Vec::new();
+        for row in rows {
+            batches.push(row?);
+        }
+        Ok(batches)
+    }
+
+    pub async fn unfinished_batches_sqlx(&self, limit: usize) -> Result<Vec<Batch>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            return self.unfinished_batches(limit);
+        };
+        let rows = sqlx::query(
+            r#"
+            SELECT id, process_id, name, started_at, finished_at, target_temperature_c,
+                   target_stirrer_rpm, heating_minutes, stirring_minutes
+            FROM batches
+            WHERE finished_at IS NULL
+            ORDER BY id DESC
+            LIMIT ?
+            "#,
+        )
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await
+        .context("failed to list unfinished batches with SQLx")?;
         rows.into_iter().map(batch_from_sqlx_row).collect()
     }
 
@@ -2366,24 +3361,7 @@ impl Db {
             WHERE id = ?1
             "#,
             [batch_id],
-            |row| {
-                let started_at: String = row.get(3)?;
-                let finished_at: Option<String> = row.get(4)?;
-                Ok(Batch {
-                    id: row.get(0)?,
-                    process_id: row.get(1)?,
-                    name: row.get(2)?,
-                    started_at: parse_dt(&started_at)?,
-                    finished_at: match finished_at {
-                        Some(value) => Some(parse_dt(&value)?),
-                        None => None,
-                    },
-                    target_temperature_c: row.get(5)?,
-                    target_stirrer_rpm: row.get(6)?,
-                    heating_minutes: row.get(7)?,
-                    stirring_minutes: row.get(8)?,
-                })
-            },
+            batch_from_row,
         )
         .optional()
         .map_err(Into::into)
@@ -2410,30 +3388,31 @@ impl Db {
 
     pub fn batch_outcome_by_id(&self, batch_id: i64) -> Result<Option<BatchOutcome>> {
         let conn = self.read_conn()?;
-        conn.query_row(
-            r#"
+        match conn
+            .query_row(
+                r#"
             SELECT b.id, b.target_temperature_c, b.target_stirrer_rpm,
                    b.heating_minutes, b.stirring_minutes,
                    p.yield_percent, p.product_ratio
             FROM batches b
             JOIN product_results p ON p.batch_id = b.id
             WHERE b.id = ?1
+              AND b.finished_at IS NOT NULL
             "#,
-            [batch_id],
-            |row| {
-                Ok(BatchOutcome {
-                    batch_id: row.get(0)?,
-                    target_temperature_c: row.get(1)?,
-                    target_stirrer_rpm: row.get(2)?,
-                    heating_minutes: row.get(3)?,
-                    stirring_minutes: row.get(4)?,
-                    yield_percent: row.get(5)?,
-                    product_ratio: row.get(6)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(Into::into)
+                [batch_id],
+                batch_outcome_from_row,
+            )
+            .optional()
+        {
+            Ok(outcome) => Ok(outcome),
+            Err(err) => {
+                if let Some(reason) = invalid_batch_outcome_reason_from_rusqlite(&err) {
+                    warn_invalid_batch_outcome_row("batch_outcome_by_id", reason);
+                    return Ok(None);
+                }
+                Err(err.into())
+            }
+        }
     }
 
     pub async fn batch_outcome_by_id_sqlx(&self, batch_id: i64) -> Result<Option<BatchOutcome>> {
@@ -2448,13 +3427,23 @@ impl Db {
             FROM batches b
             JOIN product_results p ON p.batch_id = b.id
             WHERE b.id = ?
+              AND b.finished_at IS NOT NULL
             "#,
         )
         .bind(batch_id)
         .fetch_optional(pool)
         .await
         .context("failed to read batch outcome by id with SQLx")?;
-        row.map(batch_outcome_from_sqlx_row).transpose()
+        match row.map(batch_outcome_from_sqlx_row).transpose() {
+            Ok(outcome) => Ok(outcome),
+            Err(err) => {
+                if let Some(reason) = invalid_batch_outcome_reason_from_anyhow(&err) {
+                    warn_invalid_batch_outcome_row("batch_outcome_by_id_sqlx", reason);
+                    return Ok(None);
+                }
+                Err(err)
+            }
+        }
     }
 
     pub fn sample_records_for_batch(
@@ -2479,27 +3468,21 @@ impl Db {
             "#,
         )?;
         let rows = stmt.query_map(params![batch_id, limit as i64], |row| {
-            let captured_at: String = row.get(11)?;
-            Ok(SensorSampleRecord {
-                batch_id: row.get(1)?,
-                sample: SensorSnapshot {
-                    temperature_c: row.get(2)?,
-                    pressure_mpa: row.get(3)?,
-                    stirrer_rpm: row.get(4)?,
-                    shake_speed_cpm: row.get(5)?,
-                    tilt_state: row.get(6)?,
-                    tilt_angle_deg: row.get(7)?,
-                    flow_rate_l_min: row.get(8)?,
-                    product_concentration_percent: row.get(9)?,
-                    ph: row.get(10)?,
-                    captured_at: parse_dt(&captured_at)?,
-                },
-            })
+            sensor_sample_record_from_row(row, 1, 2, 11)
         })?;
 
         let mut samples = Vec::new();
         for row in rows {
-            samples.push(row?);
+            match row {
+                Ok(sample) => samples.push(sample),
+                Err(err) => {
+                    if let Some(reason) = invalid_sensor_sample_reason_from_rusqlite(&err) {
+                        warn_invalid_sensor_sample_row("sample_records_for_batch", reason);
+                        continue;
+                    }
+                    return Err(err.into());
+                }
+            }
         }
         Ok(samples)
     }
@@ -2532,9 +3515,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list batch sensor samples with SQLx")?;
-        rows.into_iter()
-            .map(sensor_sample_record_from_sqlx_row)
-            .collect()
+        collect_valid_sensor_sample_records_from_sqlx_rows(rows, "sample_records_for_batch_sqlx")
     }
 
     pub fn recent_control_events(&self, limit: usize) -> Result<Vec<ControlEvent>> {
@@ -2554,12 +3535,7 @@ impl Db {
             "#,
         )?;
         let rows = stmt.query_map([limit as i64], control_event_from_row)?;
-
-        let mut events = Vec::new();
-        for row in rows {
-            events.push(row?);
-        }
-        Ok(events)
+        collect_valid_control_events_from_rusqlite_rows(rows, "recent_control_events")
     }
 
     pub async fn recent_control_events_sqlx(&self, limit: usize) -> Result<Vec<ControlEvent>> {
@@ -2584,7 +3560,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list recent control events with SQLx")?;
-        rows.into_iter().map(control_event_from_sqlx_row).collect()
+        collect_valid_control_events_from_sqlx_rows(rows, "recent_control_events_sqlx")
     }
 
     pub fn audit_events(
@@ -2628,11 +3604,7 @@ impl Db {
             rusqlite::params_from_iter(params.iter().map(|value| value.as_ref())),
             control_event_from_row,
         )?;
-        let mut events = Vec::new();
-        for row in rows {
-            events.push(row?);
-        }
-        Ok(events)
+        collect_valid_control_events_from_rusqlite_rows(rows, "audit_events")
     }
 
     pub fn audit_event_count(&self, event_type: Option<&str>) -> Result<usize> {
@@ -2713,7 +3685,7 @@ impl Db {
             .context("failed to list control events with SQLx")?
         };
 
-        rows.into_iter().map(control_event_from_sqlx_row).collect()
+        collect_valid_control_events_from_sqlx_rows(rows, "audit_events_sqlx")
     }
 
     pub fn audit_chain_status(&self) -> Result<AuditChainStatus> {
@@ -2869,12 +3841,7 @@ impl Db {
             "#,
         )?;
         let rows = stmt.query_map(params![batch_id, limit as i64], control_event_from_row)?;
-
-        let mut events = Vec::new();
-        for row in rows {
-            events.push(row?);
-        }
-        Ok(events)
+        collect_valid_control_events_from_rusqlite_rows(rows, "control_events_for_batch")
     }
 
     pub async fn control_events_for_batch_sqlx(
@@ -2905,7 +3872,7 @@ impl Db {
         .fetch_all(pool)
         .await
         .context("failed to list batch control events with SQLx")?;
-        rows.into_iter().map(control_event_from_sqlx_row).collect()
+        collect_valid_control_events_from_sqlx_rows(rows, "control_events_for_batch_sqlx")
     }
 
     pub fn clear_runtime_data_for_tests(&self) -> Result<()> {
@@ -2965,9 +3932,127 @@ impl Db {
     }
 
     #[cfg(debug_assertions)]
+    pub fn product_result_notes_for_tests(&self, batch_id: i64) -> Result<Option<String>> {
+        let conn = self.read_conn()?;
+        conn.query_row(
+            "SELECT notes FROM product_results WHERE batch_id = ?1",
+            [batch_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn corrupt_process_step_for_tests(
+        &self,
+        step_id: i64,
+        duration_minutes: Option<f64>,
+        target_stirrer_rpm: Option<f64>,
+        target_shake_speed_cpm: Option<f64>,
+    ) -> Result<()> {
+        let conn = self.write_conn()?;
+        if let Some(value) = duration_minutes {
+            conn.execute(
+                "UPDATE process_steps SET duration_minutes = ?1 WHERE id = ?2",
+                params![value, step_id],
+            )?;
+        }
+        if let Some(value) = target_stirrer_rpm {
+            conn.execute(
+                "UPDATE process_steps SET target_stirrer_rpm = ?1 WHERE id = ?2",
+                params![value, step_id],
+            )?;
+        }
+        if let Some(value) = target_shake_speed_cpm {
+            conn.execute(
+                "UPDATE process_steps SET target_shake_speed_cpm = ?1 WHERE id = ?2",
+                params![value, step_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
     pub fn break_control_events_for_tests(&self) -> Result<()> {
         let conn = self.write_conn()?;
         conn.execute("DROP TABLE control_events", [])?;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn repair_control_events_for_tests(&self) -> Result<()> {
+        let conn = self.write_conn()?;
+        conn.execute_batch(SCHEMA_SQL)?;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn break_integration_tasks_for_tests(&self) -> Result<()> {
+        let conn = self.write_conn()?;
+        conn.execute("DROP TABLE integration_tasks", [])?;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn break_samples_for_tests(&self) -> Result<()> {
+        let conn = self.write_conn()?;
+        conn.execute("DROP TABLE sensor_samples", [])?;
+        Ok(())
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn fail_control_events_after_successes_for_tests(&self, successes: usize) {
+        self.inner
+            .fail_control_events_after
+            .store(successes, Ordering::SeqCst);
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn after_control_event_success_for_tests(&self, callback: Arc<dyn Fn() + Send + Sync>) {
+        *self
+            .inner
+            .after_control_event_success
+            .lock()
+            .expect("after control event hook lock poisoned") = Some(callback);
+    }
+
+    #[cfg(debug_assertions)]
+    fn run_after_control_event_success_for_tests(&self) {
+        if let Some(callback) = self
+            .inner
+            .after_control_event_success
+            .lock()
+            .expect("after control event hook lock poisoned")
+            .take()
+        {
+            callback();
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    fn consume_control_event_failure_for_tests(&self) -> Result<()> {
+        let remaining = self.inner.fail_control_events_after.load(Ordering::SeqCst);
+        if remaining == usize::MAX {
+            return Ok(());
+        }
+        if remaining == 0 {
+            self.inner
+                .fail_control_events_after
+                .store(usize::MAX, Ordering::SeqCst);
+            return Err(anyhow!("injected control event write failure for tests"));
+        }
+        self.inner
+            .fail_control_events_after
+            .fetch_sub(1, Ordering::SeqCst);
+        Ok(())
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn run_after_control_event_success_for_tests(&self) {}
+
+    #[cfg(not(debug_assertions))]
+    fn consume_control_event_failure_for_tests(&self) -> Result<()> {
         Ok(())
     }
 
@@ -3024,6 +4109,57 @@ impl Db {
         .optional()
     }
 
+    fn integration_task_by_external_id_conn(
+        &self,
+        conn: &Connection,
+        source: &str,
+        external_task_id: &str,
+    ) -> rusqlite::Result<Option<IntegrationTask>> {
+        conn.query_row(
+            r#"
+            SELECT id, external_task_id, source, action, status, request_json, response_json,
+                   created_at, updated_at
+            FROM integration_tasks
+            WHERE source = ?1 AND external_task_id = ?2
+            ORDER BY id ASC
+            LIMIT 1
+            "#,
+            params![source, external_task_id],
+            |row| self.integration_task_from_row(row),
+        )
+        .optional()
+    }
+
+    async fn integration_task_by_external_id_sqlx(
+        &self,
+        source: &str,
+        external_task_id: &str,
+    ) -> Result<Option<IntegrationTask>> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            let conn = self.read_conn()?;
+            return self
+                .integration_task_by_external_id_conn(&conn, source, external_task_id)
+                .map_err(Into::into);
+        };
+        let row = sqlx::query(
+            r#"
+            SELECT id, external_task_id, source, action, status, request_json, response_json,
+                   created_at, updated_at
+            FROM integration_tasks
+            WHERE source = ? AND external_task_id = ?
+            ORDER BY id ASC
+            LIMIT 1
+            "#,
+        )
+        .bind(source)
+        .bind(external_task_id)
+        .fetch_optional(pool)
+        .await
+        .context("failed to load integration task by external id with SQLx")?;
+        row.map(|row| self.integration_task_from_sqlx_row(row))
+            .transpose()
+    }
+
     fn integration_task_from_row(
         &self,
         row: &rusqlite::Row<'_>,
@@ -3043,6 +4179,10 @@ impl Db {
             created_at: parse_dt(&created_at)?,
             updated_at: parse_dt(&updated_at)?,
         })
+        .and_then(|task| {
+            validate_integration_task_record(task)
+                .map_err(invalid_integration_task_conversion_error)
+        })
     }
 
     fn integration_task_from_sqlx_row(&self, row: SqliteRow) -> Result<IntegrationTask> {
@@ -3050,7 +4190,7 @@ impl Db {
         let response_json: String = row.try_get("response_json")?;
         let created_at: String = row.try_get("created_at")?;
         let updated_at: String = row.try_get("updated_at")?;
-        Ok(IntegrationTask {
+        let task = IntegrationTask {
             id: row.try_get("id")?,
             external_task_id: row.try_get("external_task_id")?,
             source: row.try_get("source")?,
@@ -3060,7 +4200,28 @@ impl Db {
             response: self.parse_sensitive_json_anyhow(&response_json)?,
             created_at: parse_dt_anyhow(&created_at)?,
             updated_at: parse_dt_anyhow(&updated_at)?,
-        })
+        };
+        validate_integration_task_record(task)
+            .map_err(|reason| anyhow!(InvalidIntegrationTaskRow { reason }))
+    }
+
+    fn collect_valid_integration_tasks_from_sqlx_rows(
+        &self,
+        rows: Vec<SqliteRow>,
+        source: &str,
+    ) -> Result<Vec<IntegrationTask>> {
+        let mut tasks = Vec::new();
+        for row in rows {
+            match self.integration_task_from_sqlx_row(row) {
+                Ok(task) => tasks.push(task),
+                Err(err) if invalid_integration_task_reason_from_anyhow(&err).is_some() => {
+                    let reason = invalid_integration_task_reason_from_anyhow(&err).unwrap();
+                    warn_invalid_integration_task_row(source, reason);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(tasks)
     }
 
     async fn process_summary_by_id_sqlx_pool(
@@ -3117,6 +4278,13 @@ fn process_definition_from_sqlx_row(row: SqliteRow) -> Result<ProcessDefinition>
     })
 }
 
+fn is_sqlite_unique_constraint_error(err: &sqlx::Error) -> bool {
+    err.as_database_error()
+        .and_then(|db_err| db_err.code())
+        .is_some_and(|code| code == "2067" || code == "1555")
+        || err.to_string().contains("UNIQUE constraint failed")
+}
+
 async fn process_summary_by_id_sqlx_executor<'e, E>(
     executor: E,
     process_id: i64,
@@ -3143,7 +4311,7 @@ where
 
 fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEvent> {
     let created_at: String = row.get(7)?;
-    Ok(ControlEvent {
+    let event = ControlEvent {
         id: row.get(0)?,
         batch_id: row.get(1)?,
         event_type: row.get(2)?,
@@ -3154,12 +4322,14 @@ fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEv
         created_at: parse_dt(&created_at)?,
         previous_hash: row.get(8)?,
         event_hash: row.get(9)?,
-    })
+    };
+    validate_control_event_record(event)
+        .map_err(|reason| invalid_control_event_conversion_error(reason))
 }
 
 fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
     let created_at: String = row.try_get("created_at")?;
-    Ok(ControlEvent {
+    let event = ControlEvent {
         id: row.try_get("id")?,
         batch_id: row.try_get("batch_id")?,
         event_type: row.try_get("event_type")?,
@@ -3170,7 +4340,9 @@ fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
         created_at: parse_dt_anyhow(&created_at)?,
         previous_hash: row.try_get("previous_hash")?,
         event_hash: row.try_get("event_hash")?,
-    })
+    };
+    validate_control_event_record(event)
+        .map_err(|reason| anyhow!(InvalidControlEventRow { reason }))
 }
 
 fn demo_alarm_from_sqlx_row(row: SqliteRow) -> Result<DemoAlarm> {
@@ -3193,7 +4365,7 @@ fn demo_alarm_from_sqlx_row(row: SqliteRow) -> Result<DemoAlarm> {
 fn batch_from_sqlx_row(row: SqliteRow) -> Result<Batch> {
     let started_at: String = row.try_get("started_at")?;
     let finished_at: Option<String> = row.try_get("finished_at")?;
-    Ok(Batch {
+    let batch = Batch {
         id: row.try_get("id")?,
         process_id: row.try_get("process_id")?,
         name: row.try_get("name")?,
@@ -3203,11 +4375,46 @@ fn batch_from_sqlx_row(row: SqliteRow) -> Result<Batch> {
         target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
         heating_minutes: row.try_get("heating_minutes")?,
         stirring_minutes: row.try_get("stirring_minutes")?,
-    })
+    };
+    validate_batch_record(batch).map_err(|reason| anyhow!(InvalidBatchRow { reason }))
+}
+
+fn batch_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Batch> {
+    let started_at: String = row.get(3)?;
+    let finished_at: Option<String> = row.get(4)?;
+    let batch = Batch {
+        id: row.get(0)?,
+        process_id: row.get(1)?,
+        name: row.get(2)?,
+        started_at: parse_dt(&started_at)?,
+        finished_at: match finished_at {
+            Some(value) => Some(parse_dt(&value)?),
+            None => None,
+        },
+        target_temperature_c: row.get(5)?,
+        target_stirrer_rpm: row.get(6)?,
+        heating_minutes: row.get(7)?,
+        stirring_minutes: row.get(8)?,
+    };
+    validate_batch_record(batch).map_err(|reason| invalid_batch_conversion_error(reason))
+}
+
+fn batch_outcome_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BatchOutcome> {
+    let outcome = BatchOutcome {
+        batch_id: row.get(0)?,
+        target_temperature_c: row.get(1)?,
+        target_stirrer_rpm: row.get(2)?,
+        heating_minutes: row.get(3)?,
+        stirring_minutes: row.get(4)?,
+        yield_percent: row.get(5)?,
+        product_ratio: row.get(6)?,
+    };
+    validate_batch_outcome_record(outcome)
+        .map_err(|reason| invalid_batch_outcome_conversion_error(reason))
 }
 
 fn batch_outcome_from_sqlx_row(row: SqliteRow) -> Result<BatchOutcome> {
-    Ok(BatchOutcome {
+    let outcome = BatchOutcome {
         batch_id: row.try_get("id")?,
         target_temperature_c: row.try_get("target_temperature_c")?,
         target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
@@ -3215,44 +4422,716 @@ fn batch_outcome_from_sqlx_row(row: SqliteRow) -> Result<BatchOutcome> {
         stirring_minutes: row.try_get("stirring_minutes")?,
         yield_percent: row.try_get("yield_percent")?,
         product_ratio: row.try_get("product_ratio")?,
-    })
+    };
+    validate_batch_outcome_record(outcome)
+        .map_err(|reason| anyhow!(InvalidBatchOutcomeRow { reason }))
+}
+
+fn recommendation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Recommendation> {
+    let recommendation = Recommendation {
+        based_on_batch_count: row.get(0)?,
+        target_temperature_c: row.get(1)?,
+        target_stirrer_rpm: row.get(2)?,
+        heating_minutes: row.get(3)?,
+        stirring_minutes: row.get(4)?,
+        expected_score: row.get(5)?,
+        rationale: row.get(6)?,
+    };
+    validate_recommendation_record(recommendation)
+        .map_err(|reason| invalid_recommendation_conversion_error(reason))
 }
 
 fn recommendation_from_sqlx_row(row: SqliteRow) -> Result<Recommendation> {
-    let based_on_batch_count: i64 = row.try_get("based_on_batch_count")?;
-    if based_on_batch_count < 0 {
-        anyhow::bail!("invalid based_on_batch_count in database: {based_on_batch_count}");
-    }
-    Ok(Recommendation {
-        based_on_batch_count,
+    let recommendation = Recommendation {
+        based_on_batch_count: row.try_get("based_on_batch_count")?,
         target_temperature_c: row.try_get("target_temperature_c")?,
         target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
         heating_minutes: row.try_get("heating_minutes")?,
         stirring_minutes: row.try_get("stirring_minutes")?,
         expected_score: row.try_get("expected_score")?,
         rationale: row.try_get("rationale")?,
+    };
+    validate_recommendation_record(recommendation)
+        .map_err(|reason| anyhow!(InvalidRecommendationRow { reason }))
+}
+
+#[derive(Debug)]
+struct InvalidRecommendationRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidRecommendationRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid AI recommendation in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidRecommendationRow {}
+
+fn validate_recommendation_record(
+    recommendation: Recommendation,
+) -> std::result::Result<Recommendation, String> {
+    if recommendation.based_on_batch_count < 0 {
+        return Err(format!(
+            "based_on_batch_count must be >= 0, got {}",
+            recommendation.based_on_batch_count
+        ));
+    }
+    TARGET_TEMPERATURE_C_RANGE.validate(recommendation.target_temperature_c)?;
+    TARGET_STIRRER_RPM_RANGE.validate(recommendation.target_stirrer_rpm)?;
+    BATCH_HEATING_MINUTES_RANGE.validate(recommendation.heating_minutes)?;
+    BATCH_STIRRING_MINUTES_RANGE.validate(recommendation.stirring_minutes)?;
+    RECOMMENDATION_EXPECTED_SCORE_RANGE.validate(recommendation.expected_score)?;
+    Ok(recommendation)
+}
+
+fn invalid_recommendation_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidRecommendationRow { reason })
+}
+
+fn invalid_recommendation_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidRecommendationRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_recommendation_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidRecommendationRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_recommendation_row(source: &str, reason: &str) {
+    tracing::warn!("ignoring invalid AI recommendation row from {source}: {reason}");
+}
+
+#[derive(Debug)]
+struct InvalidBatchRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidBatchRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid batch in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidBatchRow {}
+
+fn validate_batch_record(batch: Batch) -> std::result::Result<Batch, String> {
+    TARGET_TEMPERATURE_C_RANGE.validate(batch.target_temperature_c)?;
+    TARGET_STIRRER_RPM_RANGE.validate(batch.target_stirrer_rpm)?;
+    BATCH_HEATING_MINUTES_RANGE.validate(batch.heating_minutes)?;
+    BATCH_STIRRING_MINUTES_RANGE.validate(batch.stirring_minutes)?;
+    Ok(batch)
+}
+
+fn collect_valid_batches_from_rusqlite_rows<F>(
+    rows: rusqlite::MappedRows<'_, F>,
+    source: &str,
+) -> Result<Vec<Batch>>
+where
+    F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<Batch>,
+{
+    let mut batches = Vec::new();
+    for row in rows {
+        match row {
+            Ok(batch) => batches.push(batch),
+            Err(err) => {
+                if let Some(reason) = invalid_batch_reason_from_rusqlite(&err) {
+                    warn_invalid_batch_row(source, reason);
+                    continue;
+                }
+                return Err(err.into());
+            }
+        }
+    }
+    Ok(batches)
+}
+
+fn collect_valid_batches_from_sqlx_rows(rows: Vec<SqliteRow>, source: &str) -> Result<Vec<Batch>> {
+    let mut batches = Vec::new();
+    for row in rows {
+        match batch_from_sqlx_row(row) {
+            Ok(batch) => batches.push(batch),
+            Err(err) if invalid_batch_reason_from_anyhow(&err).is_some() => {
+                let reason = invalid_batch_reason_from_anyhow(&err).unwrap();
+                warn_invalid_batch_row(source, reason);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(batches)
+}
+
+fn invalid_batch_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidBatchRow { reason })
+}
+
+fn invalid_batch_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidBatchRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_batch_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidBatchRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_batch_row(source: &str, reason: &str) {
+    tracing::warn!("skipping invalid batch row from {source}: {reason}");
+}
+
+#[derive(Debug)]
+struct InvalidControlEventRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidControlEventRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid control event in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidControlEventRow {}
+
+fn validate_control_event_record(event: ControlEvent) -> std::result::Result<ControlEvent, String> {
+    validate_control_event_targets(
+        event.target_temperature_c,
+        event.target_stirrer_rpm,
+        event.target_shake_speed_cpm,
+    )
+    .map(|_| event)
+}
+
+fn validate_control_event_targets(
+    target_temperature_c: Option<f64>,
+    target_stirrer_rpm: Option<f64>,
+    target_shake_speed_cpm: Option<f64>,
+) -> std::result::Result<(), String> {
+    if let Some(value) = target_temperature_c {
+        TARGET_TEMPERATURE_C_RANGE.validate(value)?;
+    }
+    if let Some(value) = target_stirrer_rpm {
+        TARGET_STIRRER_RPM_RANGE.validate(value)?;
+    }
+    if let Some(value) = target_shake_speed_cpm {
+        PROCESS_SHAKE_SPEED_CPM_RANGE.validate(value)?;
+    }
+    Ok(())
+}
+
+fn collect_valid_control_events_from_rusqlite_rows<F>(
+    rows: rusqlite::MappedRows<'_, F>,
+    source: &str,
+) -> Result<Vec<ControlEvent>>
+where
+    F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<ControlEvent>,
+{
+    let mut events = Vec::new();
+    for row in rows {
+        match row {
+            Ok(event) => events.push(event),
+            Err(err) => {
+                if let Some(reason) = invalid_control_event_reason_from_rusqlite(&err) {
+                    warn_invalid_control_event_row(source, reason);
+                    continue;
+                }
+                return Err(err.into());
+            }
+        }
+    }
+    Ok(events)
+}
+
+fn collect_valid_control_events_from_sqlx_rows(
+    rows: Vec<SqliteRow>,
+    source: &str,
+) -> Result<Vec<ControlEvent>> {
+    let mut events = Vec::new();
+    for row in rows {
+        match control_event_from_sqlx_row(row) {
+            Ok(event) => events.push(event),
+            Err(err) if invalid_control_event_reason_from_anyhow(&err).is_some() => {
+                let reason = invalid_control_event_reason_from_anyhow(&err).unwrap();
+                warn_invalid_control_event_row(source, reason);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(events)
+}
+
+fn invalid_control_event_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidControlEventRow { reason })
+}
+
+fn invalid_control_event_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidControlEventRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_control_event_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidControlEventRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_control_event_row(source: &str, reason: &str) {
+    tracing::warn!("skipping invalid control event row from {source}: {reason}");
+}
+
+#[derive(Debug)]
+struct InvalidIntegrationTaskRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidIntegrationTaskRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid integration task in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidIntegrationTaskRow {}
+
+fn validate_integration_task_record(
+    task: IntegrationTask,
+) -> std::result::Result<IntegrationTask, String> {
+    validate_integration_task_source(&task.source)?;
+    if let Some(external_task_id) = task.external_task_id.as_deref() {
+        validate_integration_task_external_id(external_task_id)?;
+    }
+    validate_integration_task_action(&task.action)?;
+    validate_integration_task_status(&task.status)?;
+    validate_integration_task_request_payload(&task.request)?;
+    validate_integration_task_response_payload(&task.status, &task.response)?;
+    Ok(task)
+}
+
+fn validate_integration_task_source(source: &str) -> std::result::Result<(), String> {
+    validate_integration_task_clean_text(
+        "source",
+        source,
+        INTEGRATION_TASK_SOURCE_MAX_CHARS,
+        false,
+    )?;
+    if !source
+        .chars()
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '_' | '-' | '.'))
+    {
+        return Err(
+            "source must contain only lowercase ASCII letters, digits, '.', '_' or '-'".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn validate_integration_task_external_id(
+    external_task_id: &str,
+) -> std::result::Result<(), String> {
+    validate_integration_task_clean_text(
+        "external_task_id",
+        external_task_id,
+        INTEGRATION_TASK_EXTERNAL_ID_MAX_CHARS,
+        true,
+    )
+}
+
+fn validate_integration_task_clean_text(
+    field: &str,
+    value: &str,
+    max_chars: usize,
+    allow_internal_space: bool,
+) -> std::result::Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("{field} must not be empty"));
+    }
+    if value.trim() != value {
+        return Err(format!(
+            "{field} must not have leading or trailing whitespace"
+        ));
+    }
+    let chars = value.chars().count();
+    if chars > max_chars {
+        return Err(format!(
+            "{field} must be at most {max_chars} characters, got {chars}"
+        ));
+    }
+    for ch in value.chars() {
+        if is_invisible_format_char(ch) {
+            return Err(format!(
+                "{field} must not contain invisible format characters"
+            ));
+        }
+        if ch.is_control() {
+            return Err(format!("{field} must not contain control characters"));
+        }
+        if ch.is_whitespace() && ch != ' ' {
+            return Err(format!("{field} must not contain non-space whitespace"));
+        }
+        if ch == ' ' && !allow_internal_space {
+            return Err(format!("{field} must not contain spaces"));
+        }
+    }
+    Ok(())
+}
+
+fn is_invisible_format_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+    )
+}
+
+fn validate_integration_task_action(action: &str) -> std::result::Result<(), String> {
+    if INTEGRATION_TASK_ACTIONS.contains(&action) {
+        return Ok(());
+    }
+    Err(format!(
+        "action must be one of {}",
+        INTEGRATION_TASK_ACTIONS.join(", ")
+    ))
+}
+
+fn validate_integration_task_status(status: &str) -> std::result::Result<(), String> {
+    if INTEGRATION_TASK_STATUSES.contains(&status) {
+        return Ok(());
+    }
+    Err(format!(
+        "status must be one of {}",
+        INTEGRATION_TASK_STATUSES.join(", ")
+    ))
+}
+
+fn validate_integration_task_terminal_status(status: &str) -> std::result::Result<(), String> {
+    if INTEGRATION_TASK_TERMINAL_STATUSES.contains(&status) {
+        return Ok(());
+    }
+    Err(format!(
+        "status update must be one of {}",
+        INTEGRATION_TASK_TERMINAL_STATUSES.join(", ")
+    ))
+}
+
+fn validate_integration_task_request_payload(request: &Value) -> std::result::Result<(), String> {
+    if request.is_object() {
+        return Ok(());
+    }
+    Err("request JSON must be an object".to_string())
+}
+
+fn validate_integration_task_response_payload(
+    status: &str,
+    response: &Value,
+) -> std::result::Result<(), String> {
+    if status == "received" && response.is_null() {
+        return Ok(());
+    }
+    if response.is_object() {
+        return Ok(());
+    }
+    Err("response JSON must be an object once a task leaves received status".to_string())
+}
+
+fn invalid_integration_task_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidIntegrationTaskRow { reason })
+}
+
+fn invalid_integration_task_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidIntegrationTaskRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_integration_task_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidIntegrationTaskRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_integration_task_row(source: &str, reason: &str) {
+    tracing::warn!("skipping invalid integration task row from {source}: {reason}");
+}
+
+#[derive(Debug)]
+struct InvalidProcessStepRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidProcessStepRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid process step in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidProcessStepRow {}
+
+fn validate_process_step_record(step: ProcessStep) -> std::result::Result<ProcessStep, String> {
+    let step_id = step.id;
+    TARGET_TEMPERATURE_C_RANGE
+        .validate(step.target_temperature_c)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    PROCESS_RAMP_RATE_C_MIN_RANGE
+        .validate(step.ramp_rate_c_min)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    PROCESS_DURATION_MINUTES_RANGE
+        .validate(step.duration_minutes)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    TARGET_STIRRER_RPM_RANGE
+        .validate(step.target_stirrer_rpm)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    PROCESS_SHAKE_SPEED_CPM_RANGE
+        .validate(step.target_shake_speed_cpm)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    PROCESS_PRESSURE_MPA_RANGE
+        .validate(step.target_pressure_mpa)
+        .map_err(|reason| format!("process step {step_id} {reason}"))?;
+    Ok(step)
+}
+
+fn invalid_process_step_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidProcessStepRow { reason })
+}
+
+#[derive(Debug)]
+struct InvalidBatchOutcomeRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidBatchOutcomeRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid batch outcome in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidBatchOutcomeRow {}
+
+fn validate_batch_outcome_record(
+    outcome: BatchOutcome,
+) -> std::result::Result<BatchOutcome, String> {
+    TARGET_TEMPERATURE_C_RANGE.validate(outcome.target_temperature_c)?;
+    TARGET_STIRRER_RPM_RANGE.validate(outcome.target_stirrer_rpm)?;
+    BATCH_HEATING_MINUTES_RANGE.validate(outcome.heating_minutes)?;
+    BATCH_STIRRING_MINUTES_RANGE.validate(outcome.stirring_minutes)?;
+    PRODUCT_RESULT_YIELD_PERCENT_RANGE.validate(outcome.yield_percent)?;
+    PRODUCT_RESULT_RATIO_RANGE.validate(outcome.product_ratio)?;
+    Ok(outcome)
+}
+
+fn collect_valid_batch_outcomes_from_rusqlite_rows<F>(
+    rows: rusqlite::MappedRows<'_, F>,
+    source: &str,
+) -> Result<Vec<BatchOutcome>>
+where
+    F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<BatchOutcome>,
+{
+    let mut outcomes = Vec::new();
+    for row in rows {
+        match row {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(err) => {
+                if let Some(reason) = invalid_batch_outcome_reason_from_rusqlite(&err) {
+                    warn_invalid_batch_outcome_row(source, reason);
+                    continue;
+                }
+                return Err(err.into());
+            }
+        }
+    }
+    Ok(outcomes)
+}
+
+fn collect_valid_batch_outcomes_from_sqlx_rows(
+    rows: Vec<SqliteRow>,
+    source: &str,
+) -> Result<Vec<BatchOutcome>> {
+    let mut outcomes = Vec::new();
+    for row in rows {
+        match batch_outcome_from_sqlx_row(row) {
+            Ok(outcome) => outcomes.push(outcome),
+            Err(err) if invalid_batch_outcome_reason_from_anyhow(&err).is_some() => {
+                let reason = invalid_batch_outcome_reason_from_anyhow(&err).unwrap();
+                warn_invalid_batch_outcome_row(source, reason);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(outcomes)
+}
+
+fn invalid_batch_outcome_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidBatchOutcomeRow { reason })
+}
+
+fn invalid_batch_outcome_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidBatchOutcomeRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_batch_outcome_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidBatchOutcomeRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_batch_outcome_row(source: &str, reason: &str) {
+    tracing::warn!("skipping invalid batch outcome row from {source}: {reason}");
+}
+
+#[derive(Debug)]
+struct InvalidSensorSampleRow {
+    reason: String,
+}
+
+impl fmt::Display for InvalidSensorSampleRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid sensor sample in database: {}", self.reason)
+    }
+}
+
+impl std::error::Error for InvalidSensorSampleRow {}
+
+fn sensor_sample_record_from_row(
+    row: &rusqlite::Row<'_>,
+    batch_id_index: usize,
+    sample_start_index: usize,
+    captured_at_index: usize,
+) -> rusqlite::Result<SensorSampleRecord> {
+    Ok(SensorSampleRecord {
+        batch_id: row.get(batch_id_index)?,
+        sample: sensor_snapshot_from_row(row, sample_start_index, captured_at_index)?,
     })
+}
+
+fn sensor_snapshot_from_row(
+    row: &rusqlite::Row<'_>,
+    start_index: usize,
+    captured_at_index: usize,
+) -> rusqlite::Result<SensorSnapshot> {
+    let captured_at: String = row.get(captured_at_index)?;
+    let tilt_state = sensor_tilt_state_from_i64(row.get(start_index + 4)?)?;
+    let sample = SensorSnapshot {
+        temperature_c: row.get(start_index)?,
+        pressure_mpa: row.get(start_index + 1)?,
+        stirrer_rpm: row.get(start_index + 2)?,
+        shake_speed_cpm: row.get(start_index + 3)?,
+        tilt_state,
+        tilt_angle_deg: row.get(start_index + 5)?,
+        flow_rate_l_min: row.get(start_index + 6)?,
+        product_concentration_percent: row.get(start_index + 7)?,
+        ph: row.get(start_index + 8)?,
+        captured_at: parse_dt(&captured_at)?,
+    };
+    validate_sensor_snapshot(&sample)
+        .map(|_| sample)
+        .map_err(|reason| invalid_sensor_sample_conversion_error(reason))
 }
 
 fn sensor_sample_record_from_sqlx_row(row: SqliteRow) -> Result<SensorSampleRecord> {
     let captured_at: String = row.try_get("captured_at")?;
     let tilt_state: i64 = row.try_get("tilt_state")?;
-    Ok(SensorSampleRecord {
+    let record = SensorSampleRecord {
         batch_id: row.try_get("batch_id")?,
         sample: SensorSnapshot {
             temperature_c: row.try_get("temperature_c")?,
             pressure_mpa: row.try_get("pressure_mpa")?,
             stirrer_rpm: row.try_get("stirrer_rpm")?,
             shake_speed_cpm: row.try_get("shake_speed_cpm")?,
-            tilt_state: u8::try_from(tilt_state)
-                .with_context(|| format!("invalid tilt_state in database: {tilt_state}"))?,
+            tilt_state: sensor_tilt_state_from_i64_anyhow(tilt_state)?,
             tilt_angle_deg: row.try_get("tilt_angle_deg")?,
             flow_rate_l_min: row.try_get("flow_rate_l_min")?,
             product_concentration_percent: row.try_get("product_concentration_percent")?,
             ph: row.try_get("ph")?,
             captured_at: parse_dt_anyhow(&captured_at)?,
         },
+    };
+    validate_sensor_sample_record(record)
+}
+
+fn validate_sensor_sample_record(record: SensorSampleRecord) -> Result<SensorSampleRecord> {
+    validate_sensor_snapshot(&record.sample)
+        .map(|_| record)
+        .map_err(|reason| anyhow!(InvalidSensorSampleRow { reason }))
+}
+
+fn sensor_tilt_state_from_i64(value: i64) -> rusqlite::Result<u8> {
+    sensor_tilt_state_from_i64_anyhow(value).map_err(|err| {
+        if let Some(reason) = invalid_sensor_sample_reason_from_anyhow(&err) {
+            return invalid_sensor_sample_conversion_error(reason.to_string());
+        }
+        rusqlite_conversion_error(err)
     })
+}
+
+fn sensor_tilt_state_from_i64_anyhow(value: i64) -> Result<u8> {
+    u8::try_from(value).map_err(|_| {
+        anyhow!(InvalidSensorSampleRow {
+            reason: format!(
+                "tilt_state must be 0 or 1 for the shake vessel binary tilt sensor, got {value}"
+            ),
+        })
+    })
+}
+
+fn collect_valid_sensor_sample_records_from_sqlx_rows(
+    rows: Vec<SqliteRow>,
+    source: &str,
+) -> Result<Vec<SensorSampleRecord>> {
+    let mut records = Vec::new();
+    for row in rows {
+        match sensor_sample_record_from_sqlx_row(row) {
+            Ok(record) => records.push(record),
+            Err(err) if invalid_sensor_sample_reason_from_anyhow(&err).is_some() => {
+                let reason = invalid_sensor_sample_reason_from_anyhow(&err).unwrap();
+                warn_invalid_sensor_sample_row(source, reason);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    Ok(records)
+}
+
+fn invalid_sensor_sample_conversion_error(reason: String) -> rusqlite::Error {
+    rusqlite_conversion_error(InvalidSensorSampleRow { reason })
+}
+
+fn invalid_sensor_sample_reason_from_rusqlite(err: &rusqlite::Error) -> Option<&str> {
+    match err {
+        rusqlite::Error::FromSqlConversionFailure(_, _, source) => source
+            .downcast_ref::<InvalidSensorSampleRow>()
+            .map(|err| err.reason.as_str()),
+        _ => None,
+    }
+}
+
+fn invalid_sensor_sample_reason_from_anyhow(err: &anyhow::Error) -> Option<&str> {
+    err.downcast_ref::<InvalidSensorSampleRow>()
+        .map(|err| err.reason.as_str())
+}
+
+fn warn_invalid_sensor_sample_row(source: &str, reason: &str) {
+    tracing::warn!("skipping invalid sensor sample row from {source}: {reason}");
 }
 
 fn audit_chain_status_from_events(
@@ -3329,6 +5208,143 @@ fn control_event_hash(
     let bytes = serde_json::to_vec(&payload)?;
     let digest = Sha256::digest(bytes);
     Ok(format!("{digest:x}"))
+}
+
+fn safe_command_from_recommendation(recommendation: &Recommendation, reason: &str) -> SafeCommand {
+    SafeCommand {
+        target_temperature_c: recommendation.target_temperature_c,
+        heat_time_s: recommendation.heating_minutes * 60.0,
+        hold_time_s: recommendation.stirring_minutes * 60.0,
+        cool_time_s: 0.0,
+        target_stirrer_rpm: recommendation.target_stirrer_rpm,
+        target_shake_speed_cpm: 0.0,
+        target_pressure_mpa: 0.0,
+        reason: reason.to_string(),
+    }
+}
+
+fn insert_control_event_in_rusqlite_tx(
+    tx: &rusqlite::Transaction<'_>,
+    batch_id: Option<i64>,
+    event_type: &str,
+    command: Option<&SafeCommand>,
+    reason: &str,
+    created_at: &str,
+) -> Result<()> {
+    let previous_hash: Option<String> = tx
+        .query_row(
+            r#"
+            SELECT event_hash
+            FROM control_events
+            WHERE event_hash IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("failed to read previous audit hash")?;
+    let target_temperature_c = command.map(|cmd| cmd.target_temperature_c);
+    let target_stirrer_rpm = command.map(|cmd| cmd.target_stirrer_rpm);
+    let target_shake_speed_cpm = command.map(|cmd| cmd.target_shake_speed_cpm);
+    ensure_valid_control_event_targets_for_insert(
+        target_temperature_c,
+        target_stirrer_rpm,
+        target_shake_speed_cpm,
+    )?;
+    let event_hash = control_event_hash(
+        previous_hash.as_deref(),
+        batch_id,
+        event_type,
+        target_temperature_c,
+        target_stirrer_rpm,
+        target_shake_speed_cpm,
+        reason,
+        created_at,
+    )?;
+    tx.execute(
+        r#"
+        INSERT INTO control_events
+            (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
+             reason, created_at, previous_hash, event_hash)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "#,
+        params![
+            batch_id,
+            event_type,
+            target_temperature_c,
+            target_stirrer_rpm,
+            target_shake_speed_cpm,
+            reason,
+            created_at,
+            previous_hash,
+            event_hash
+        ],
+    )
+    .context("failed to insert audit event")?;
+    Ok(())
+}
+
+async fn insert_control_event_in_sqlx_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    batch_id: Option<i64>,
+    event_type: &str,
+    command: Option<&SafeCommand>,
+    reason: &str,
+    created_at: &str,
+) -> Result<()> {
+    let previous_hash: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT event_hash
+        FROM control_events
+        WHERE event_hash IS NOT NULL
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .context("failed to read previous audit hash with SQLx")?;
+    let target_temperature_c = command.map(|cmd| cmd.target_temperature_c);
+    let target_stirrer_rpm = command.map(|cmd| cmd.target_stirrer_rpm);
+    let target_shake_speed_cpm = command.map(|cmd| cmd.target_shake_speed_cpm);
+    ensure_valid_control_event_targets_for_insert(
+        target_temperature_c,
+        target_stirrer_rpm,
+        target_shake_speed_cpm,
+    )?;
+    let event_hash = control_event_hash(
+        previous_hash.as_deref(),
+        batch_id,
+        event_type,
+        target_temperature_c,
+        target_stirrer_rpm,
+        target_shake_speed_cpm,
+        reason,
+        created_at,
+    )?;
+    sqlx::query(
+        r#"
+        INSERT INTO control_events
+            (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
+             reason, created_at, previous_hash, event_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(batch_id)
+    .bind(event_type)
+    .bind(target_temperature_c)
+    .bind(target_stirrer_rpm)
+    .bind(target_shake_speed_cpm)
+    .bind(reason)
+    .bind(created_at)
+    .bind(previous_hash)
+    .bind(event_hash)
+    .execute(&mut **tx)
+    .await
+    .context("failed to insert audit event with SQLx")?;
+    Ok(())
 }
 
 fn process_summary_by_id(
@@ -3431,7 +5447,7 @@ async fn process_step_by_id_sqlx_tx(
 fn process_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessStep> {
     let created_at: String = row.get(11)?;
     let updated_at: String = row.get(12)?;
-    Ok(ProcessStep {
+    let step = ProcessStep {
         id: row.get(0)?,
         process_id: row.get(1)?,
         step_index: row.get(2)?,
@@ -3445,13 +5461,15 @@ fn process_step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessSte
         cooling_mode: row.get(10)?,
         created_at: parse_dt(&created_at)?,
         updated_at: parse_dt(&updated_at)?,
-    })
+    };
+    validate_process_step_record(step)
+        .map_err(|reason| invalid_process_step_conversion_error(reason))
 }
 
 fn process_step_from_sqlx_row(row: SqliteRow) -> Result<ProcessStep> {
     let created_at: String = row.try_get("created_at")?;
     let updated_at: String = row.try_get("updated_at")?;
-    Ok(ProcessStep {
+    let step = ProcessStep {
         id: row.try_get("id")?,
         process_id: row.try_get("process_id")?,
         step_index: row.try_get("step_index")?,
@@ -3465,7 +5483,8 @@ fn process_step_from_sqlx_row(row: SqliteRow) -> Result<ProcessStep> {
         cooling_mode: row.try_get("cooling_mode")?,
         created_at: parse_dt_anyhow(&created_at)?,
         updated_at: parse_dt_anyhow(&updated_at)?,
-    })
+    };
+    validate_process_step_record(step).map_err(|reason| anyhow!(InvalidProcessStepRow { reason }))
 }
 
 fn touch_process(conn: &Connection, process_id: i64) -> rusqlite::Result<()> {
@@ -3542,6 +5561,7 @@ pub struct RestoreReport {
     pub destination: String,
     pub preserved_existing: Option<String>,
     pub removed_sidecars: Vec<String>,
+    pub preserved_sidecars: Vec<String>,
     pub integrity_check: String,
     pub size_bytes: u64,
     pub sha256: String,
@@ -3565,6 +5585,150 @@ fn path_with_raw_suffix(path: &Path, suffix: &str) -> PathBuf {
         .unwrap_or_else(|| "reactor.sqlite3".to_string());
     name.push_str(suffix);
     path.with_file_name(name)
+}
+
+fn unique_path(base: PathBuf) -> Result<PathBuf> {
+    if !base
+        .try_exists()
+        .with_context(|| format!("failed to inspect {}", base.display()))?
+    {
+        return Ok(base);
+    }
+    for index in 1..=10_000 {
+        let candidate = PathBuf::from(format!("{}.{}", base.display(), index));
+        if !candidate
+            .try_exists()
+            .with_context(|| format!("failed to inspect {}", candidate.display()))?
+        {
+            return Ok(candidate);
+        }
+    }
+    Err(anyhow!(
+        "could not allocate a non-overwriting pre-restore path for {}",
+        base.display()
+    ))
+}
+
+fn copy_evidence_file_atomic(source: &Path, destination: &Path, label: &str) -> Result<()> {
+    let tmp = evidence_tmp_path(destination);
+    remove_restore_tmp_if_present(&tmp)?;
+    let copy_result = (|| {
+        std::fs::copy(source, &tmp).with_context(|| {
+            format!(
+                "failed to preserve {label} {} -> temporary evidence file {}",
+                source.display(),
+                tmp.display()
+            )
+        })?;
+        sync_file(&tmp).with_context(|| {
+            format!(
+                "failed to sync temporary preserved {label} {}",
+                tmp.display()
+            )
+        })?;
+        let source_len = std::fs::metadata(source)
+            .with_context(|| format!("failed to stat source evidence {}", source.display()))?
+            .len();
+        let tmp_len = std::fs::metadata(&tmp)
+            .with_context(|| format!("failed to stat temporary evidence {}", tmp.display()))?
+            .len();
+        if source_len != tmp_len {
+            return Err(anyhow!(
+                "temporary preserved {label} {} has size {tmp_len}, expected {source_len}",
+                tmp.display()
+            ));
+        }
+        std::fs::rename(&tmp, destination).with_context(|| {
+            format!(
+                "failed to publish preserved {label} {}",
+                destination.display()
+            )
+        })?;
+        sync_parent_dir(destination)?;
+        Ok(())
+    })();
+    if let Err(err) = copy_result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err);
+    }
+    Ok(())
+}
+
+fn evidence_tmp_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "restore-evidence".to_string());
+    name.push_str(&format!(".evidence.tmp.{}", std::process::id()));
+    path.with_file_name(name)
+}
+
+fn restore_tmp_path(path: &Path) -> PathBuf {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "reactor.sqlite3".to_string());
+    name.push_str(&format!(".restore.tmp.{}", std::process::id()));
+    path.with_file_name(name)
+}
+
+fn remove_restore_tmp_if_present(path: &Path) -> Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(anyhow!(
+            "failed to remove stale temporary restore file {}: {err}",
+            path.display()
+        )),
+    }
+}
+
+fn sync_file(path: &Path) -> Result<()> {
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .with_context(|| format!("failed to reopen {} for sync", path.display()))?
+        .sync_all()
+        .with_context(|| format!("failed to sync {}", path.display()))
+}
+
+fn sync_parent_dir(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if parent.as_os_str().is_empty() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        std::fs::File::open(parent)
+            .with_context(|| format!("failed to open directory {} for sync", parent.display()))?
+            .sync_all()
+            .with_context(|| format!("failed to sync directory {}", parent.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+    }
+    Ok(())
+}
+
+fn validate_restored_db_file(path: &Path) -> Result<(String, Vec<String>)> {
+    let conn = rusqlite::Connection::open(path)
+        .with_context(|| format!("restored db is unreadable: {}", path.display()))?;
+    let integrity: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .context("failed to run SQLite integrity_check")?;
+    if integrity != "ok" {
+        return Err(anyhow!("restored db failed integrity_check: {integrity}"));
+    }
+    let tables = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to list restored tables")?;
+    Ok((integrity, tables))
 }
 
 fn sha256_hex(path: &Path) -> Result<String> {
@@ -3730,6 +5894,140 @@ fn parse_dt_anyhow(value: &str) -> Result<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
         .with_context(|| format!("invalid RFC3339 timestamp in database: {value}"))
+}
+
+fn ensure_valid_sensor_sample_for_insert(sample: &SensorSnapshot) -> Result<()> {
+    validate_sensor_snapshot(sample)
+        .map_err(|reason| anyhow!("invalid sensor sample rejected before DB insert: {reason}"))
+}
+
+fn ensure_valid_batch_targets_for_insert(
+    target_temperature_c: f64,
+    target_stirrer_rpm: f64,
+    heating_minutes: f64,
+    stirring_minutes: f64,
+) -> Result<()> {
+    TARGET_TEMPERATURE_C_RANGE
+        .validate(target_temperature_c)
+        .map_err(|reason| anyhow!("invalid batch target rejected before DB insert: {reason}"))?;
+    TARGET_STIRRER_RPM_RANGE
+        .validate(target_stirrer_rpm)
+        .map_err(|reason| anyhow!("invalid batch target rejected before DB insert: {reason}"))?;
+    BATCH_HEATING_MINUTES_RANGE
+        .validate(heating_minutes)
+        .map_err(|reason| anyhow!("invalid batch target rejected before DB insert: {reason}"))?;
+    BATCH_STIRRING_MINUTES_RANGE
+        .validate(stirring_minutes)
+        .map_err(|reason| anyhow!("invalid batch target rejected before DB insert: {reason}"))?;
+    Ok(())
+}
+
+fn ensure_valid_process_step_for_insert(step: &NewProcessStep) -> Result<()> {
+    TARGET_TEMPERATURE_C_RANGE
+        .validate(step.target_temperature_c)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    PROCESS_RAMP_RATE_C_MIN_RANGE
+        .validate(step.ramp_rate_c_min)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    PROCESS_DURATION_MINUTES_RANGE
+        .validate(step.duration_minutes)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    TARGET_STIRRER_RPM_RANGE
+        .validate(step.target_stirrer_rpm)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    PROCESS_SHAKE_SPEED_CPM_RANGE
+        .validate(step.target_shake_speed_cpm)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    PROCESS_PRESSURE_MPA_RANGE
+        .validate(step.target_pressure_mpa)
+        .map_err(|reason| anyhow!("invalid process step rejected before DB insert: {reason}"))?;
+    Ok(())
+}
+
+fn ensure_valid_product_result_for_insert(result: &ProductResult) -> Result<()> {
+    validate_finite_range_for_insert(
+        "product result",
+        "yield_percent",
+        result.yield_percent,
+        0.0,
+        100.0,
+    )?;
+    validate_finite_range_for_insert(
+        "product result",
+        "product_ratio",
+        result.product_ratio,
+        0.0,
+        1.0,
+    )?;
+    Ok(())
+}
+
+fn ensure_valid_recommendation_for_insert(recommendation: &Recommendation) -> Result<()> {
+    validate_recommendation_record(recommendation.clone()).map_err(|reason| {
+        anyhow!("invalid AI recommendation rejected before DB insert: {reason}")
+    })?;
+    Ok(())
+}
+
+fn ensure_valid_control_event_targets_for_insert(
+    target_temperature_c: Option<f64>,
+    target_stirrer_rpm: Option<f64>,
+    target_shake_speed_cpm: Option<f64>,
+) -> Result<()> {
+    validate_control_event_targets(
+        target_temperature_c,
+        target_stirrer_rpm,
+        target_shake_speed_cpm,
+    )
+    .map_err(|reason| anyhow!("invalid control event target rejected before DB insert: {reason}"))
+}
+
+fn ensure_valid_integration_task_create_for_insert(
+    source: &str,
+    external_task_id: Option<&str>,
+    action: &str,
+    request: &Value,
+) -> Result<()> {
+    validate_integration_task_source(source).map_err(|reason| {
+        anyhow!("invalid integration task rejected before DB insert: {reason}")
+    })?;
+    if let Some(external_task_id) = external_task_id {
+        validate_integration_task_external_id(external_task_id).map_err(|reason| {
+            anyhow!("invalid integration task rejected before DB insert: {reason}")
+        })?;
+    }
+    validate_integration_task_action(action).map_err(|reason| {
+        anyhow!("invalid integration task rejected before DB insert: {reason}")
+    })?;
+    validate_integration_task_request_payload(request).map_err(|reason| {
+        anyhow!("invalid integration task rejected before DB insert: {reason}")
+    })?;
+    Ok(())
+}
+
+fn ensure_valid_integration_task_update_for_insert(status: &str, response: &Value) -> Result<()> {
+    validate_integration_task_terminal_status(status).map_err(|reason| {
+        anyhow!("invalid integration task update rejected before DB insert: {reason}")
+    })?;
+    validate_integration_task_response_payload(status, response).map_err(|reason| {
+        anyhow!("invalid integration task update rejected before DB insert: {reason}")
+    })?;
+    Ok(())
+}
+
+fn validate_finite_range_for_insert(
+    subject: &str,
+    field: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+) -> Result<()> {
+    if !value.is_finite() || !(min..=max).contains(&value) {
+        anyhow::bail!(
+            "invalid {subject} rejected before DB insert: {field} must be between {min} and {max}"
+        );
+    }
+    Ok(())
 }
 
 fn rusqlite_conversion_error(

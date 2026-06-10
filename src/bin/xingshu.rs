@@ -25,7 +25,7 @@ use reactor_edge_daemon::{
     state::ControlTargets,
 };
 use reqwest::{Client, Method, StatusCode};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OpenFlags};
 use serde_json::{json, Value};
 
 const DEFAULT_API: &str = "http://127.0.0.1:8000";
@@ -184,6 +184,11 @@ enum DataCommand {
     },
     /// Delete local runtime data from the SQLite database.
     Delete {
+        /// Allow runtime-data deletion only when daemon service status cannot be
+        /// checked and a recorded maintenance decision already confirmed the
+        /// daemon stopped.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -228,6 +233,8 @@ enum ControlCommand {
         #[arg(long)]
         reset: bool,
     },
+    /// Acknowledge a latched device write fault after field verification.
+    FaultReset,
 }
 
 #[derive(Debug, Args)]
@@ -273,6 +280,9 @@ enum AiCommand {
         /// Promote a passing candidate adapter into XINGSHU_LOCAL_AI_LORA.
         #[arg(long)]
         promote: bool,
+        /// Allow --promote only after a recorded maintenance decision confirmed the daemon is stopped when service state cannot be checked.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         /// Minimum evaluation score required for --promote.
         #[arg(long, default_value_t = 0.0)]
         min_eval_score: f64,
@@ -423,6 +433,10 @@ enum OpsCommand {
         backup: PathBuf,
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
+        /// Allow restore only when daemon service status cannot be checked and
+        /// a recorded maintenance decision already confirmed the daemon stopped.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -432,6 +446,10 @@ enum OpsCommand {
     Wipe {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
+        /// Allow wipe only when daemon service status cannot be checked and a
+        /// recorded maintenance decision already confirmed the daemon stopped.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -452,6 +470,11 @@ enum KeyCommand {
     Generate {
         #[arg(long, default_value = "data/reactor.sqlite3")]
         db: PathBuf,
+        /// Allow key-file generation only when daemon service status cannot be
+        /// checked and a recorded maintenance decision already confirmed the
+        /// daemon stopped.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -470,6 +493,11 @@ enum KeyCommand {
         new_key_file: Option<PathBuf>,
         #[arg(long)]
         dry_run: bool,
+        /// Allow committed rekey only when daemon service status cannot be
+        /// checked and a recorded maintenance decision already confirmed the
+        /// daemon stopped. Not required for --dry-run.
+        #[arg(long)]
+        confirm_daemon_stopped: bool,
         #[arg(long)]
         yes: bool,
     },
@@ -773,6 +801,11 @@ async fn data(
             interval_ms,
             device_id,
         } => {
+            if token.map(str::trim).unwrap_or_default().is_empty() {
+                return Err(anyhow!(
+                    "data sample requires an engineer/admin bearer token with ingest_sensor_sample permission; run `xingshu auth login --username engineer --password <password>` and pass --token or set XINGSHU_TOKEN"
+                ));
+            }
             let interval_ms = (*interval_ms).max(100);
             let count = duration_s
                 .map(|seconds| {
@@ -786,7 +819,7 @@ async fn data(
                 let path = format!("/api/v1/reactor/{device_id}/samples");
                 let body = demo_pipeline_sample(index);
                 last =
-                    request_json(client, Method::POST, api, &path, None, Some(body), &[]).await?;
+                    request_json(client, Method::POST, api, &path, token, Some(body), &[]).await?;
                 if index + 1 < count {
                     tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
                 }
@@ -805,20 +838,158 @@ async fn data(
                 }),
             })
         }
-        DataCommand::Delete { yes } => {
+        DataCommand::Delete {
+            confirm_daemon_stopped,
+            yes,
+        } => {
             if !yes {
                 return Err(anyhow!(
                     "data delete is destructive; rerun with --yes to clear runtime data"
                 ));
             }
+            let daemon_stop_preflight = ensure_destructive_ops_daemon_stopped(
+                "data delete",
+                db_path,
+                *confirm_daemon_stopped,
+            )?;
             let db = Db::open(db_path)?;
+            ensure_no_unfinished_batches_for_data_delete(&db)?;
             db.clear_runtime_data_for_tests()?;
             Ok(CommandOutput {
-                human: format!("cleared runtime data from {}", db_path.display()),
-                json: json!({ "deleted": true, "db": db_path }),
+                human: format!(
+                    "cleared runtime data from {}\n  daemon: {}",
+                    db_path.display(),
+                    daemon_stop_preflight.as_str()
+                ),
+                json: json!({
+                    "deleted": true,
+                    "db": db_path,
+                    "daemon_stop_preflight": daemon_stop_preflight.as_str()
+                }),
             })
         }
     }
+}
+
+fn ensure_no_unfinished_batches_for_data_delete(db: &Db) -> Result<()> {
+    let unfinished = db.unfinished_batches(100)?;
+    if unfinished.is_empty() {
+        return Ok(());
+    }
+    let ids = unfinished.iter().map(|batch| batch.id).collect::<Vec<_>>();
+    Err(anyhow!(
+        "refusing to data delete while database has unfinished batch records {:?}; close or repair production state before clearing runtime data",
+        ids
+    ))
+}
+
+fn ensure_no_unfinished_batches_for_restore_target(db: &Path) -> Result<()> {
+    if !db.exists() {
+        return Ok(());
+    }
+    match unfinished_batch_ids_from_existing_db(db) {
+        Ok(Some(ids)) if !ids.is_empty() => Err(anyhow!(
+            "refusing to restore over database with unfinished batch records {:?}; close or repair production state before replacing {}",
+            ids,
+            db.display()
+        )),
+        Ok(_) => Ok(()),
+        Err(err) => {
+            eprintln!(
+                "WARNING: target database {} could not be inspected for unfinished batches before restore ({err}); proceeding because restore is a recovery operation",
+                db.display()
+            );
+            Ok(())
+        }
+    }
+}
+
+fn ensure_no_unfinished_batches_for_offline_maintenance(db: &Path, action: &str) -> Result<()> {
+    match unfinished_batch_ids_from_existing_db(db)
+        .with_context(|| format!("cannot verify unfinished batch state before {action}"))?
+    {
+        Some(ids) if !ids.is_empty() => Err(anyhow!(
+            "refusing to {action} while database has unfinished batch records {:?}; close or repair production state before offline maintenance",
+            ids
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn ensure_no_encrypted_integration_payloads_for_key_generate(db: &Path) -> Result<()> {
+    let conn = Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("failed to open {} read-only", db.display()))?;
+    let integration_table_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'integration_tasks'",
+            [],
+            |row| row.get(0),
+        )
+        .with_context(|| format!("failed to inspect integration task schema in {}", db.display()))?;
+    if integration_table_count == 0 {
+        return Ok(());
+    }
+    let encrypted_count: i64 = conn
+        .query_row(
+            r#"
+            SELECT COUNT(*)
+            FROM integration_tasks
+            WHERE request_json LIKE ?1 || '%'
+               OR response_json LIKE ?1 || '%'
+            "#,
+            [ENCRYPTED_JSON_PREFIX],
+            |row| row.get(0),
+        )
+        .with_context(|| {
+            format!(
+                "failed to inspect encrypted integration task payloads in {}",
+                db.display()
+            )
+        })?;
+    if encrypted_count > 0 {
+        return Err(anyhow!(
+            "refusing to key generate while database already contains {encrypted_count} encrypted integration task row(s); use key rekey-integration-tasks with an explicit new key so existing ciphertext remains readable after rotation"
+        ));
+    }
+    Ok(())
+}
+
+fn unfinished_batch_ids_from_existing_db(db: &Path) -> Result<Option<Vec<i64>>> {
+    let conn = Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .with_context(|| format!("failed to open {} read-only", db.display()))?;
+    let batch_table_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'batches'",
+            [],
+            |row| row.get(0),
+        )
+        .with_context(|| format!("failed to inspect schema in {}", db.display()))?;
+    if batch_table_count == 0 {
+        return Ok(None);
+    }
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT id
+            FROM batches
+            WHERE finished_at IS NULL
+            ORDER BY id DESC
+            LIMIT 100
+            "#,
+        )
+        .with_context(|| format!("failed to inspect unfinished batches in {}", db.display()))?;
+    let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+    let mut ids = Vec::new();
+    for row in rows {
+        ids.push(row?);
+    }
+    Ok(Some(ids))
 }
 
 fn demo_pipeline_sample(index: usize) -> Value {
@@ -876,6 +1047,15 @@ async fn control(
             let (path, body) = if let Some(process_id) = process_id {
                 (format!("/api/processes/{process_id}/start"), None)
             } else {
+                if temp.is_none()
+                    && rpm.is_none()
+                    && heat_minutes.is_none()
+                    && stir_minutes.is_none()
+                {
+                    return Err(anyhow!(
+                        "control start without --process-id must include at least one explicit target or duration flag (--temp, --rpm, --heat-minutes, or --stir-minutes)"
+                    ));
+                }
                 let mut body = json!({});
                 if let Some(name) = name {
                     body["name"] = json!(name);
@@ -918,6 +1098,23 @@ async fn control(
                 json: value,
             })
         }
+        ControlCommand::FaultReset => {
+            let value = request_json(
+                client,
+                Method::POST,
+                api,
+                "/api/control/fault/reset",
+                token,
+                None,
+                &[],
+            )
+            .await?;
+            Ok(CommandOutput {
+                human: "device control write fault reset; automatic control remains disabled"
+                    .to_string(),
+                json: value,
+            })
+        }
     }
 }
 
@@ -925,15 +1122,19 @@ async fn safe_stop(
     client: &Client,
     api: &str,
     token: Option<&str>,
-    _args: &SafeStopArgs,
+    args: &SafeStopArgs,
 ) -> Result<CommandOutput> {
+    let body = args
+        .reason
+        .as_ref()
+        .map(|reason| json!({ "reason": reason }));
     match request_json(
         client,
         Method::POST,
         api,
         "/api/processes/current/stop",
         token,
-        None,
+        body,
         &[],
     )
     .await
@@ -943,6 +1144,7 @@ async fn safe_stop(
             json: value,
         }),
         Err(err) => {
+            let stop_error = err.to_string();
             let value = request_json(
                 client,
                 Method::POST,
@@ -957,8 +1159,15 @@ async fn safe_stop(
                 format!("process stop failed and auto-disable fallback failed: {err}")
             })?;
             Ok(CommandOutput {
-                human: "no active process stop completed; automatic control disabled".to_string(),
-                json: json!({ "fallback": "auto_disabled", "response": value }),
+                human: format!(
+                    "process stop result unknown; automatic control disabled as fallback\n  stop_error: {stop_error}"
+                ),
+                json: json!({
+                    "stop_status": "unknown",
+                    "fallback": "auto_disabled",
+                    "stop_error": stop_error,
+                    "response": value
+                }),
             })
         }
     }
@@ -1073,6 +1282,7 @@ async fn ai(
             export_only,
             dry_run,
             promote,
+            confirm_daemon_stopped,
             min_eval_score,
             timeout_s,
         } => ai_train(
@@ -1086,6 +1296,7 @@ async fn ai(
             *export_only,
             *dry_run,
             *promote,
+            *confirm_daemon_stopped,
             *min_eval_score,
             *timeout_s,
         ),
@@ -1103,12 +1314,29 @@ fn ai_train(
     export_only: bool,
     dry_run: bool,
     promote: bool,
+    confirm_daemon_stopped: bool,
     min_eval_score: f64,
     timeout_s: u64,
 ) -> Result<CommandOutput> {
     let dataset_path = dataset
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("output/local-ai/lora-training-dataset.jsonl"));
+    let daemon_stop_preflight = if promote && !export_only {
+        let preflight = ensure_destructive_ops_daemon_stopped(
+            "promote local AI adapter",
+            db_path,
+            confirm_daemon_stopped,
+        )?;
+        if preflight == DestructiveOpsDaemonPreflight::NotCheckedNonProduction {
+            return Err(anyhow!(
+                "cannot verify daemon service state before promote local AI adapter; use --confirm-daemon-stopped after a recorded maintenance decision"
+            ));
+        }
+        ensure_no_unfinished_batches_for_offline_maintenance(db_path, "promote local AI adapter")?;
+        Some(preflight)
+    } else {
+        None
+    };
     let db = Db::open(db_path).with_context(|| {
         format!(
             "failed to open local SQLite database for LoRA dataset export: {}",
@@ -1183,6 +1411,7 @@ fn ai_train(
             "dataset": export.dataset.display().to_string(),
             "rows": export.rows,
             "manifest": manifest_path.display().to_string(),
+            "daemon_stop_preflight": daemon_stop_preflight.map(DestructiveOpsDaemonPreflight::as_str),
             "evaluation": manifest_doc["evaluation"].clone(),
             "promotion": manifest_doc["promotion"].clone(),
             "training": report
@@ -2185,8 +2414,17 @@ fn ops(args: &OpsArgs) -> Result<CommandOutput> {
             out,
             include_ciphertext,
         } => ops_backup(db, out, *include_ciphertext),
-        OpsCommand::Restore { backup, db, yes } => ops_restore(backup, db, *yes),
-        OpsCommand::Wipe { db, yes } => ops_wipe(db, *yes),
+        OpsCommand::Restore {
+            backup,
+            db,
+            confirm_daemon_stopped,
+            yes,
+        } => ops_restore(backup, db, *yes, *confirm_daemon_stopped),
+        OpsCommand::Wipe {
+            db,
+            confirm_daemon_stopped,
+            yes,
+        } => ops_wipe(db, *yes, *confirm_daemon_stopped),
     }
 }
 
@@ -2736,7 +2974,11 @@ fn check_required_file(
 
 fn key(args: &KeyArgs) -> Result<CommandOutput> {
     match &args.command {
-        KeyCommand::Generate { db, yes } => key_rotate(db, *yes),
+        KeyCommand::Generate {
+            db,
+            confirm_daemon_stopped,
+            yes,
+        } => key_rotate(db, *yes, *confirm_daemon_stopped),
         KeyCommand::RekeyIntegrationTasks {
             db,
             old_key,
@@ -2744,6 +2986,7 @@ fn key(args: &KeyArgs) -> Result<CommandOutput> {
             new_key,
             new_key_file,
             dry_run,
+            confirm_daemon_stopped,
             yes,
         } => key_rekey_integration_tasks(
             db,
@@ -2752,6 +2995,7 @@ fn key(args: &KeyArgs) -> Result<CommandOutput> {
             new_key.as_deref(),
             new_key_file.as_deref(),
             *dry_run,
+            *confirm_daemon_stopped,
             *yes,
         ),
     }
@@ -2761,18 +3005,48 @@ fn ops_backup(db: &Path, out: &Path, _include_ciphertext: bool) -> Result<Comman
     if !db.is_file() {
         return Err(anyhow!("source database {} does not exist", db.display()));
     }
-    let store =
-        Db::open(db).with_context(|| format!("failed to open source database {}", db.display()))?;
-    let report = store.backup_to(out)?;
+    ensure_backup_output_absent(out)?;
+    let backup_tmp_path = backup_snapshot_tmp_path(out);
     let hash_path = out.with_extension(format!(
         "{}.sha256",
         out.extension().and_then(|s| s.to_str()).unwrap_or("bin")
     ));
-    fs::write(
-        &hash_path,
-        format!("{}  {}\n", report.sha256, out.display()),
-    )
-    .ok();
+    let hash_tmp_path = hash_sidecar_tmp_path(&hash_path);
+    remove_stale_temp_file(&backup_tmp_path, "backup snapshot")?;
+    remove_stale_temp_file(&hash_tmp_path, "backup hash sidecar")?;
+
+    let backup_result = (|| {
+        let store = Db::open(db)
+            .with_context(|| format!("failed to open source database {}", db.display()))?;
+        let mut report = store.backup_to(&backup_tmp_path)?;
+        sync_file_for_durability(&backup_tmp_path, "backup snapshot")?;
+        write_backup_hash_sidecar_tmp(&hash_tmp_path, out, &report.sha256)?;
+        remove_existing_hash_sidecar_file(&hash_path)?;
+        publish_tmp_file(&backup_tmp_path, out, "backup snapshot")?;
+        sync_parent_dir(out)?;
+        if let Err(err) = publish_tmp_file(&hash_tmp_path, &hash_path, "backup hash sidecar") {
+            let cleanup = fs::remove_file(out)
+                .map(|_| "published snapshot was removed".to_string())
+                .unwrap_or_else(|cleanup_err| {
+                    format!(
+                        "published snapshot could not be removed after sidecar failure: {cleanup_err}"
+                    )
+                });
+            return Err(err.context(cleanup));
+        }
+        sync_parent_dir(&hash_path)?;
+        verify_backup_hash_sidecar(&hash_path, out, &report.sha256)?;
+        report.destination = out.display().to_string();
+        Ok(report)
+    })();
+    let report = match backup_result {
+        Ok(report) => report,
+        Err(err) => {
+            let _ = fs::remove_file(&backup_tmp_path);
+            let _ = fs::remove_file(&hash_tmp_path);
+            return Err(err);
+        }
+    };
 
     let human = format!(
         "backup complete (SQLite VACUUM INTO online snapshot)\n  source:      {}\n  output:      {}\n  size:        {} bytes\n  sha256:      {}\n  hash:        {}\n  duration_ms: {}\n  note:        VACUUM INTO creates a compact SQLite image; restore still requires the daemon to be stopped before replacing the live database file.",
@@ -2799,7 +3073,256 @@ fn ops_backup(db: &Path, out: &Path, _include_ciphertext: bool) -> Result<Comman
     })
 }
 
-fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
+fn ensure_backup_output_absent(out: &Path) -> Result<()> {
+    match out.try_exists() {
+        Ok(false) => Ok(()),
+        Ok(true) => Err(anyhow!(
+            "refusing to overwrite existing backup snapshot {}; choose a new --out path",
+            out.display()
+        )),
+        Err(err) => Err(anyhow!(
+            "failed to inspect backup output path {} before writing: {err}",
+            out.display()
+        )),
+    }
+}
+
+fn remove_stale_temp_file(path: &Path, label: &str) -> Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(anyhow!(
+            "failed to remove stale temporary {label} {} before backup: {err}",
+            path.display()
+        )),
+    }
+}
+
+fn sync_file_for_durability(path: &Path, label: &str) -> Result<()> {
+    fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .with_context(|| {
+            format!(
+                "failed to reopen {label} {} for durability sync",
+                path.display()
+            )
+        })?
+        .sync_all()
+        .with_context(|| format!("failed to sync {label} {} to storage", path.display()))
+}
+
+fn verify_backup_hash_sidecar(hash_path: &Path, backup_path: &Path, sha256: &str) -> Result<()> {
+    let contents = fs::read_to_string(hash_path).with_context(|| {
+        format!(
+            "failed to verify backup hash sidecar {}",
+            hash_path.display()
+        )
+    })?;
+    let expected = backup_hash_sidecar_line(backup_path, sha256);
+    if !contents.lines().any(|line| line.trim_end() == expected) {
+        return Err(anyhow!(
+            "backup hash sidecar {} did not verify after publish",
+            hash_path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn write_backup_hash_sidecar_tmp(tmp_path: &Path, backup_path: &Path, sha256: &str) -> Result<()> {
+    let mut file = fs::File::create(tmp_path).with_context(|| {
+        format!(
+            "failed to create backup hash sidecar {}",
+            tmp_path.display()
+        )
+    })?;
+    writeln!(file, "{}", backup_hash_sidecar_line(backup_path, sha256))
+        .with_context(|| format!("failed to write backup hash sidecar {}", tmp_path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to sync backup hash sidecar {}", tmp_path.display()))?;
+    drop(file);
+
+    let contents = fs::read_to_string(tmp_path).with_context(|| {
+        format!(
+            "failed to verify backup hash sidecar {}",
+            tmp_path.display()
+        )
+    })?;
+    let expected = backup_hash_sidecar_line(backup_path, sha256);
+    if !contents.lines().any(|line| line.trim_end() == expected) {
+        return Err(anyhow!(
+            "backup hash sidecar {} did not verify after write",
+            tmp_path.display()
+        ));
+    }
+    Ok(())
+}
+
+fn backup_hash_sidecar_line(backup_path: &Path, sha256: &str) -> String {
+    format!("{}  {}", sha256, backup_path.display())
+}
+
+fn backup_snapshot_tmp_path(out: &Path) -> PathBuf {
+    let mut file_name = out
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "backup.snapshot".to_string());
+    file_name.push_str(&format!(".tmp.{}", std::process::id()));
+    out.with_file_name(file_name)
+}
+
+fn hash_sidecar_tmp_path(hash_path: &Path) -> PathBuf {
+    let mut file_name = hash_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "backup.sha256".to_string());
+    file_name.push_str(&format!(".tmp.{}", std::process::id()));
+    hash_path.with_file_name(file_name)
+}
+
+fn remove_existing_hash_sidecar_file(hash_path: &Path) -> Result<()> {
+    match fs::symlink_metadata(hash_path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_dir() {
+                return Err(anyhow!(
+                    "refusing to replace backup hash sidecar directory {}",
+                    hash_path.display()
+                ));
+            }
+            fs::remove_file(hash_path).with_context(|| {
+                format!(
+                    "failed to remove existing backup hash sidecar {} before publish",
+                    hash_path.display()
+                )
+            })
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(anyhow!(
+            "failed to inspect backup hash sidecar {} before publish: {err}",
+            hash_path.display()
+        )),
+    }
+}
+
+fn publish_tmp_file(tmp_path: &Path, final_path: &Path, label: &str) -> Result<()> {
+    fs::rename(tmp_path, final_path)
+        .with_context(|| format!("failed to publish {label} {}", final_path.display()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackupHashSidecarCheck {
+    Missing,
+    Verified,
+}
+
+impl BackupHashSidecarCheck {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Verified => "verified",
+        }
+    }
+}
+
+fn backup_hash_sidecar_path(backup: &Path) -> PathBuf {
+    backup.with_extension(format!(
+        "{}.sha256",
+        backup.extension().and_then(|s| s.to_str()).unwrap_or("bin")
+    ))
+}
+
+fn verify_restore_backup_hash_sidecar_if_present(
+    backup: &Path,
+    hash_path: &Path,
+) -> Result<BackupHashSidecarCheck> {
+    match hash_path.try_exists() {
+        Ok(false) => return Ok(BackupHashSidecarCheck::Missing),
+        Ok(true) => {}
+        Err(err) => {
+            return Err(anyhow!(
+                "failed to inspect backup hash sidecar {} before restore: {err}",
+                hash_path.display()
+            ));
+        }
+    }
+    if !hash_path.is_file() {
+        return Err(anyhow!(
+            "backup hash sidecar {} exists but is not a file",
+            hash_path.display()
+        ));
+    }
+    let expected_hash = file_sha256_hex(backup)
+        .with_context(|| format!("failed to hash backup {} before restore", backup.display()))?;
+    let sidecar = fs::read_to_string(hash_path).with_context(|| {
+        format!(
+            "failed to read backup hash sidecar {} before restore",
+            hash_path.display()
+        )
+    })?;
+    let sidecar_hashes = sidecar
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::trim)
+        .filter(|value| value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .collect::<Vec<_>>();
+    if sidecar_hashes
+        .iter()
+        .any(|hash| hash.eq_ignore_ascii_case(&expected_hash))
+    {
+        return Ok(BackupHashSidecarCheck::Verified);
+    }
+    Err(anyhow!(
+        "backup hash sidecar {} does not match {}; refusing restore to avoid using a corrupt or mismatched snapshot",
+        hash_path.display(),
+        backup.display()
+    ))
+}
+
+fn file_sha256_hex(path: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut file =
+        fs::File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = std::io::Read::read(&mut file, &mut buf)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn sync_parent_dir(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if parent.as_os_str().is_empty() {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        fs::File::open(parent)
+            .with_context(|| format!("failed to open backup directory {}", parent.display()))?
+            .sync_all()
+            .with_context(|| format!("failed to sync backup directory {}", parent.display()))?;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+    }
+    Ok(())
+}
+
+fn ops_restore(
+    backup: &Path,
+    db: &Path,
+    yes: bool,
+    confirm_daemon_stopped: bool,
+) -> Result<CommandOutput> {
     if !backup.is_file() {
         return Err(anyhow!("backup file {} does not exist", backup.display()));
     }
@@ -2809,12 +3332,23 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
             db.display()
         ));
     }
+    let daemon_stop_preflight =
+        ensure_destructive_ops_daemon_stopped("restore", db, confirm_daemon_stopped)?;
+    ensure_no_unfinished_batches_for_restore_target(db)?;
+    let backup_sidecar = backup_hash_sidecar_path(backup);
+    let backup_sidecar_check =
+        verify_restore_backup_hash_sidecar_if_present(backup, &backup_sidecar)?;
     let report = Db::restore_file(backup, db, true)?;
     let human = format!(
-        "restore complete (validated SQLite image)\n  backup:     {}\n  target:     {}\n  preserved:  {}\n  sidecars:   {}\n  integrity:  {}\n  size:       {} bytes\n  sha256:     {}\n  tables:     {}\n  note:       run this only while the daemon is stopped; restart daemon after restore so migrations and pools reopen cleanly.",
+        "restore complete (validated SQLite image)\n  backup:              {}\n  target:              {}\n  preserved:           {}\n  preserved_sidecars:  {}\n  removed_sidecars:    {}\n  integrity:           {}\n  size:                {} bytes\n  sha256:              {}\n  backup_hash:         {}\n  tables:              {}\n  daemon:              {}\n  note:                restart daemon after restore so migrations and pools reopen cleanly.",
         report.source,
         report.destination,
         report.preserved_existing.as_deref().unwrap_or("none"),
+        if report.preserved_sidecars.is_empty() {
+            "none".to_string()
+        } else {
+            report.preserved_sidecars.join(", ")
+        },
         if report.removed_sidecars.is_empty() {
             "none".to_string()
         } else {
@@ -2823,7 +3357,9 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
         report.integrity_check,
         report.size_bytes,
         &report.sha256[..16],
-        report.tables.join(", ")
+        backup_sidecar_check.as_str(),
+        report.tables.join(", "),
+        daemon_stop_preflight.as_str()
     );
     Ok(CommandOutput {
         human,
@@ -2832,17 +3368,84 @@ fn ops_restore(backup: &Path, db: &Path, yes: bool) -> Result<CommandOutput> {
             "backup": report.source,
             "target": report.destination,
             "preserved_pre_restore": report.preserved_existing,
+            "preserved_sidecars": report.preserved_sidecars,
             "removed_sidecars": report.removed_sidecars,
             "integrity_check": report.integrity_check,
             "size_bytes": report.size_bytes,
             "sha256": report.sha256,
+            "backup_hash_sidecar": backup_sidecar_check.as_str(),
             "tables": report.tables,
+            "daemon_stop_preflight": daemon_stop_preflight.as_str(),
             "validated": "sqlite_magic_header_and_schema_open"
         }),
     })
 }
 
-fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DestructiveOpsDaemonPreflight {
+    Passed,
+    ConfirmedUnverified,
+    NotCheckedNonProduction,
+}
+
+impl DestructiveOpsDaemonPreflight {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Passed => "passed",
+            Self::ConfirmedUnverified => "confirmed_unverified",
+            Self::NotCheckedNonProduction => "not_checked_non_production",
+        }
+    }
+}
+
+fn ensure_destructive_ops_daemon_stopped(
+    action: &str,
+    db: &Path,
+    confirm_daemon_stopped: bool,
+) -> Result<DestructiveOpsDaemonPreflight> {
+    let systemctl = env::var("XINGSHU_SYSTEMCTL")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("systemctl"));
+    let services = ["reactor-edge", "reactor-edge-daemon"];
+    let mut checked_any = false;
+    for service in services {
+        let output = ProcessCommand::new(&systemctl)
+            .args(["is-active", "--quiet", service])
+            .output();
+        let Ok(output) = output else {
+            continue;
+        };
+        checked_any = true;
+        if output.status.success() {
+            return Err(anyhow!(
+                "refusing to {action} while {service} is active; stop the daemon first and verify it is inactive before continuing"
+            ));
+        }
+    }
+    if !checked_any {
+        if confirm_daemon_stopped {
+            eprintln!(
+                "WARNING: daemon service state could not be checked; proceeding with {action} only because --confirm-daemon-stopped was provided"
+            );
+            return Ok(DestructiveOpsDaemonPreflight::ConfirmedUnverified);
+        }
+        if looks_like_installed_reactor_db_path(db) {
+            return Err(anyhow!(
+                "cannot verify daemon service state before {action} of production database; stop reactor-edge manually or use --confirm-daemon-stopped after a recorded maintenance decision"
+            ));
+        }
+        return Ok(DestructiveOpsDaemonPreflight::NotCheckedNonProduction);
+    }
+    Ok(DestructiveOpsDaemonPreflight::Passed)
+}
+
+fn looks_like_installed_reactor_db_path(path: &Path) -> bool {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    normalized == "/var/lib/reactor-edge/reactor.sqlite3"
+        || normalized.ends_with("/var/lib/reactor-edge/reactor.sqlite3")
+}
+
+fn ops_wipe(db: &Path, yes: bool, confirm_daemon_stopped: bool) -> Result<CommandOutput> {
     if !db.exists() {
         return Err(anyhow!("database {} does not exist", db.display()));
     }
@@ -2852,6 +3455,9 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
             db.display()
         ));
     }
+    let daemon_stop_preflight =
+        ensure_destructive_ops_daemon_stopped("wipe", db, confirm_daemon_stopped)?;
+    ensure_no_unfinished_batches_for_offline_maintenance(db, "wipe")?;
     let original_size = fs::metadata(db).map(|m| m.len()).unwrap_or(0);
     let mut rng = StdRng::from_entropy();
     let mut scope = Vec::new();
@@ -2913,9 +3519,10 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
     }
 
     let human = format!(
-        "wipe complete\n  bytes_overwritten: {} (3 passes on main file, 1 pass on each sidecar/backup/key)\n  files_removed:        {}\n  scope:                 {}\n  physical_erase:        SSD/NVMe overwrite is NOT a physical erase. For physical retirement run blkdiscard /hdparm --security-erase after this command. See docs/upper_computer_production_operations.md.",
+        "wipe complete\n  bytes_overwritten: {} (3 passes on main file, 1 pass on each sidecar/backup/key)\n  files_removed:        {}\n  daemon:               {}\n  scope:                 {}\n  physical_erase:        SSD/NVMe overwrite is NOT a physical erase. For physical retirement run blkdiscard /hdparm --security-erase after this command. See docs/upper_computer_production_operations.md.",
         bytes_overwritten,
         files_removed,
+        daemon_stop_preflight.as_str(),
         scope.join(", ")
     );
     Ok(CommandOutput {
@@ -2925,6 +3532,7 @@ fn ops_wipe(db: &Path, yes: bool) -> Result<CommandOutput> {
             "path": db.to_string_lossy(),
             "bytes_overwritten": bytes_overwritten,
             "files_removed": files_removed,
+            "daemon_stop_preflight": daemon_stop_preflight.as_str(),
             "scope": scope,
             "physical_erase_required": "blkdiscard or hdparm --security-erase for SSD/NVMe retirement"
         }),
@@ -2992,7 +3600,7 @@ fn with_extension(path: &Path, ext: &str) -> PathBuf {
     p.with_file_name(name)
 }
 
-fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
+fn key_rotate(db: &Path, yes: bool, confirm_daemon_stopped: bool) -> Result<CommandOutput> {
     if !db.exists() {
         return Err(anyhow!("database {} does not exist", db.display()));
     }
@@ -3001,6 +3609,10 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
             "refusing to generate a new key without --yes (this overwrites <db>.key and changes the AES-GCM key used for new integration task ciphertext; previously encrypted rows will become unreadable once the daemon is restarted with the new env var)"
         ));
     }
+    let daemon_stop_preflight =
+        ensure_destructive_ops_daemon_stopped("key generate", db, confirm_daemon_stopped)?;
+    ensure_no_unfinished_batches_for_offline_maintenance(db, "key generate")?;
+    ensure_no_encrypted_integration_payloads_for_key_generate(db)?;
     let mut new_key_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut new_key_bytes);
     let new_key_hex = new_key_bytes
@@ -3027,9 +3639,10 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
     // exports it into the daemon's env. JSON intentionally omits the key
     // material as well so logs do not leak the secret.
     let human = format!(
-        "key material generated (not printed)\n  path:           {}\n  new_key_file:   {}\n  next_step:      read the file with restricted permissions, then export XINGSHU_DB_ENCRYPTION_KEY before starting the daemon",
+        "key material generated (not printed)\n  path:           {}\n  new_key_file:   {}\n  daemon:         {}\n  next_step:      read the file with restricted permissions, then export XINGSHU_DB_ENCRYPTION_KEY before starting the daemon",
         db.display(),
-        key_path.display()
+        key_path.display(),
+        daemon_stop_preflight.as_str()
     );
     Ok(CommandOutput {
         human,
@@ -3038,6 +3651,7 @@ fn key_rotate(db: &Path, yes: bool) -> Result<CommandOutput> {
             "database": db.to_string_lossy(),
             "new_key_file": key_path.to_string_lossy(),
             "new_key_env_var": "XINGSHU_DB_ENCRYPTION_KEY",
+            "daemon_stop_preflight": daemon_stop_preflight.as_str(),
             "warning": "operator must restart the daemon with the new env var; rows previously encrypted with the old key will become unreadable. Re-encryption of existing rows is NOT performed by this command."
         }),
     })
@@ -3061,6 +3675,7 @@ fn key_rekey_integration_tasks(
     new_key_arg: Option<&str>,
     new_key_file: Option<&Path>,
     dry_run: bool,
+    confirm_daemon_stopped: bool,
     yes: bool,
 ) -> Result<CommandOutput> {
     if !db.is_file() {
@@ -3071,6 +3686,14 @@ fn key_rekey_integration_tasks(
             "refusing to re-encrypt integration task payloads without --yes (run with --dry-run first, then stop the daemon and rerun with --yes)"
         ));
     }
+    let daemon_stop_preflight = if dry_run {
+        None
+    } else {
+        let daemon_stop_preflight =
+            ensure_destructive_ops_daemon_stopped("key rekey", db, confirm_daemon_stopped)?;
+        ensure_no_unfinished_batches_for_offline_maintenance(db, "key rekey")?;
+        Some(daemon_stop_preflight)
+    };
 
     let old_key = load_cli_key("old", old_key_arg, old_key_file, true)?;
     let new_key = load_cli_key("new", new_key_arg, new_key_file, false)?;
@@ -3147,7 +3770,7 @@ fn key_rekey_integration_tasks(
 
     let mode = if dry_run { "dry-run" } else { "committed" };
     let human = format!(
-        "integration task payload rekey {mode}\n  database:                    {}\n  rows_scanned:                {}\n  fields_scanned:              {}\n  encrypted_fields_seen:       {}\n  plaintext_fields_seen:       {}\n  fields_reencrypted:          {}\n  plaintext_fields_encrypted:  {}\n  fields_changed:              {}\n  next_step:                   restart daemon with {} set to the new key after verifying reads",
+        "integration task payload rekey {mode}\n  database:                    {}\n  rows_scanned:                {}\n  fields_scanned:              {}\n  encrypted_fields_seen:       {}\n  plaintext_fields_seen:       {}\n  fields_reencrypted:          {}\n  plaintext_fields_encrypted:  {}\n  fields_changed:              {}\n  daemon:                      {}\n  next_step:                   restart daemon with {} set to the new key after verifying reads",
         db.display(),
         report.rows_scanned,
         report.fields_scanned,
@@ -3156,6 +3779,9 @@ fn key_rekey_integration_tasks(
         report.fields_reencrypted,
         report.plaintext_fields_encrypted,
         report.fields_changed,
+        daemon_stop_preflight
+            .map(|state| state.as_str())
+            .unwrap_or("not_required_for_dry_run"),
         DB_ENCRYPTION_KEY_ENV
     );
     Ok(CommandOutput {
@@ -3171,6 +3797,9 @@ fn key_rekey_integration_tasks(
             "fields_reencrypted": report.fields_reencrypted,
             "plaintext_fields_encrypted": report.plaintext_fields_encrypted,
             "fields_changed": report.fields_changed,
+            "daemon_stop_preflight": daemon_stop_preflight
+                .map(|state| state.as_str())
+                .unwrap_or("not_required_for_dry_run"),
             "encrypted_fields": [
                 "integration_tasks.request_json",
                 "integration_tasks.response_json"

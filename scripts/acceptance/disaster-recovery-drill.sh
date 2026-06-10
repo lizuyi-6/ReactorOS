@@ -143,14 +143,14 @@ fi
 kill $DAEMON_PID 2>/dev/null
 wait $DAEMON_PID 2>/dev/null
 sleep 1
-"$xingshu_bin" ops wipe --db "$WORK_DB" --yes > "$LOG_DIR/drill-wipe.log" 2>&1
+"$xingshu_bin" ops wipe --db "$WORK_DB" --yes --confirm-daemon-stopped > "$LOG_DIR/drill-wipe.log" 2>&1
 if [[ -e "$WORK_DB" ]]; then
   echo "wipe did not remove database: $WORK_DB" >&2
   exit 1
 fi
 
 # Restore from the backup with xingshu ops restore.
-"$xingshu_bin" ops restore --backup "$WORK_BACKUP" --db "$WORK_DB" --yes \
+"$xingshu_bin" ops restore --backup "$WORK_BACKUP" --db "$WORK_DB" --yes --confirm-daemon-stopped \
   > "$LOG_DIR/drill-restore.log" 2>&1
 if [[ ! -s "$WORK_DB" ]]; then
   echo "restore did not recreate database: $WORK_DB" >&2

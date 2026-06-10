@@ -165,7 +165,7 @@ curl http://127.0.0.1:8000/health
 
 ## 8.1 自动备份验收
 
-release package 已包含 `/opt/reactor-edge/bin/xingshu`、`/opt/reactor-edge/backup.sh`、`reactor-edge-backup.service` 和 `reactor-edge-backup.timer`。RK 上需执行：
+release package 已包含 `/opt/reactor-edge/current/bin/xingshu`、`/opt/reactor-edge/current/backup.sh`、`reactor-edge-backup.service` 和 `reactor-edge-backup.timer`。安装后 `/opt/reactor-edge/bin` 和 `/opt/reactor-edge/backup.sh` 作为兼容链接指向当前 slot。RK 上需执行：
 
 ```bash
 systemctl status reactor-edge-backup.timer

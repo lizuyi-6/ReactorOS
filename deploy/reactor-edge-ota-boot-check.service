@@ -1,0 +1,17 @@
+[Unit]
+Description=Reactor Edge OTA Boot Recovery Check
+DefaultDependencies=no
+After=local-fs.target
+Before=reactor-edge.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/reactor-edge/ota-boot-check.sh
+NoNewPrivileges=true
+ProtectHome=true
+ReadWritePaths=-/opt/reactor-edge
+ReadWritePaths=-/var/lib/reactor-edge
+ReadWritePaths=-/run/reactor-edge
+
+[Install]
+WantedBy=multi-user.target

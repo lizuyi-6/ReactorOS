@@ -13,6 +13,8 @@ const integrations = computed(() => objectAt(store.config, "integrations"));
 const mqttStatus = computed(() => objectAt(integrations.value, "mqtt_status"));
 const modbusTcpStatus = computed(() => objectAt(integrations.value, "modbus_tcp_status"));
 const localAi = computed(() => objectAt(store.config, "local_ai"));
+const liveAlarms = computed(() => arrayAt<ApiRecord>(store.live, "alarms"));
+const liveUnavailable = computed(() => store.liveStatus !== "fresh");
 const submitting = ref(false);
 const actionMessage = ref("");
 const readResult = ref<ApiRecord | null>(null);
@@ -30,6 +32,30 @@ const writeOptions = computed(() =>
     value: textAt(register, "name", "")
   }))
 );
+
+const unfinishedBatchRecoveryAlarm = computed(
+  () => liveAlarms.value.find((alarm) => textAt(alarm, "type", "") === "unfinished_batch_recovery") ?? null
+);
+const batchRecoveryBlocked = computed(() => Boolean(unfinishedBatchRecoveryAlarm.value));
+const writeBlocked = computed(
+  () => store.role !== "admin" || submitting.value || !debugForm.reason.trim() || liveUnavailable.value || batchRecoveryBlocked.value
+);
+const writeBlockReason = computed(() => {
+  if (liveUnavailable.value) {
+    return store.tr(
+      "实时现场状态不可用，Modbus 调试写入已锁定；只允许读寄存器。",
+      "Live field state is unavailable; Modbus debug writes are locked and reads remain available."
+    );
+  }
+  if (batchRecoveryBlocked.value) {
+    const ids = textAt(unfinishedBatchRecoveryAlarm.value, "unfinished_batch_ids", "");
+    return store.tr(
+      `未完成批次恢复中，Modbus 调试写入已锁定。${ids}`,
+      `Unfinished batch recovery is active; Modbus debug writes are locked. ${ids}`
+    ).trim();
+  }
+  return "";
+});
 
 const valueTranslations: Record<string, { zh: string; en: string }> = {
   true: { zh: "是", en: "Yes" },
@@ -176,13 +202,22 @@ async function writeSelectedRegister(): Promise<void> {
           <el-button
             type="danger"
             :loading="submitting"
-            :disabled="store.role !== 'admin' || !debugForm.reason.trim()"
+            :disabled="writeBlocked"
             @click="writeSelectedRegister"
           >
             {{ store.tr("写入并读回", "Write and Read Back") }}
           </el-button>
         </div>
       </el-form>
+      <el-alert
+        v-if="writeBlockReason"
+        class="control-alert"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="store.tr('Modbus 写入安全锁定', 'Modbus write safety lock')"
+        :description="writeBlockReason"
+      />
     </section>
 
     <section class="panel two-col">

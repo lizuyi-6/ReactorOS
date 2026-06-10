@@ -242,12 +242,18 @@ pub struct ControlConfig {
     pub manual_lock_default: bool,
     pub control_interval_ms: u64,
     pub sensor_timeout_ms: i64,
+    #[serde(default = "default_require_device_status_for_control")]
+    pub require_device_status_for_control: bool,
     #[serde(default = "default_control_write_retry_backoff_ms")]
     pub write_retry_backoff_ms: u64,
     #[serde(default = "default_safety_guard_timeout_ms")]
     pub safety_guard_timeout_ms: u64,
     #[serde(default = "default_ai_stop_product_concentration_percent")]
     pub ai_stop_product_concentration_percent: f64,
+}
+
+fn default_require_device_status_for_control() -> bool {
+    true
 }
 
 fn default_control_write_retry_backoff_ms() -> u64 {
@@ -313,14 +319,313 @@ pub fn load_device_config(path: impl AsRef<Path>) -> Result<DeviceConfig> {
     let path = path.as_ref();
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read device config {}", path.display()))?;
-    toml::from_str(&raw)
-        .with_context(|| format!("failed to parse device config {}", path.display()))
+    let config: DeviceConfig = toml::from_str(&raw)
+        .with_context(|| format!("failed to parse device config {}", path.display()))?;
+    validate_device_config(&config)
+        .with_context(|| format!("invalid device config {}", path.display()))?;
+    Ok(config)
 }
 
 pub fn load_safety_config(path: impl AsRef<Path>) -> Result<SafetyConfig> {
     let path = path.as_ref();
     let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read safety config {}", path.display()))?;
-    toml::from_str(&raw)
-        .with_context(|| format!("failed to parse safety config {}", path.display()))
+    let config: SafetyConfig = toml::from_str(&raw)
+        .with_context(|| format!("failed to parse safety config {}", path.display()))?;
+    validate_safety_config(&config)
+        .with_context(|| format!("invalid safety config {}", path.display()))?;
+    Ok(config)
+}
+
+pub fn validate_device_config(config: &DeviceConfig) -> Result<()> {
+    ensure_non_empty("serial.port", &config.serial.port)?;
+    ensure_one_of(
+        "serial.parity",
+        &config.serial.parity,
+        &["N", "n", "E", "e", "O", "o"],
+    )?;
+    ensure_in_u8("serial.stopbits", config.serial.stopbits, 1, 2)?;
+    ensure_in_u8("serial.bytesize", config.serial.bytesize, 5, 8)?;
+    ensure_positive_u64("serial.timeout_ms", config.serial.timeout_ms)?;
+    ensure_positive_usize("esp32.max_line_bytes", config.esp32.max_line_bytes)?;
+    ensure_positive_i64(
+        "json_bridge.max_state_age_ms",
+        config.json_bridge.max_state_age_ms,
+    )?;
+    ensure_positive_f64(
+        "json_bridge.speed_steps_per_cycle",
+        config.json_bridge.speed_steps_per_cycle,
+    )?;
+    ensure_non_negative_f64(
+        "json_bridge.speed_deadband_cpm",
+        config.json_bridge.speed_deadband_cpm,
+    )?;
+    ensure_non_negative_f64(
+        "json_bridge.temperature_deadband_c",
+        config.json_bridge.temperature_deadband_c,
+    )?;
+    validate_adc_config(&config.json_bridge.adc)?;
+    validate_registers_config(&config.modbus.registers)?;
+    Ok(())
+}
+
+pub fn validate_safety_config(config: &SafetyConfig) -> Result<()> {
+    ensure_positive_u64(
+        "control.control_interval_ms",
+        config.control.control_interval_ms,
+    )?;
+    ensure_positive_i64(
+        "control.sensor_timeout_ms",
+        config.control.sensor_timeout_ms,
+    )?;
+    ensure_positive_u64(
+        "control.write_retry_backoff_ms",
+        config.control.write_retry_backoff_ms,
+    )?;
+    ensure_positive_u64(
+        "control.safety_guard_timeout_ms",
+        config.control.safety_guard_timeout_ms,
+    )?;
+    ensure_f64_range(
+        "control.ai_stop_product_concentration_percent",
+        config.control.ai_stop_product_concentration_percent,
+        0.0,
+        100.0,
+    )?;
+    ensure_ordered_f64(
+        "temperature.min_c",
+        config.temperature.min_c,
+        "temperature.max_c",
+        config.temperature.max_c,
+    )?;
+    ensure_non_negative_f64("temperature.max_step_c", config.temperature.max_step_c)?;
+    ensure_f64_range(
+        "temperature.default_target_c",
+        config.temperature.default_target_c,
+        config.temperature.min_c,
+        config.temperature.max_c,
+    )?;
+    ensure_ordered_f64(
+        "stirrer.min_rpm",
+        config.stirrer.min_rpm,
+        "stirrer.max_rpm",
+        config.stirrer.max_rpm,
+    )?;
+    ensure_non_negative_f64("stirrer.max_step_rpm", config.stirrer.max_step_rpm)?;
+    ensure_f64_range(
+        "stirrer.default_target_rpm",
+        config.stirrer.default_target_rpm,
+        config.stirrer.min_rpm,
+        config.stirrer.max_rpm,
+    )?;
+    validate_optimizer_bounds(&config.optimizer)?;
+    for zone in &config.forbidden_control_zones {
+        validate_forbidden_zone(zone)?;
+    }
+    Ok(())
+}
+
+fn validate_registers_config(registers: &RegistersConfig) -> Result<()> {
+    validate_read_register("modbus.registers.temperature_c", &registers.temperature_c)?;
+    validate_read_register("modbus.registers.stirrer_rpm", &registers.stirrer_rpm)?;
+    validate_read_register("modbus.registers.pressure_mpa", &registers.pressure_mpa)?;
+    validate_read_register(
+        "modbus.registers.shake_speed_cpm",
+        &registers.shake_speed_cpm,
+    )?;
+    validate_read_register("modbus.registers.tilt_angle_deg", &registers.tilt_angle_deg)?;
+    validate_read_register(
+        "modbus.registers.flow_rate_l_min",
+        &registers.flow_rate_l_min,
+    )?;
+    validate_read_register(
+        "modbus.registers.product_concentration_percent",
+        &registers.product_concentration_percent,
+    )?;
+    validate_read_register("modbus.registers.ph", &registers.ph)?;
+    validate_write_register(
+        "modbus.registers.target_temperature_c",
+        &registers.target_temperature_c,
+    )?;
+    validate_write_register(
+        "modbus.registers.target_stirrer_rpm",
+        &registers.target_stirrer_rpm,
+    )?;
+    validate_write_register(
+        "modbus.registers.target_shake_speed_cpm",
+        &registers.target_shake_speed_cpm,
+    )?;
+    validate_write_register(
+        "modbus.registers.target_pressure_mpa",
+        &registers.target_pressure_mpa,
+    )?;
+    validate_write_register("modbus.registers.heat_time_s", &registers.heat_time_s)?;
+    validate_write_register("modbus.registers.hold_time_s", &registers.hold_time_s)?;
+    validate_write_register("modbus.registers.cool_time_s", &registers.cool_time_s)?;
+    Ok(())
+}
+
+fn validate_read_register(name: &str, register: &ReadRegister) -> Result<()> {
+    ensure_non_zero_f64(&format!("{name}.scale"), register.scale)?;
+    ensure_finite(&format!("{name}.offset"), register.offset)?;
+    ensure_ordered_f64(
+        &format!("{name}.min_valid"),
+        register.min_valid,
+        &format!("{name}.max_valid"),
+        register.max_valid,
+    )
+}
+
+fn validate_write_register(name: &str, register: &WriteRegister) -> Result<()> {
+    ensure_non_zero_f64(&format!("{name}.scale"), register.scale)?;
+    ensure_finite(&format!("{name}.offset"), register.offset)
+}
+
+fn validate_adc_config(config: &JsonBridgeAdcConfig) -> Result<()> {
+    ensure_non_zero_f64("json_bridge.adc.scale", config.scale)?;
+    ensure_finite("json_bridge.adc.offset", config.offset)?;
+    ensure_ordered_f64(
+        "json_bridge.adc.min_valid",
+        config.min_valid,
+        "json_bridge.adc.max_valid",
+        config.max_valid,
+    )
+}
+
+fn validate_optimizer_bounds(bounds: &OptimizerBounds) -> Result<()> {
+    ensure_ordered_f64(
+        "optimizer.min_temperature_c",
+        bounds.min_temperature_c,
+        "optimizer.max_temperature_c",
+        bounds.max_temperature_c,
+    )?;
+    ensure_ordered_f64(
+        "optimizer.min_stirrer_rpm",
+        bounds.min_stirrer_rpm,
+        "optimizer.max_stirrer_rpm",
+        bounds.max_stirrer_rpm,
+    )?;
+    ensure_ordered_f64(
+        "optimizer.min_heating_minutes",
+        bounds.min_heating_minutes,
+        "optimizer.max_heating_minutes",
+        bounds.max_heating_minutes,
+    )?;
+    ensure_ordered_f64(
+        "optimizer.min_stirring_minutes",
+        bounds.min_stirring_minutes,
+        "optimizer.max_stirring_minutes",
+        bounds.max_stirring_minutes,
+    )?;
+    ensure_non_negative_f64("optimizer.min_heating_minutes", bounds.min_heating_minutes)?;
+    ensure_non_negative_f64(
+        "optimizer.min_stirring_minutes",
+        bounds.min_stirring_minutes,
+    )
+}
+
+fn validate_forbidden_zone(zone: &ForbiddenControlZone) -> Result<()> {
+    ensure_non_empty("forbidden_control_zones.name", &zone.name)?;
+    ensure_ordered_f64(
+        "forbidden_control_zones.min_temperature_c",
+        zone.min_temperature_c,
+        "forbidden_control_zones.max_temperature_c",
+        zone.max_temperature_c,
+    )?;
+    ensure_ordered_f64(
+        "forbidden_control_zones.min_stirrer_rpm",
+        zone.min_stirrer_rpm,
+        "forbidden_control_zones.max_stirrer_rpm",
+        zone.max_stirrer_rpm,
+    )
+}
+
+fn ensure_non_empty(field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        anyhow::bail!("{field} must not be empty");
+    }
+    Ok(())
+}
+
+fn ensure_one_of(field: &str, value: &str, allowed: &[&str]) -> Result<()> {
+    if !allowed.contains(&value) {
+        anyhow::bail!("{field} has unsupported value {value}");
+    }
+    Ok(())
+}
+
+fn ensure_in_u8(field: &str, value: u8, min: u8, max: u8) -> Result<()> {
+    if !(min..=max).contains(&value) {
+        anyhow::bail!("{field} must be between {min} and {max}");
+    }
+    Ok(())
+}
+
+fn ensure_positive_u64(field: &str, value: u64) -> Result<()> {
+    if value == 0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
+fn ensure_positive_usize(field: &str, value: usize) -> Result<()> {
+    if value == 0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
+fn ensure_positive_i64(field: &str, value: i64) -> Result<()> {
+    if value <= 0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
+fn ensure_finite(field: &str, value: f64) -> Result<()> {
+    if !value.is_finite() {
+        anyhow::bail!("{field} must be finite");
+    }
+    Ok(())
+}
+
+fn ensure_non_zero_f64(field: &str, value: f64) -> Result<()> {
+    ensure_finite(field, value)?;
+    if value == 0.0 {
+        anyhow::bail!("{field} must not be zero");
+    }
+    Ok(())
+}
+
+fn ensure_positive_f64(field: &str, value: f64) -> Result<()> {
+    ensure_finite(field, value)?;
+    if value <= 0.0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
+fn ensure_non_negative_f64(field: &str, value: f64) -> Result<()> {
+    ensure_finite(field, value)?;
+    if value < 0.0 {
+        anyhow::bail!("{field} must be greater than or equal to 0");
+    }
+    Ok(())
+}
+
+fn ensure_ordered_f64(min_field: &str, min: f64, max_field: &str, max: f64) -> Result<()> {
+    ensure_finite(min_field, min)?;
+    ensure_finite(max_field, max)?;
+    if min > max {
+        anyhow::bail!("{min_field} must be less than or equal to {max_field}");
+    }
+    Ok(())
+}
+
+fn ensure_f64_range(field: &str, value: f64, min: f64, max: f64) -> Result<()> {
+    ensure_finite(field, value)?;
+    if !(min..=max).contains(&value) {
+        anyhow::bail!("{field} must be between {min} and {max}");
+    }
+    Ok(())
 }

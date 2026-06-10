@@ -2,7 +2,7 @@
 import { computed, reactive, ref, watch } from "vue";
 import { usePlantStore } from "../stores/plant";
 import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
-import type { CreateProcessPayload, ProcessStepPayload } from "../stores/plant";
+import type { ApiRecord, CreateProcessPayload, ProcessStepPayload } from "../stores/plant";
 
 const store = usePlantStore();
 const safety = computed(() => objectAt(store.config, "safety"));
@@ -10,6 +10,8 @@ const temperature = computed(() => objectAt(safety.value, "temperature"));
 const stirrer = computed(() => objectAt(safety.value, "stirrer"));
 const runtime = computed(() => objectAt(store.live, "runtime") ?? store.runtimeFallback);
 const targets = computed(() => objectAt(runtime.value, "targets"));
+const liveAlarms = computed(() => arrayAt<ApiRecord>(store.live, "alarms"));
+const liveUnavailable = computed(() => store.liveStatus !== "fresh");
 const submitting = ref(false);
 const actionMessage = ref("");
 const targetForm = reactive({
@@ -22,8 +24,66 @@ const runtimeFlags = computed(() => ({
   auto_enabled: textAt(runtime.value, "auto_enabled", "false") === "true",
   manual_lock: textAt(runtime.value, "manual_lock", "false") === "true",
   emergency_stop: textAt(runtime.value, "emergency_stop", "false") === "true",
+  last_control_error: textAt(runtime.value, "last_control_error", ""),
   active_batch_id: textAt(runtime.value, "active_batch_id", "")
 }));
+
+const unfinishedBatchRecoveryAlarm = computed(
+  () => liveAlarms.value.find((alarm) => textAt(alarm, "type", "") === "unfinished_batch_recovery") ?? null
+);
+const batchRecoveryBlocked = computed(() => Boolean(unfinishedBatchRecoveryAlarm.value));
+const batchRecoveryReason = computed(() => {
+  const alarm = unfinishedBatchRecoveryAlarm.value;
+  if (!alarm) return "";
+  const message = textAt(
+    alarm,
+    "message",
+    store.tr(
+      "数据库仍有未完成批次，需先核对现场并修复批次账。",
+      "The database still has unfinished batch state; verify the field and repair batch records first."
+    )
+  );
+  const ids = textAt(alarm, "unfinished_batch_ids", "");
+  return ids ? `${message} (${ids})` : message;
+});
+const riskIncreasingDisabled = computed(
+  () => !store.isAuthenticated || submitting.value || batchRecoveryBlocked.value || liveUnavailable.value
+);
+const productionBasisWriteDisabled = computed(
+  () =>
+    !isEngineer.value ||
+    submitting.value ||
+    liveUnavailable.value ||
+    batchRecoveryBlocked.value ||
+    runtimeFlags.value.active_batch_id !== "" ||
+    runtimeFlags.value.emergency_stop ||
+    runtimeFlags.value.manual_lock
+);
+const productionBasisWriteReason = computed(() => {
+  if (!isEngineer.value) {
+    return store.tr("需要 engineer/admin 角色修改工艺依据。", "Engineer/admin role is required to edit production recipes.");
+  }
+  if (liveUnavailable.value) {
+    return store.tr(
+      "实时现场状态不可用，工艺修改已锁定，避免在未知现场状态下改变后续生产依据。",
+      "Live field state is unavailable; recipe edits are locked to avoid changing future production basis from an unknown state."
+    );
+  }
+  if (batchRecoveryBlocked.value) return batchRecoveryReason.value;
+  if (runtimeFlags.value.active_batch_id !== "") {
+    return store.tr(
+      `当前批次 #${runtimeFlags.value.active_batch_id} 仍在运行，结束并确认后再修改工艺。`,
+      `Batch #${runtimeFlags.value.active_batch_id} is still running; finish and verify before editing recipes.`
+    );
+  }
+  if (runtimeFlags.value.emergency_stop) {
+    return store.tr("急停未复位前不修改生产依据。", "Do not edit production basis while emergency stop is active.");
+  }
+  if (runtimeFlags.value.manual_lock) {
+    return store.tr("人工锁定未解除前不修改生产依据。", "Do not edit production basis while manual lock is active.");
+  }
+  return "";
+});
 
 const targetRows = computed(() => [
   { label: store.tr("目标温度", "Target temperature"), value: textAt(targets.value, "temperature_c"), unit: "C" },
@@ -77,7 +137,16 @@ function changeAutoEnabled(value: string | number | boolean): Promise<void> {
 function changeManualLock(value: string | number | boolean): Promise<void> {
   return runControlAction(
     () => store.setManualLocked(Boolean(value)),
-    Boolean(value) ? store.tr("人工锁定已启用", "Manual lock enabled") : store.tr("人工锁定已关闭", "Manual lock disabled")
+    Boolean(value)
+      ? store.tr("人工锁定已启用，自动控制已关闭", "Manual lock enabled; automatic control disabled")
+      : store.tr("人工锁定已关闭，自动控制仍需单独开启", "Manual lock disabled; automatic control must be enabled separately")
+  );
+}
+
+function resetControlFault(): Promise<void> {
+  return runControlAction(
+    () => store.resetControlFault(),
+    store.tr("控制写入故障已复归，自动控制保持关闭", "Control write fault reset; automatic control remains disabled")
   );
 }
 
@@ -249,7 +318,7 @@ function outcomeForBatch(batchId: number | null): string {
           <el-input-number v-model="targetForm.shake_speed_cpm" :min="0" :max="80" :step="1" controls-position="right" />
         </el-form-item>
         <div class="control-actions">
-          <el-button :loading="submitting" type="primary" :disabled="!store.isAuthenticated" @click="submitTargets">
+          <el-button :loading="submitting" type="primary" :disabled="riskIncreasingDisabled" @click="submitTargets">
             {{ store.tr("安全写入目标", "Write Safe Targets") }}
           </el-button>
           <el-button :disabled="!store.isAuthenticated || submitting" @click="syncFormFromTargets">
@@ -257,6 +326,15 @@ function outcomeForBatch(batchId: number | null): string {
           </el-button>
         </div>
       </el-form>
+      <el-alert
+        v-if="liveUnavailable"
+        class="control-alert"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="store.tr('实时现场状态不可用，升风险操作已锁定', 'Live field state is unavailable; risk-increasing actions are locked')"
+        :description="store.tr('只保留急停、人工锁定和停止当前工艺等降风险动作。', 'Only risk-reducing actions such as emergency stop, manual lock, and stopping the current process remain available.')"
+      />
     </section>
 
     <section class="panel control-panel">
@@ -269,7 +347,7 @@ function outcomeForBatch(batchId: number | null): string {
           <span>{{ store.tr("自动控制", "Automatic control") }}</span>
           <el-switch
             :model-value="runtimeFlags.auto_enabled"
-            :disabled="!store.isAuthenticated || submitting"
+            :disabled="riskIncreasingDisabled"
             @change="changeAutoEnabled"
           />
         </label>
@@ -277,7 +355,7 @@ function outcomeForBatch(batchId: number | null): string {
           <span>{{ store.tr("人工锁定", "Manual lock") }}</span>
           <el-switch
             :model-value="runtimeFlags.manual_lock"
-            :disabled="!store.isAuthenticated || submitting"
+            :disabled="!store.isAuthenticated || submitting || (!runtimeFlags.manual_lock && batchRecoveryBlocked)"
             @change="changeManualLock"
           />
         </label>
@@ -285,11 +363,32 @@ function outcomeForBatch(batchId: number | null): string {
           <el-button type="danger" :disabled="!store.isAuthenticated || submitting" @click="runControlAction(store.triggerEmergencyStop, store.tr('急停已触发', 'Emergency stop triggered'))">
             {{ store.tr("触发急停", "Emergency Stop") }}
           </el-button>
-          <el-button plain :disabled="!store.isAuthenticated || submitting" @click="runControlAction(store.resetEmergencyStop, store.tr('急停已复位', 'Emergency stop reset'))">
+          <el-button plain :disabled="riskIncreasingDisabled" @click="runControlAction(store.resetEmergencyStop, store.tr('急停已复位', 'Emergency stop reset'))">
             {{ store.tr("复位急停", "Reset Stop") }}
+          </el-button>
+          <el-button plain :disabled="riskIncreasingDisabled || !runtimeFlags.last_control_error" @click="resetControlFault">
+            {{ store.tr("复归控制故障", "Reset Control Fault") }}
           </el-button>
         </div>
       </div>
+      <el-alert
+        v-if="batchRecoveryBlocked"
+        class="control-alert"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="store.tr('未完成批次恢复中，升风险操作已锁定', 'Unfinished batch recovery is active; risk-increasing actions are locked')"
+        :description="batchRecoveryReason"
+      />
+      <el-alert
+        v-if="runtimeFlags.last_control_error"
+        class="control-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="store.tr('设备控制写入故障已锁存，自动控制已关闭', 'Device control write fault is latched; automatic control is disabled')"
+        :description="runtimeFlags.last_control_error"
+      />
     </section>
 
     <section class="panel process-panel">
@@ -312,7 +411,7 @@ function outcomeForBatch(batchId: number | null): string {
             <el-input v-model="processForm.description" type="textarea" :rows="2" maxlength="240" show-word-limit />
           </el-form-item>
           <div class="control-actions">
-            <el-button type="primary" :loading="submitting" :disabled="!isEngineer" @click="createProcessFromForm">
+            <el-button type="primary" :loading="submitting" :disabled="productionBasisWriteDisabled" @click="createProcessFromForm">
               {{ store.tr("创建工艺", "Create Process") }}
             </el-button>
             <el-button :disabled="submitting" @click="loadProcessList">
@@ -320,6 +419,15 @@ function outcomeForBatch(batchId: number | null): string {
             </el-button>
           </div>
         </el-form>
+        <el-alert
+          v-if="productionBasisWriteReason"
+          class="inline-alert"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="store.tr('工艺编辑已锁定', 'Recipe editing locked')"
+          :description="productionBasisWriteReason"
+        />
 
         <div class="process-list">
           <div class="process-list-head">
@@ -354,7 +462,7 @@ function outcomeForBatch(batchId: number | null): string {
                 <el-button
                   size="small"
                   type="primary"
-                  :disabled="!store.isAuthenticated || submitting || runtimeFlags.active_batch_id !== '' || runtimeFlags.emergency_stop || runtimeFlags.manual_lock"
+                  :disabled="riskIncreasingDisabled || runtimeFlags.active_batch_id !== '' || runtimeFlags.emergency_stop || runtimeFlags.manual_lock"
                   @click.stop="startProcessFromList(numberAt(row, 'id') ?? 0)"
                 >
                   {{ store.tr("启动", "Start") }}
@@ -456,7 +564,7 @@ function outcomeForBatch(batchId: number | null): string {
               <el-input v-model="stepForm.cooling_mode" maxlength="40" />
             </el-form-item>
             <div class="control-actions">
-              <el-button type="primary" :loading="submitting" :disabled="!isEngineer" @click="addStepToSelected">
+              <el-button type="primary" :loading="submitting" :disabled="productionBasisWriteDisabled" @click="addStepToSelected">
                 {{ store.tr("添加步骤", "Add Step") }}
               </el-button>
             </div>
@@ -477,6 +585,9 @@ function outcomeForBatch(batchId: number | null): string {
         </el-tag>
         <el-tag :type="runtimeFlags.auto_enabled ? 'success' : 'info'">
           {{ runtimeFlags.auto_enabled ? store.tr("自动控制已启用", "Auto enabled") : store.tr("自动控制已关闭", "Auto disabled") }}
+        </el-tag>
+        <el-tag v-if="batchRecoveryBlocked" type="danger">
+          {{ store.tr("批次恢复中", "Batch recovery") }}
         </el-tag>
       </div>
       <div>
@@ -511,6 +622,8 @@ function outcomeForBatch(batchId: number | null): string {
         <el-descriptions-item :label="store.tr('搅拌上限', 'Stirrer max')">{{ textAt(stirrer, "max_rpm") }} rpm</el-descriptions-item>
         <el-descriptions-item :label="store.tr('当前角色', 'Current role')">{{ store.role }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('急停状态', 'Emergency state')">{{ runtimeFlags.emergency_stop ? store.tr("已触发", "Triggered") : store.tr("正常", "Normal") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('控制故障', 'Control fault')">{{ runtimeFlags.last_control_error || store.tr("无", "None") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('批次恢复', 'Batch recovery')">{{ batchRecoveryReason || store.tr("无", "None") }}</el-descriptions-item>
       </el-descriptions>
     </section>
 

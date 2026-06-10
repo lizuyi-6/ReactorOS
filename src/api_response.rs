@@ -37,6 +37,21 @@ impl AppError {
         &self.message
     }
 
+    pub(crate) fn with_message_prefix(self, prefix: impl AsRef<str>) -> Self {
+        Self {
+            status: self.status,
+            message: format!("{}: {}", prefix.as_ref(), self.message),
+        }
+    }
+
+    pub(crate) fn to_envelope(&self) -> V1Envelope<serde_json::Value> {
+        V1Envelope {
+            code: self.status.as_u16() as i32,
+            message: self.message.clone(),
+            data: json!({ "error": self.message }),
+        }
+    }
+
     pub(crate) fn unauthorized(message: impl Into<String>) -> Self {
         Self {
             status: StatusCode::UNAUTHORIZED,
@@ -99,15 +114,7 @@ impl From<anyhow::Error> for AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
-        (
-            self.status,
-            Json(V1Envelope {
-                code: self.status.as_u16() as i32,
-                message: self.message.clone(),
-                data: json!({ "error": self.message }),
-            }),
-        )
-            .into_response()
+        (self.status, Json(self.to_envelope())).into_response()
     }
 }
 

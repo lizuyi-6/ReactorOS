@@ -168,11 +168,13 @@ npm run simulate:device
 npm run simulate:device:once
 ```
 
-脚本默认每秒向 `POST /api/v1/reactor/reactor_001/samples` 上报温度、压力、搅拌转速、摇罐速度、二值倾角、流量、浓度和 pH。可选参数示例：
+脚本默认每秒向 `POST /api/v1/reactor/reactor_001/samples` 上报温度、压力、搅拌转速、摇罐速度、二值倾角、流量、浓度和 pH。该正式样本入口会更新控制安全门使用的现场状态证明，必须使用具备 `ingest_sensor_sample` 权限的 engineer/admin token：
 
 ```powershell
-node scripts\simulate-device.js --profile production --interval-ms 1000
-node scripts\simulate-device.js --url http://127.0.0.1:8000 --device-id reactor_001
+$login = cargo run --bin xingshu -- auth login --username engineer --password engineer123
+$env:XINGSHU_TOKEN = ($login | ConvertFrom-Json).data.token
+node scripts\simulate-device.js --profile production --interval-ms 1000 --token $env:XINGSHU_TOKEN
+node scripts\simulate-device.js --url http://127.0.0.1:8000 --device-id reactor_001 --token $env:XINGSHU_TOKEN
 ```
 
 如果要模拟 `state.json/control.json` 读写分离桥接协议：
@@ -204,7 +206,7 @@ cargo run -- --config config/device.toml --safety config/safety.toml --memory co
 --tls-cert            HTTPS 证书 PEM 路径，必须与 --tls-key 成对提供
 --tls-key             HTTPS 私钥 PEM 路径，必须与 --tls-cert 成对提供
 --safety-guard        可选独立安全判定进程，通常指向 reactor-safety-guard
---enable-test-reset   启用 /api/test/reset 和 /api/test/pipeline-sample，仅用于本地验收测试
+--enable-test-reset   启用 /api/test/reset 和 /api/test/pipeline-sample，仅用于 loopback 本地验收测试；测试请求还需 X-Xingshu-Test-Confirm: local-e2e
 ```
 
 独立安全判定进程可单独验收：
@@ -470,10 +472,10 @@ the operator tooling instead of pretending the feature exists.
 | `GET` | `/api/live` | Web UI 实时聚合数据 |
 | `GET` | `/api/devices/status` | 当前在线设备数量和设备状态 |
 | `POST` | `/api/processes/:id/start` | 启动工艺流程，创建活动批次并写入安全限幅后的目标 |
-| `POST` | `/api/processes/current/stop` | 停止当前工艺流程，结束活动批次并关闭自动控制 |
-| `POST` | `/api/processes/:id/stop` | 停止指定工艺的活动批次，不匹配时返回 `409` |
+| `POST` | `/api/processes/current/stop` | 停止当前工艺流程，先写停止目标再结束活动批次；若 runtime 仍 active 但批次记录缺失，会执行救援停止并返回 `batch: null`、`recovery` |
+| `POST` | `/api/processes/:id/stop` | 停止指定工艺的活动批次，不匹配时返回 `409`；批次记录缺失时拒绝，避免错停 |
 | `POST` | `/api/batches/start` | 启动批次并写入目标参数 |
-| `POST` | `/api/batches/:id/finish` | 结束批次 |
+| `POST` | `/api/batches/:id/finish` | 结束批次；若请求 ID 正是 runtime 当前活动批次但批次记录缺失，会执行救援停止并记录 `batch_finish_recovery_missing_batch` 审计 |
 | `GET` | `/api/batches/export.csv` | 导出批次与实验结果 CSV |
 | `GET` | `/api/batches/export.xlsx` | 导出批次、结果与汇总 Excel 工作簿 |
 | `GET` | `/api/batches/:id/report.md` | 生成单批次 Markdown 实验报告 |
@@ -487,7 +489,7 @@ the operator tooling instead of pretending the feature exists.
 | `GET` | `/api/ai/experiment-plan` | 基于批次结果和安全边界生成只读实验 SOP 草案 |
 | `GET` | `/api/v1/devices/status` | 文档版设备在线状态接口 |
 | `POST` | `/api/v1/reactor/:device_id/control` | 文档版控制接口 |
-| `POST` | `/api/v1/reactor/:device_id/samples` | 数据管线上行样本写入接口 |
+| `POST` | `/api/v1/reactor/:device_id/samples` | 数据管线上行样本写入接口，需 bearer token 且具备 `ingest_sensor_sample` 权限 |
 | `GET` | `/api/v1/reactor/:device_id/realtime` | 文档版实时数据接口，需 `Authorization: Bearer <token>` 且具备监控权限 |
 | `GET` | `/api/v1/reactor/:device_id/history` | 文档版历史数据接口 |
 | `WS` | `/ws/v1/reactor/:device_id/realtime` | 文档版实时 WebSocket，需 `Authorization: Bearer <token>` 且具备监控权限 |
@@ -569,7 +571,7 @@ explicit non-empty `ca_cert` and fails closed instead of silently trusting
 implicit system roots. Provide broker credentials and production certificates in
 the config before connecting to a production broker.
 
-本地 E2E 使用的 `/api/test/reset` 和 `/api/test/pipeline-sample` 只有在启动参数包含 `--enable-test-reset` 时可用，生产部署不要开启。
+本地 E2E 使用的 `/api/test/reset` 和 `/api/test/pipeline-sample` 只有在 daemon 绑定 loopback 地址、启动参数包含 `--enable-test-reset` 且请求带 `X-Xingshu-Test-Confirm: local-e2e` 时可用；若测试模式绑定到非本机地址，daemon 会拒绝启动。生产部署不要开启。
 
 工艺流程启停是生产控制入口：启动接口会拒绝急停、人工锁定、已有活动批次和缺少新鲜传感器数据的状态；停止接口会写入停止目标、关闭自动控制、结束当前批次并生成 `process_stopped` 审计事件。`/api/processes/:id/apply` 仍保留为兼容别名，但内部走同一套启动安全门。
 

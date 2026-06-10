@@ -108,7 +108,8 @@ async function login(context, page) {
           "set_safe_targets",
           "apply_ai_suggestion",
           "emergency_stop",
-          "modbus_debug"
+          "modbus_debug",
+          "ingest_sensor_sample"
         ]
       })
     );

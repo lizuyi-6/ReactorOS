@@ -10,7 +10,10 @@ const checks = [
   {
     file: "deploy/reactor-edge.service",
     mustContain: [
-      "--safety-guard /opt/reactor-edge/bin/reactor-safety-guard",
+      "--safety-guard /opt/reactor-edge/current/bin/reactor-safety-guard",
+      "Restart=on-failure",
+      "StartLimitIntervalSec=600",
+      "StartLimitBurst=5",
       "NoNewPrivileges=true",
       "ProtectSystem=full",
       "ProtectHome=true",
@@ -30,9 +33,9 @@ const checks = [
   {
     file: "deploy/install-board.sh",
     mustContain: [
-      'copy_tree "${ROOT}/bin" "${PREFIX}/bin"',
-      'chmod +x "${PREFIX}/bin/reactor-edge-daemon"',
-      '"${PREFIX}/bin/reactor-safety-guard"',
+      'copy_tree "${ROOT}/bin" "${SLOT_DIR}/bin"',
+      'chmod +x "${SLOT_DIR}/bin/reactor-edge-daemon"',
+      '"${SLOT_DIR}/bin/reactor-safety-guard"',
     ],
     label: "board installer copies package binaries",
   },

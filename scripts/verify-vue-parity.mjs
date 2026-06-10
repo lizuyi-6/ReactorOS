@@ -150,7 +150,7 @@ async function ensureLoggedIn(context, request, page) {
   await page.goto(VUE_URL);
   await page.evaluate((t) => {
     localStorage.setItem("reactoros.vue.auth.token", t);
-    localStorage.setItem("reactoros.vue.auth.user", JSON.stringify({ username: "engineer", role: "engineer", permissions: ["view_monitor", "view_history", "view_audit", "export_reports", "edit_process", "start_stop_process", "set_safe_targets", "apply_ai_suggestion", "emergency_stop", "modbus_debug"] }));
+    localStorage.setItem("reactoros.vue.auth.user", JSON.stringify({ username: "engineer", role: "engineer", permissions: ["view_monitor", "view_history", "view_audit", "export_reports", "edit_process", "start_stop_process", "set_safe_targets", "apply_ai_suggestion", "emergency_stop", "modbus_debug", "ingest_sensor_sample"] }));
   }, token);
   return token;
 }
@@ -226,7 +226,7 @@ function mockedLiveAlarmPayload() {
   };
 }
 
-async function seedRealAlarmSample(request, pageResult) {
+async function seedRealAlarmSample(request, pageResult, token) {
   const basePayload = {
     temperature_c: 170,
     pressure_mpa: 1.2,
@@ -245,7 +245,10 @@ async function seedRealAlarmSample(request, pageResult) {
       temperature_c: basePayload.temperature_c + attempt * 0.01,
       pressure_mpa: basePayload.pressure_mpa + attempt * 0.001
     };
-    const res = await request.post(`${API_BASE}/api/v1/reactor/reactor_001/samples`, { data: payload });
+    const res = await request.post(`${API_BASE}/api/v1/reactor/reactor_001/samples`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: payload
+    });
     if (!res.ok()) throw new Error(`failed to seed alarm sample: ${res.status()} ${await res.text()}`);
     const live = await request.get(`${API_BASE}/api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false`);
     if (!live.ok()) throw new Error(`live did not accept seeded alarm sample: ${live.status()} ${await live.text()}`);
@@ -278,7 +281,7 @@ async function seedRealAlarmSample(request, pageResult) {
 
 async function verifyMonitorAlarmRendering(request, page, pageResult) {
   const verifyLanguage = async (language, heading, phrases, screenshotName) => {
-    const alarmLive = await seedRealAlarmSample(request, pageResult);
+    const alarmLive = await seedRealAlarmSample(request, pageResult, token);
     const liveRoute = (route) => {
       route.fulfill({
         status: 200,

@@ -2,8 +2,37 @@
 set -euo pipefail
 
 API_URL="${REACTOR_OS_HEALTH_URL:-http://127.0.0.1:8000/health}"
+STATUS_URL="${REACTOR_EDGE_STATUS_URL:-http://127.0.0.1:8000/api/devices/status}"
 STATE_JSON="${REACTOR_OS_STATE_JSON:-/project/state.json}"
 CONTROL_JSON="${REACTOR_OS_CONTROL_JSON:-/project/control.json}"
+PRODUCTION_CHECK=0
+
+usage() {
+  cat <<'USAGE'
+Usage: health-check.sh [--production]
+
+Without options this prints board diagnostics. With --production it also fails
+unless the backend reports a safe idle device state through /api/devices/status.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --production)
+      PRODUCTION_CHECK=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unexpected argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 print_section() {
   printf '\n== %s ==\n' "$1"
@@ -20,6 +49,72 @@ file_age_seconds() {
   now="$(date +%s)"
   mtime="$(stat -c %Y "$file" 2>/dev/null || printf '0')"
   printf '%s' "$((now - mtime))"
+}
+
+check_safe_idle_status() {
+  local tmp rc
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "curl unavailable; cannot verify device status" >&2
+    return 20
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 unavailable; cannot parse device status" >&2
+    return 21
+  fi
+  tmp="$(mktemp)"
+  if ! curl -fsS --max-time 3 "$STATUS_URL" >"$tmp"; then
+    rm -f "$tmp"
+    echo "device status request failed: $STATUS_URL" >&2
+    return 22
+  fi
+  if python3 - "$tmp" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+
+data = payload.get("data", payload)
+devices = data.get("devices", [])
+if not devices:
+    print("device status did not report any devices", file=sys.stderr)
+    sys.exit(16)
+
+failures = []
+for device in devices:
+    device_id = str(device.get("device_id", "unknown"))
+    status = str(device.get("status", "")).lower()
+    if device.get("online") is not True or status != "idle":
+        failures.append(f"{device_id}:not-safe-idle:{status or 'unknown'}")
+    if device.get("active_batch_id") is not None:
+        failures.append(f"{device_id}:active-batch")
+    if device.get("emergency_stop"):
+        failures.append(f"{device_id}:emergency-stop")
+    if device.get("auto_enabled") is True:
+        failures.append(f"{device_id}:auto-enabled")
+    if device.get("manual_lock") is True:
+        failures.append(f"{device_id}:manual-lock")
+    last_control_error = device.get("last_control_error")
+    if isinstance(last_control_error, str):
+        last_control_error = last_control_error.strip()
+    if last_control_error:
+        failures.append(f"{device_id}:control-fault")
+    if device.get("last_command_ok") is False:
+        failures.append(f"{device_id}:downstream-command-fault")
+
+if failures:
+    print("production state is not safe idle: " + ",".join(failures), file=sys.stderr)
+    sys.exit(14)
+
+print("production_state=safe_idle")
+PY
+  then
+    rc=0
+  else
+    rc=$?
+  fi
+  rm -f "$tmp"
+  return "$rc"
 }
 
 print_section "Board"
@@ -79,6 +174,11 @@ else
   echo "curl unavailable"
 fi
 printf '\n'
+
+if [[ "$PRODUCTION_CHECK" -eq 1 ]]; then
+  print_section "Production State"
+  check_safe_idle_status
+fi
 
 print_section "JSON Bridge"
 printf 'state:   %s age=%ss\n' "$STATE_JSON" "$(file_age_seconds "$STATE_JSON")"

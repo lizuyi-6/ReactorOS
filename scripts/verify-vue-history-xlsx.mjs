@@ -45,7 +45,7 @@ try {
     localStorage.setItem('reactoros.vue.auth.user', JSON.stringify({
       username: 'engineer',
       role: 'engineer',
-      permissions: ['view_monitor', 'view_history', 'view_audit', 'export_reports', 'edit_process', 'start_stop_process', 'set_safe_targets', 'apply_ai_suggestion', 'emergency_stop', 'modbus_debug']
+      permissions: ['view_monitor', 'view_history', 'view_audit', 'export_reports', 'edit_process', 'start_stop_process', 'set_safe_targets', 'apply_ai_suggestion', 'emergency_stop', 'modbus_debug', 'ingest_sensor_sample']
     }));
     localStorage.setItem('reactoros.vue.language', 'en');
   }, token);

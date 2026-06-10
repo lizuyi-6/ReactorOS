@@ -12,6 +12,7 @@ pub mod mqtt;
 pub mod number;
 pub mod optimizer;
 mod reports;
+pub mod runtime_recovery;
 pub mod safety_guard;
 pub mod state;
 pub mod tls;

@@ -1,10 +1,12 @@
-use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     config::SafetyConfig,
     number::round2,
-    state::{ControlTargets, SensorSnapshot},
+    state::{
+        device_status_field_fault_reason, downstream_command_fault_reason, timestamp_is_fresh,
+        ControlTargets, DeviceStatusSnapshot, SensorSnapshot,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,6 +19,9 @@ pub enum SafetyGuardRequest {
         auto_enabled: bool,
         manual_lock: bool,
         emergency_stop: bool,
+        control_fault: Option<String>,
+        #[serde(default)]
+        device_status: Option<DeviceStatusSnapshot>,
     },
     ClampTargets {
         safety: SafetyConfig,
@@ -48,6 +53,10 @@ pub enum ControlBlockReason {
     AutoDisabled,
     ManualLock,
     EmergencyStop,
+    ControlFault,
+    MissingDeviceStatus,
+    DeviceStatusFault,
+    DownstreamCommandFault,
     MissingSensorSample,
     SensorStale,
     ForbiddenControlZone,
@@ -66,6 +75,29 @@ pub fn decide_control(
     auto_enabled: bool,
     manual_lock: bool,
     emergency_stop: bool,
+    control_fault: Option<&str>,
+) -> ControlDecision {
+    decide_control_with_device_status(
+        safety,
+        sample,
+        targets,
+        auto_enabled,
+        manual_lock,
+        emergency_stop,
+        control_fault,
+        None,
+    )
+}
+
+pub fn decide_control_with_device_status(
+    safety: &SafetyConfig,
+    sample: Option<&SensorSnapshot>,
+    targets: &ControlTargets,
+    auto_enabled: bool,
+    manual_lock: bool,
+    emergency_stop: bool,
+    control_fault: Option<&str>,
+    device_status: Option<&DeviceStatusSnapshot>,
 ) -> ControlDecision {
     if emergency_stop {
         return ControlDecision::Blocked(ControlBlockReason::EmergencyStop);
@@ -73,16 +105,36 @@ pub fn decide_control(
     if manual_lock {
         return ControlDecision::Blocked(ControlBlockReason::ManualLock);
     }
+    if control_fault.is_some() {
+        return ControlDecision::Blocked(ControlBlockReason::ControlFault);
+    }
     if !auto_enabled {
         return ControlDecision::Blocked(ControlBlockReason::AutoDisabled);
+    }
+    if safety.control.require_device_status_for_control {
+        let Some(status) = device_status else {
+            return ControlDecision::Blocked(ControlBlockReason::MissingDeviceStatus);
+        };
+        if device_status_field_fault_reason(status, safety.control.sensor_timeout_ms).is_some() {
+            return ControlDecision::Blocked(ControlBlockReason::DeviceStatusFault);
+        }
+        if downstream_command_fault_reason(status).is_some() {
+            return ControlDecision::Blocked(ControlBlockReason::DownstreamCommandFault);
+        }
+    } else if let Some(status) = device_status {
+        if device_status_field_fault_reason(status, safety.control.sensor_timeout_ms).is_some() {
+            return ControlDecision::Blocked(ControlBlockReason::DeviceStatusFault);
+        }
+        if downstream_command_fault_reason(status).is_some() {
+            return ControlDecision::Blocked(ControlBlockReason::DownstreamCommandFault);
+        }
     }
 
     let Some(sample) = sample else {
         return ControlDecision::Blocked(ControlBlockReason::MissingSensorSample);
     };
 
-    let age = Utc::now().signed_duration_since(sample.captured_at);
-    if age > Duration::milliseconds(safety.control.sensor_timeout_ms) {
+    if !timestamp_is_fresh(sample.captured_at, safety.control.sensor_timeout_ms) {
         return ControlDecision::Blocked(ControlBlockReason::SensorStale);
     }
 
@@ -167,13 +219,17 @@ pub fn evaluate_safety_request(request: SafetyGuardRequest) -> SafetyGuardRespon
             auto_enabled,
             manual_lock,
             emergency_stop,
-        } => SafetyGuardResponse::ControlDecision(decide_control(
+            control_fault,
+            device_status,
+        } => SafetyGuardResponse::ControlDecision(decide_control_with_device_status(
             &safety,
             sample.as_ref(),
             &targets,
             auto_enabled,
             manual_lock,
             emergency_stop,
+            control_fault.as_deref(),
+            device_status.as_ref(),
         )),
         SafetyGuardRequest::ClampTargets { safety, targets } => {
             SafetyGuardResponse::ClampedTargets(clamp_operator_targets(&safety, targets))

@@ -42,7 +42,7 @@
 
 | PRD 模块 | 需求 | 当前状态 | 当前证据 | 还缺什么 |
 | --- | --- | --- | --- | --- |
-| 数据采集与控制 | 温度、压力、转速、摇速、流量、浓度、pH 秒级采集 | 部分完成 | Modbus 映射已覆盖 7 类指标；pipeline/SQLite/HMI 可展示；`xingshu data sample --duration-s 180 --interval-ms 500` 可通过正式 v1 样本入口驱动无硬件实时监控演示 | 真实 STM32/传感器秒级采集验证，采集延迟和数据一致性报告 |
+| 数据采集与控制 | 温度、压力、转速、摇速、流量、浓度、pH 秒级采集 | 部分完成 | Modbus 映射已覆盖 7 类指标；pipeline/SQLite/HMI 可展示；`xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` 可通过正式 v1 样本入口驱动无硬件实时监控演示，token 需具备 `ingest_sensor_sample` 权限 | 真实 STM32/传感器秒级采集验证，采集延迟和数据一致性报告 |
 | 数据采集与控制 | 温度、转速、流量等自动/手动控制 | 部分完成 | 控制 API、自动控制、手动目标、safety guard | 真实执行器闭环验证；当前流量控制更多是映射/显示，真实控制需硬件确认 |
 | 数据采集与控制 | 急停、暂停、恢复 | 部分完成 | 急停 API、停止流程、恢复/重置联锁入口 | “暂停/恢复”作为完整生产语义需和硬件状态机联调确认 |
 | AI 智能决策 | 云端大模型参数建议 | 部分完成 | AI provider、历史批次推荐、StepFun/provider 配置边界、只读 SOP 草案接口；HMI 已本地化 provider 状态和 stale/fallback 提示 | 真实 StepFun 账号、提示词、A/B 测试和云端 SOP 生成验证 |
@@ -131,7 +131,7 @@ PRD 指定技术栈与当前实现之间的偏离、影响和补偿措施见 `do
 2026-06-04 当前本地服务：
 
 - `GET http://127.0.0.1:8000/health` 返回 `{"ok": true, "service": "reactor-edge-daemon"}`。
-- `xingshu data sample --duration-s 180 --interval-ms 500` 启动持续样本流后，`GET /api/live` 返回 200，HMI 显示 `SYSTEM HEALTH: NORMAL`、实时温度/压力数值；停止样本流超过 `sensor_timeout_ms=6000` 后返回 503 是预期安全行为。
+- `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` 启动持续样本流后，`GET /api/live` 返回 200，HMI 显示 `SYSTEM HEALTH: NORMAL`、实时温度/压力数值；停止样本流超过 `sensor_timeout_ms=6000` 后返回 503 是预期安全行为。
 - `xingshu perf smoke --iterations 20` 生成 `output/upper-computer-perf-smoke.json`：
   - 只读 API p95 最高 4ms，满足本地 <100ms 冒烟阈值。
   - `safety_compute` p95=1ms，满足本地 <100ms 安全计算冒烟阈值。

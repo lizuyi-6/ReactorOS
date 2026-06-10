@@ -98,8 +98,9 @@ async function getJson(request, path, token) {
   return { status: res.status(), body: json.data ?? json };
 }
 
-async function seedFreshNormalSample(request) {
+async function seedFreshNormalSample(request, token) {
   const res = await request.post(`${API_BASE}/api/v1/reactor/reactor_001/samples`, {
+    headers: { Authorization: `Bearer ${token}` },
     data: {
       temperature_c: 60.2,
       pressure_mpa: 0.55,
@@ -193,14 +194,14 @@ async function selectProcessInUi(page, processName, processId) {
     const loginBody = await login(page, request);
     const token = loginBody.token;
     log("login-engineer", "ok", JSON.stringify({ role: loginBody.user.role }));
-    await seedFreshNormalSample(request);
+    await seedFreshNormalSample(request, token);
     log("seed-fresh-sample", "ok");
 
     // Inject the bearer token into localStorage so Vue reads it.
     await page.goto(`${VUE_URL}#/control`);
     await page.evaluate((t) => {
       localStorage.setItem("reactoros.vue.auth.token", t);
-      localStorage.setItem("reactoros.vue.auth.user", JSON.stringify({ username: "engineer", role: "engineer", permissions: ["edit_process", "start_stop_process", "set_safe_targets", "view_monitor", "view_history", "view_audit", "export_reports", "apply_ai_suggestion", "emergency_stop", "modbus_debug"] }));
+      localStorage.setItem("reactoros.vue.auth.user", JSON.stringify({ username: "engineer", role: "engineer", permissions: ["edit_process", "start_stop_process", "set_safe_targets", "view_monitor", "view_history", "view_audit", "export_reports", "apply_ai_suggestion", "emergency_stop", "modbus_debug", "ingest_sensor_sample"] }));
       localStorage.setItem("reactoros.vue.language", "en");
     }, token);
     await page.reload();
@@ -284,7 +285,7 @@ async function selectProcessInUi(page, processName, processId) {
     // starts when the latest pipeline sample is older than sensor_timeout_ms,
     // and the acceptance suite can spend several seconds creating rows on slow
     // Windows SQLite runs.
-    await seedFreshNormalSample(request);
+    await seedFreshNormalSample(request, token);
     log("seed-fresh-sample-before-start", "ok");
 
     const startRow = page.locator(".process-list .el-table__row", { hasText: processName }).first();

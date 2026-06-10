@@ -43,7 +43,7 @@
 1. 生成：使用生产密钥管理系统或离线随机源生成 32 字节密钥。验收可用 64 位 hex 或 base64 表示。
 2. 分发：通过部署环境变量注入 `XINGSHU_DB_ENCRYPTION_KEY`、`XINGSHU_AUTH_SECRET` 和角色密码，不写入 Git、SQLite、截图或报告。
 3. 备份：`XINGSHU_DB_ENCRYPTION_KEY` 必须与数据库备份成对托管。丢失密钥后，已加密的 `integration_tasks.request_json/response_json` 无法恢复。
-4. 轮换：当前代码已提供两段式本地工具：先用 `xingshu key generate --db <path> --yes` 生成新的 `<db>.key` 文件，再在 daemon 停止期间运行 `xingshu key rekey-integration-tasks --db <path> --old-key-file <old.env> --new-key-file <new.env> --dry-run` 预检，确认计数后用 `--yes` 正式把 `integration_tasks.request_json/response_json` 从旧 key 迁移到新 key。迁移会把历史明文行一并加密；密钥材料不会打印到 human 或 JSON 输出。生产仍需旧密钥导出、数据库备份、恢复验证和旧密钥封存记录。
+4. 轮换：当前代码已提供两段式本地工具：在 daemon 停止且没有未完成批次的维护窗口内用 `xingshu key generate --db <path> --yes` 生成新的 `<db>.key` 文件；`xingshu key rekey-integration-tasks --db <path> --old-key-file <old.env> --new-key-file <new.env> --dry-run` 可先做只读预检，确认计数后仍在停机窗口内用 `--yes` 正式把 `integration_tasks.request_json/response_json` 从旧 key 迁移到新 key。`key generate` 和正式 rekey 会检查 `reactor-edge`/`reactor-edge-daemon` 状态和未完成批次，服务明确 active 或数据库仍有 `finished_at IS NULL` 批次时拒绝；无法自动检查服务状态时，只有已有维护记录后才能加 `--confirm-daemon-stopped`，但该参数不会绕过未完成批次保护。迁移会把历史明文行一并加密；密钥材料不会打印到 human 或 JSON 输出。生产仍需旧密钥导出、数据库备份、恢复验证和旧密钥封存记录。
 5. 吊销：轮换 `XINGSHU_AUTH_SECRET` 会使旧 bearer token 全部失效。证书吊销需同步 broker、Modbus TCP 客户端和 HTTP 入口。
 
 ## 4. 验收检查项

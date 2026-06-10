@@ -185,10 +185,14 @@ max_pdu_bytes = 260
   if (-not (Wait-HttpOk -Url "http://127.0.0.1:$DaemonPort/health" -TimeoutSeconds 30)) {
     throw "daemon did not become healthy on $DaemonPort"
   }
+  $engineerLogin = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$DaemonPort/api/auth/login" -ContentType "application/json" -Body (@{ username = "engineer"; password = "engineer123" } | ConvertTo-Json -Compress)
+  $engineerToken = $engineerLogin.data.token
+  if (-not $engineerToken) { throw "engineer login returned no token for simulator sample ingest" }
 
   $simProc = Start-Process -FilePath "node.exe" -ArgumentList @(
     "scripts/simulate-device.js",
     "--url", "http://127.0.0.1:$DaemonPort",
+    "--token", $engineerToken,
     "--profile", "production",
     "--interval-ms", "1000"
   ) -WorkingDirectory $root -RedirectStandardOutput $simLog -RedirectStandardError "$simLog.err" -PassThru -WindowStyle Hidden

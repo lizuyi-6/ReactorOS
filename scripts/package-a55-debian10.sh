@@ -65,7 +65,14 @@ if [[ ! -x "${XINGSHU_BIN}" ]]; then
 fi
 
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
+GIT_FULL_SHA="$(git rev-parse HEAD 2>/dev/null || printf 'nogit')"
+if git diff --quiet --ignore-submodules HEAD -- 2>/dev/null && git diff --cached --quiet --ignore-submodules -- 2>/dev/null; then
+  GIT_DIRTY="false"
+else
+  GIT_DIRTY="true"
+fi
 STAMP="$(date +%Y%m%d-%H%M%S)"
+BUILT_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PACKAGE_NAME="${PKG_PREFIX}-${STAMP}-${GIT_SHA}"
 PACKAGE_DIR="${DIST_DIR}/${PACKAGE_NAME}"
 
@@ -89,6 +96,7 @@ cp -r static/. "${PACKAGE_DIR}/static/"
 cp -r frontend/dist "${PACKAGE_DIR}/frontend/"
 cp kiosk/run-chromium-kiosk.sh "${PACKAGE_DIR}/kiosk/"
 cp deploy/reactor-edge.service "${PACKAGE_DIR}/deploy/"
+cp deploy/reactor-edge-ota-boot-check.service "${PACKAGE_DIR}/deploy/"
 cp deploy/reactor-edge-backup.service "${PACKAGE_DIR}/deploy/"
 cp deploy/reactor-edge-backup.timer "${PACKAGE_DIR}/deploy/"
 cp deploy/reactor-os-chromium.service "${PACKAGE_DIR}/deploy/"
@@ -96,6 +104,10 @@ cp deploy/install-board.sh "${PACKAGE_DIR}/install.sh"
 cp deploy/uninstall-board.sh "${PACKAGE_DIR}/uninstall.sh"
 cp deploy/board-health.sh "${PACKAGE_DIR}/health-check.sh"
 cp deploy/reactor-edge-backup.sh "${PACKAGE_DIR}/backup.sh"
+cp deploy/reactor-edge-ota-update.sh "${PACKAGE_DIR}/ota-update.sh"
+cp deploy/reactor-edge-ota-rollback.sh "${PACKAGE_DIR}/ota-rollback.sh"
+cp deploy/reactor-edge-ota-lib.sh "${PACKAGE_DIR}/ota-lib.sh"
+cp deploy/reactor-edge-ota-boot-check.sh "${PACKAGE_DIR}/ota-boot-check.sh"
 cp docs/json_bridge_protocol.md "${PACKAGE_DIR}/docs/"
 cp docs/chromium_kiosk.md "${PACKAGE_DIR}/docs/"
 
@@ -107,6 +119,21 @@ STEPFUN_API_TYPE=${STEPFUN_API_TYPE}
 STEPFUN_MODEL=${STEPFUN_MODEL}
 STEPFUN_REASONING_EFFORT=${STEPFUN_REASONING_EFFORT}
 STEPFUN_TIMEOUT_SECONDS=${STEPFUN_TIMEOUT_SECONDS}
+EOF
+
+cat >"${PACKAGE_DIR}/BUILD-METADATA.properties" <<EOF
+REACTOR_EDGE_BUILD_SCHEMA=reactor-edge.build.v1
+REACTOR_EDGE_PACKAGE_NAME=${PACKAGE_NAME}
+REACTOR_EDGE_GIT_SHA=${GIT_SHA}
+REACTOR_EDGE_GIT_FULL_SHA=${GIT_FULL_SHA}
+REACTOR_EDGE_GIT_DIRTY=${GIT_DIRTY}
+REACTOR_EDGE_BUILT_AT_UTC=${BUILT_AT_UTC}
+REACTOR_EDGE_TARGET=${TARGET}
+REACTOR_EDGE_PROFILE=${PROFILE}
+REACTOR_EDGE_PKG_PREFIX=${PKG_PREFIX}
+REACTOR_EDGE_BOARD_NAME=${BOARD_NAME}
+REACTOR_EDGE_SERVICE_USER=${SERVICE_USER}
+REACTOR_EDGE_CONFIG_NAME=${CONFIG_NAME}
 EOF
 
 sed -i \
@@ -142,6 +169,10 @@ chmod +x \
   "${PACKAGE_DIR}/uninstall.sh" \
   "${PACKAGE_DIR}/health-check.sh" \
   "${PACKAGE_DIR}/backup.sh" \
+  "${PACKAGE_DIR}/ota-update.sh" \
+  "${PACKAGE_DIR}/ota-rollback.sh" \
+  "${PACKAGE_DIR}/ota-lib.sh" \
+  "${PACKAGE_DIR}/ota-boot-check.sh" \
   "${PACKAGE_DIR}/bin/reactor-edge-daemon" \
   "${PACKAGE_DIR}/bin/reactor-safety-guard" \
   "${PACKAGE_DIR}/bin/xingshu" \
@@ -251,21 +282,73 @@ keeping runtime sensor data strict:
 sudo ./install.sh --seed-demo-context
 \`\`\`
 
-Manual equivalent:
+The installer initializes application slot \`/opt/reactor-edge/slots/a\`, points
+\`/opt/reactor-edge/current\` at that slot, installs compatibility links such as
+\`/opt/reactor-edge/bin\` and \`/opt/reactor-edge/backup.sh\`, and copies the OTA
+tools to \`/opt/reactor-edge/ota-update.sh\`, \`ota-rollback.sh\`, and
+\`ota-lib.sh\`. It also enables \`reactor-edge-ota-boot-check.service\`, which
+checks interrupted OTA state before the backend is allowed to start after boot.
+The backend service also runs \`/opt/reactor-edge/ota-boot-check.sh\` as
+\`ExecStartPre\`, so manual restarts and automatic systemd restarts re-check OTA
+state before production control starts. Backend and kiosk services use systemd
+start-rate limits so repeated crashes stop for maintenance intervention instead
+of looping indefinitely.
+The backup helper serializes concurrent timer/OTA backup attempts with a
+non-blocking lock, writes snapshots through a temporary file, verifies the
+sha256 sidecar and SQLite header, then publishes the timestamped snapshot and
+\`latest.snapshot\` links.
+
+## Application A/B Update
+
+The package archive is accompanied by a generated sha256 sidecar:
+
+\`\`\`text
+${PACKAGE_NAME}.tar.gz.sha256
+\`\`\`
+
+Copy both files to the board, then run a dry-run preflight before switching
+slots:
 
 \`\`\`bash
-sudo mkdir -p /opt/reactor-edge /etc/reactor-edge /var/lib/reactor-edge
-sudo cp -r bin static frontend kiosk /opt/reactor-edge/
-sudo cp health-check.sh /opt/reactor-edge/
-sudo cp backup.sh /opt/reactor-edge/
-sudo cp config/*.toml /etc/reactor-edge/
-sudo cp config/reactor-edge.env /etc/reactor-edge/
-sudo cp deploy/reactor-edge.service deploy/reactor-edge-backup.service deploy/reactor-edge-backup.timer deploy/reactor-os-chromium.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now reactor-edge
-sudo systemctl enable --now reactor-edge-backup.timer
-sudo systemctl enable --now reactor-os-chromium
+sudo /opt/reactor-edge/ota-update.sh ${PACKAGE_NAME}.tar.gz --sha256 ${PACKAGE_NAME}.tar.gz.sha256 --dry-run
+
+sudo /opt/reactor-edge/ota-update.sh ${PACKAGE_NAME}.tar.gz --sha256 ${PACKAGE_NAME}.tar.gz.sha256
 \`\`\`
+
+The updater verifies the checksum sidecar references this tarball basename,
+rejects invalid health-check arguments, validates tar members before extraction,
+fails closed unless the backend status endpoint proves the reactor is idle,
+checks disk space, validates backup availability, requires
+\`BUILD-METADATA.properties\`, and validates the unpacked candidate slot
+contents. With \`--dry-run\`, it performs those checks without changing
+\`current\`/\`previous\`, installing systemd units, or creating a database
+snapshot. A real update then creates a pre-update SQLite snapshot, switches
+\`/opt/reactor-edge/current\`, records \`from_version\`, \`to_version\`,
+\`from_git\`, and \`to_git\` in OTA state, and rolls back automatically if
+repeated health checks fail. If power is lost before the \`current\` switch, the
+boot check keeps the existing slot running; if power is lost after the switch
+but before commit, it restores \`previous\` before production control starts.
+The short-lived OTA health-check marker records the updater PID and process
+start identity; boot-check removes the marker and fails closed if that process
+is no longer alive, so a killed OTA script does not leave a stale bypass.
+If an update or manual rollback enters \`failed\`, the OTA scripts clear the
+temporary health-check bypass marker and stop backend/kiosk services
+immediately.
+Use \`--force --confirm-maintenance-window\` only in a confirmed maintenance
+window. Unsafe lab/recovery bypasses also require explicit pairing:
+\`--skip-backup --confirm-skip-backup\` and
+\`--allow-missing-checksum --confirm-unsafe-no-checksum\`.
+
+Manual rollback:
+
+\`\`\`bash
+sudo /opt/reactor-edge/ota-rollback.sh
+\`\`\`
+
+If the backend/status endpoint is unavailable, rollback also fails closed.
+Confirm the reactor is stopped at the field panel, then use
+\`sudo /opt/reactor-edge/ota-rollback.sh --force --confirm-maintenance-window\`
+during the maintenance window.
 
 This package generated systemd units for display user \`${SERVICE_USER}\`,
 group \`${SERVICE_GROUP}\`, and XAuthority \`${SERVICE_HOME}/.Xauthority\`.
@@ -308,7 +391,8 @@ private and do not commit that file to git.
 
 - Board profile: ${BOARD_NAME}
 - Git: ${GIT_SHA}
-- Built: ${STAMP}
+- Built: ${BUILT_AT_UTC}
+- Package: ${PACKAGE_NAME}
 - Target: ${TARGET}
 - CPU hint: cortex-a55
 - Debian baseline: Debian 10 / glibc 2.28
@@ -332,6 +416,7 @@ file "${PACKAGE_DIR}/bin/reactor-edge-daemon" | tee "${PACKAGE_DIR}/BUILD-VALIDA
 
 echo "==> Archiving"
 tar -C "${DIST_DIR}" -czf "${PACKAGE_DIR}.tar.gz" "${PACKAGE_NAME}"
+(cd "${DIST_DIR}" && sha256sum "${PACKAGE_NAME}.tar.gz" >"${PACKAGE_NAME}.tar.gz.sha256")
 if command -v zip >/dev/null 2>&1; then
   (cd "${DIST_DIR}" && zip -qr "${PACKAGE_NAME}.zip" "${PACKAGE_NAME}")
 fi

@@ -79,10 +79,12 @@ xingshu --json status
 | `xingshu data export --out batches.csv` | 导出批次 CSV | 需要有运行中服务 |
 | `xingshu data export-xlsx --out batches.xlsx` | 导出 Excel 工作簿 | 需要有运行中服务 |
 | `xingshu data report --batch-id 1` | 导出单批次 Markdown 报告 | 指定批次必须存在 |
-| `xingshu data sample --duration-s 180 --interval-ms 500` | 通过正式 v1 样本入口注入演示样本 | 不写控制目标，不绕过 safety |
-| `xingshu data delete --yes` | 删除本地 SQLite 运行数据 | 破坏性操作，仅本地验收或重置演示环境使用 |
+| `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` | 通过正式 v1 样本入口注入演示样本 | 需 `ingest_sensor_sample` 权限；不写控制目标，不绕过 safety |
+| `xingshu data delete --yes` | 删除本地 SQLite 运行数据 | 破坏性操作，仅停机后的本地验收或重置演示环境使用 |
 
-`data sample` 停止后，超过 `sensor_timeout_ms` 没有新样本时 `/api/live` 返回 503 是预期安全行为。
+`data sample` 停止后，超过 `sensor_timeout_ms` 没有新样本时 `/api/live` 返回 503 是预期安全行为。正式样本入口会更新控制安全门使用的 `latest_sample`，因此匿名请求和 operator token 都不能写入；但样本只证明传感器新鲜度，生产默认还要求下位机状态健康才允许危险控制。在 `require_device_status_for_control = true` 时，即使样本新鲜，缺少下位机状态也会让 `/api/live` 和 v1 realtime 显示设备 offline，v1 `data.phase` 也保持 `offline`，并产生 `device_status_unavailable` 高危报警。本地演示先用 `xingshu auth login --username engineer --password engineer123` 获取 token，或设置 `XINGSHU_TOKEN`。
+
+v1 realtime WebSocket 使用同一新鲜样本门槛；样本缺失或过期时发送 `503` 错误信封并断开，不继续推送旧样本值或用当前时间伪造实时 `timestamp`。
 
 ## 6. 控制
 
@@ -94,9 +96,12 @@ xingshu --json status
 | `xingshu control start --name demo --temp 60 --rpm 300` | 创建基础批次并启动 | 同上 |
 | `xingshu control stop` | 停止当前流程 | 写停止审计 |
 | `xingshu control estop` | 触发急停 | 最高优先级 |
-| `xingshu control estop --reset` | 复位急停 | 需符合现场安全流程 |
+| `xingshu control estop --reset` | 复位急停 | 需要新鲜现场样本；不清除设备写入故障，不开启自动控制 |
+| `xingshu control fault-reset` | 现场确认后清除锁存的设备控制写入故障 | 需要新鲜现场样本；下位机不能仍报告 `last_command_ok=false`；自动控制保持关闭 |
 
-生产现场禁止用 CLI 绕过操作 SOP；CLI 与 HMI 使用同一安全路径。
+生产现场禁止用 CLI 绕过操作 SOP；CLI 与 HMI 使用同一安全路径。人工锁打开会关闭自动控制，解除人工锁不会自动恢复自动控制。传感器或下位机状态链路异常也会关闭自动控制，恢复后仍需要操作员重新开启。
+
+`data delete` 会清空运行数据表，也必须在 daemon 停止的本地维护/验收窗口执行；如果服务明确 active，命令会拒绝。状态无法自动检查时，只有已有维护记录后才能加 `--confirm-daemon-stopped`。该确认只覆盖 daemon 状态不可验证，不会绕过生产状态保护；数据库里仍有 `finished_at IS NULL` 的未完成批次时，命令会拒绝清库。
 
 ## 7. AI
 
@@ -164,12 +169,16 @@ xingshu --json status
 | --- | --- |
 | `xingshu ops preflight --production --json` | 检查生产上线前的本地配置、默认口令、session secret、数据库加密 key、MQTT/Modbus TLS 路径和备份 timer 文件 |
 | `xingshu ops backup --db data/reactor.sqlite3 --out backups/reactor.sqlite3.snapshot` | 使用 SQLite `VACUUM INTO` 生成在线快照 |
-| `xingshu ops restore --backup backups/reactor.sqlite3.snapshot --db data/reactor.sqlite3 --yes` | 校验 SQLite magic/schema/integrity 后恢复；必须停 daemon |
-| `xingshu ops wipe --db data/reactor.sqlite3 --yes` | 覆盖并删除 DB、WAL/SHM/JOURNAL、`<db>.key` 和 sibling `backups/` 中匹配快照 |
-| `xingshu key generate --db data/reactor.sqlite3 --yes` | 生成新的 `XINGSHU_DB_ENCRYPTION_KEY` 文件，不在输出中泄露 key |
-| `xingshu key rekey-integration-tasks --db data/reactor.sqlite3 --old-key-file old.env --new-key-file data/reactor.key --dry-run` | 离线扫描并预检 `integration_tasks.request_json/response_json` 迁移计数；确认后用 `--yes` 正式重加密 |
+| `xingshu ops restore --backup backups/reactor.sqlite3.snapshot --db data/reactor.sqlite3 --yes` | 校验 SQLite magic/schema/integrity 后恢复；会拒绝在 daemon 活跃时覆盖目标库，也会拒绝覆盖仍有未完成批次的可读目标库 |
+| `xingshu ops wipe --db data/reactor.sqlite3 --yes` | 覆盖并删除 DB、WAL/SHM/JOURNAL、`<db>.key` 和 sibling `backups/` 中匹配快照；会拒绝在 daemon 活跃或目标库仍有未完成批次时执行 |
+| `xingshu key generate --db data/reactor.sqlite3 --yes` | 停机维护窗口内生成新的 `XINGSHU_DB_ENCRYPTION_KEY` 文件，不在输出中泄露 key；目标库仍有未完成批次时拒绝 |
+| `xingshu key rekey-integration-tasks --db data/reactor.sqlite3 --old-key-file old.env --new-key-file data/reactor.key --dry-run` | 离线扫描并预检 `integration_tasks.request_json/response_json` 迁移计数；正式 `--yes` 提交必须停 daemon |
 
 `ops preflight --production` 有 fail 级发现时返回非 0。默认口令、缺失 `XINGSHU_AUTH_SECRET`、缺失或无效 `XINGSHU_DB_ENCRYPTION_KEY`、启用 MQTT/Modbus 但 TLS 文件缺失都会失败。MQTT/Modbus disabled 或 `device.mode=pipeline` 会给 warning，用于保留本地联调能力，但正式 RK/现场交付需逐项解释。
+
+`ops restore` / `ops wipe` 只用于停机维护窗口。执行前先停止 `reactor-edge`/`reactor-edge-daemon` 并确认现场不在生产控制；如果 systemd 状态无法被 CLI 证明已停，只有在已有记录的维护决策后才能加 `--confirm-daemon-stopped`。该参数不能用于在线覆盖或擦除运行库；只要服务明确 active，命令必须拒绝。`restore` 还会先只读检查目标库，若目标库可读且仍有未完成批次，会拒绝覆盖以保留生产证据；目标库损坏到无法检查时，restore 仍可作为救援恢复路径继续执行。`wipe` 是退役/销毁动作，若当前库可读且仍有未完成批次，会拒绝擦除。
+
+`key generate` 和 `key rekey-integration-tasks --yes` 同样要求停机维护窗口，避免 daemon 仍持有旧 key 时磁盘 key 或密文已切到新 key。正式提交还会拒绝未完成批次，避免生产记录尚未闭合时改变密钥可读性。`rekey-integration-tasks --dry-run` 不改库，可用于停机前预检；正式提交如无法自动检查 systemd 状态，也只能在已有维护记录后加 `--confirm-daemon-stopped`。
 
 示例：
 

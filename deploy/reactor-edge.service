@@ -1,23 +1,27 @@
 [Unit]
 Description=Reactor Edge Supervisor
-After=network-online.target
-Wants=network-online.target
+After=reactor-edge-ota-boot-check.service network-online.target
+Wants=network-online.target reactor-edge-ota-boot-check.service
+Requires=reactor-edge-ota-boot-check.service
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=pi
 Group=pi
-WorkingDirectory=/opt/reactor-edge
-ExecStart=/opt/reactor-edge/bin/reactor-edge-daemon \
+WorkingDirectory=/opt/reactor-edge/current
+ExecStartPre=/opt/reactor-edge/ota-boot-check.sh
+ExecStart=/opt/reactor-edge/current/bin/reactor-edge-daemon \
   --config /etc/reactor-edge/device.toml \
   --safety /etc/reactor-edge/safety.toml \
   --memory /etc/reactor-edge/ai_memory.toml \
   --db /var/lib/reactor-edge/reactor.sqlite3 \
   --assets auto \
-  --safety-guard /opt/reactor-edge/bin/reactor-safety-guard \
+  --safety-guard /opt/reactor-edge/current/bin/reactor-safety-guard \
   --bind 0.0.0.0:8000
-Restart=always
-RestartSec=3
+Restart=on-failure
+RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
