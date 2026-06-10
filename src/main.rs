@@ -66,7 +66,13 @@ struct Args {
     seed_demo_context: bool,
 }
 
-#[tokio::main]
+// Cap the async runtime to 2 worker threads. The daemon runs on edge boards
+// (e.g. LubanCat 2 / RK3568, 4x Cortex-A55) as a low-load process: one control
+// loop, one HTTP server, occasional blocking serial/Modbus I/O. The default
+// one-worker-per-core (4 here) just adds idle thread stacks and scheduler
+// overhead; 2 workers keep the HTTP server responsive while the control loop or
+// a spawn_blocking serial call runs, without paying for cores we never saturate.
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))

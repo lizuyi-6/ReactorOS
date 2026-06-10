@@ -39,3 +39,18 @@ zip = { version = "8.6.0", default-features = false }
 [dev-dependencies]
 tempfile = "3.14.0"
 tower = { version = "0.5.2", features = ["util"] }
+
+# Tuned for the LubanCat 2 / RK3568 (4x Cortex-A55, ARM64) field target: a
+# long-running, low-load edge daemon where binary size and resident memory
+# matter more than the last few percent of throughput. Full LTO + a single
+# codegen unit let the optimizer inline across crates and drop dead code;
+# abort-on-panic removes landing pads and unwind tables (safe here: no code
+# relies on catch_unwind); strip drops symbols. These shrink the image the
+# board must store in both A/B slots and lower steady-state RSS.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+overflow-checks = true

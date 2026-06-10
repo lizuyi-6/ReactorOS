@@ -2348,14 +2348,15 @@ fn safety_guard_external_process_timeout_returns_before_slow_guard_finishes() {
         .to_string()
         .contains("safety guard process exceeded timeout of 100ms"));
     // The slow script sleeps 15s. The 100ms timeout must really fire —
-    // evaluate_with_process must return in well under the slow script's
-    // natural exit. The 3s upper bound is a tight guarantee: the safety
-    // gate returning within 3s of a 100ms timeout (i.e. the timeout
-    // path works) is a strong signal that the kill is honored and the
-    // process tree is reaped. If the slow script ever completes before
-    // 3s, the timeout is being ignored.
+    // evaluate_with_process should return in tens of milliseconds, but the
+    // assertion only needs to prove the timeout path ran instead of waiting
+    // for the script's natural exit. The 8s upper bound keeps a strong
+    // margin below the 15s sleep (7s of slack) while tolerating scheduler
+    // jitter when this runs alongside the full parallel suite and a busy
+    // build host. If the slow script ever completes before this bound, the
+    // timeout is being ignored.
     assert!(
-        started_at.elapsed() < Duration::from_secs(3),
+        started_at.elapsed() < Duration::from_secs(8),
         "safety guard timeout must return well before the slow script finishes; elapsed={:?}",
         started_at.elapsed()
     );

@@ -24,7 +24,9 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow},
+    sqlite::{
+        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow, SqliteSynchronous,
+    },
     Row,
 };
 use tokio::sync::Mutex as AsyncMutex;
@@ -5516,11 +5518,18 @@ fn open_sqlx_pool(path: &Path) -> Option<sqlx::SqlitePool> {
     if tokio::runtime::Handle::try_current().is_err() {
         return None;
     }
+    // Mirror configure_connection() so the SQLx read/write pool behaves
+    // identically to the rusqlite connections (see that function for the
+    // rationale behind each pragma on the RK3568/eMMC edge board).
     let options = SqliteConnectOptions::new()
         .filename(path)
         .create_if_missing(true)
         .foreign_keys(true)
         .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .pragma("wal_autocheckpoint", "400")
+        .pragma("temp_store", "MEMORY")
+        .pragma("cache_size", "-4096")
         .busy_timeout(SQLITE_BUSY_TIMEOUT);
     Some(
         SqlitePoolOptions::new()
@@ -5535,6 +5544,22 @@ fn configure_connection(conn: Connection) -> Result<Connection> {
         r#"
         PRAGMA foreign_keys=ON;
         PRAGMA journal_mode=WAL;
+        -- synchronous=NORMAL is safe under WAL: the database stays consistent
+        -- across application and OS crashes; only a power loss between the last
+        -- WAL checkpoint and the crash can drop the very last committed
+        -- transaction. On the RK3568/eMMC edge board this cuts fsync count
+        -- dramatically (lower CPU, far less write amplification). If durability
+        -- of the last audit event on sudden power loss is mandatory, raise this
+        -- back to FULL and rely on the hardware brown-out/hold-up budget.
+        PRAGMA synchronous=NORMAL;
+        -- Bound the WAL so it cannot grow unbounded between checkpoints on a
+        -- long-running unattended board (keeps memory-mapped WAL and disk small).
+        PRAGMA wal_autocheckpoint=400;
+        -- Keep scratch tables and sort/temp results in RAM instead of spilling
+        -- to the eMMC, and cap the page cache to a modest ~4 MiB (negative value
+        -- is KiB) so the daemon stays inside the PRD <30 MB memory envelope.
+        PRAGMA temp_store=MEMORY;
+        PRAGMA cache_size=-4096;
         "#,
     )?;
     Ok(conn)
