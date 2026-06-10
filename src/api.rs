@@ -3026,7 +3026,18 @@ async fn v1_control(
         if let Err(err) = start_process_on_device(&state, &targets, batch_id).await {
             audit_start_failed_before_activation(&state, batch_id, &targets, "v1 control", &err)
                 .await;
-            let _ = rollback_v1_auto_start_activation(&state, batch_id, &targets).await;
+            // The device start write failed, so the field was never commanded on and
+            // runtime was never armed with this batch. Mirror batch start: just close
+            // the pending batch record. Do NOT call the post-activation rollback, which
+            // re-issues a stop write and conservatively re-arms active_batch_id when that
+            // stop also fails -- that is only correct after a successful device start.
+            if let Some(batch_id) = batch_id {
+                if let Err(finish_err) = state.db.finish_batch_sqlx(batch_id).await {
+                    tracing::warn!(
+                        "failed to mark failed v1 auto_start batch finished: {finish_err}"
+                    );
+                }
+            }
             return Err(err);
         }
     }

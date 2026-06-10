@@ -6989,7 +6989,17 @@ async fn new_production_rejects_unfinished_db_batch_even_when_runtime_is_idle() 
                 .uri("/api/batches/start")
                 .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "name": "must not start" }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "name": "must not start",
+                        "target_temperature_c": 82.0,
+                        "target_stirrer_rpm": 460.0,
+                        "target_shake_speed_cpm": 24.0,
+                        "heating_minutes": 75.0,
+                        "stirring_minutes": 65.0
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -7007,10 +7017,10 @@ async fn new_production_rejects_unfinished_db_batch_even_when_runtime_is_idle() 
                     json!({
                         "auto_start": true,
                         "params": {
-                            "temperature_c": 70.0,
-                            "stirrer_rpm": 300.0,
-                            "heat_time_s": 900.0,
-                            "hold_time_s": 900.0
+                            "target_temp": 70.0,
+                            "stir_speed": 300.0,
+                            "heat_time": 900.0,
+                            "hold_time": 900.0
                         }
                     })
                     .to_string(),
@@ -7076,7 +7086,17 @@ async fn new_production_rejects_missing_persisted_active_batch_before_creating_b
                 .uri("/api/batches/start")
                 .header("authorization", auth_header("operator"))
                 .header("content-type", "application/json")
-                .body(Body::from(json!({ "name": "must not create" }).to_string()))
+                .body(Body::from(
+                    json!({
+                        "name": "must not create",
+                        "target_temperature_c": 82.0,
+                        "target_stirrer_rpm": 460.0,
+                        "target_shake_speed_cpm": 24.0,
+                        "heating_minutes": 75.0,
+                        "stirring_minutes": 65.0
+                    })
+                    .to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -7101,10 +7121,10 @@ async fn new_production_rejects_missing_persisted_active_batch_before_creating_b
                     json!({
                         "auto_start": true,
                         "params": {
-                            "temperature_c": 70.0,
-                            "stirrer_rpm": 300.0,
-                            "heat_time_s": 900.0,
-                            "hold_time_s": 900.0
+                            "target_temp": 70.0,
+                            "stir_speed": 300.0,
+                            "heat_time": 900.0,
+                            "hold_time": 900.0
                         }
                     })
                     .to_string(),
