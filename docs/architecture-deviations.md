@@ -26,7 +26,7 @@
 | D4 | 本地 LoRA 推理、自训练、自进化、GGUF 转换 | 上位机已实现 local_ai readiness、HTTP/命令式推理入口、训练数据集导出、训练入口编排、manifest 和显式候选 adapter 晋级/备份；真实模型资产、生产训练脚本、自动触发、自主评估和 RK 延迟报告未交付 | P0 部分完成 | PRD P0 卖点仍不能宣称完成，不能宣称 M2/M3 完成 | 算法侧提供模型/adapter/生产训练脚本/RK 报告；上位机继续接入真实 llama.cpp HTTP 或等效推理服务、生产审批流和 HMI 证据 |
 | D5 | 独立安全过滤器/安全进程 | `reactor-safety-guard` 已调用共享安全判断，不是空壳；外部进程等待已使用 `wait-timeout` 超时等待并在超时后 kill 子进程；release package 会携带 `reactor-safety-guard`，`run.sh` 和 systemd service 默认以 `--safety-guard` 启动；`scripts/verify-production-safety-guard.mjs` 已加入一键验收 | 部分完成 | 生产发布路径已启用独立 guard，但现场 watchdog 演练、低权限账号确认和故障注入证据仍不足 | 在 RK/现场补 systemd restart/watchdog 演练、最小权限运行账号确认、guard 异常/超时故障注入验收 |
 | D6 | 自动定期备份数据库、数据彻底擦除 | `install.sh` 会在停服务前校验 release 包完整性，缺二进制、OTA/备份脚本、unit、配置、build metadata 或 HMI 资源时先失败；`xingshu ops backup` 已使用 SQLite `VACUUM INTO` 生成在线快照；release package 已包含 `reactor-edge-backup.service/.timer` 和 `/opt/reactor-edge/current/backup.sh`，默认每日先用非阻塞锁串行化 timer/OTA 前备份，再写临时快照，确认非空、sha256 sidecar 校验通过且具备 SQLite header 后才发布为时间戳快照并更新 `latest.snapshot`；应用发布路径已改为 `/opt/reactor-edge/slots/{a,b}` + `current/previous`，`ota-update.sh` 覆盖板端命令预检、checksum sidecar 包名绑定校验、健康检查参数校验、tar 成员安全校验、managed slot 链接校验、状态不可证实时 fail-closed、忙碌/急停拦截、磁盘空间预检、`--dry-run` 不切槽预检、切槽前拒绝坏包/不安全现场时记录 `rejected_before_switch`、`BUILD-METADATA.properties` 构建追溯、更新前备份、失败 staging 清理、关键状态/slot/链接写入后 `sync` 落盘、开机 boot-check 对切槽前中断保留 current、切槽后中断恢复 previous、backend 每次启动前重跑 boot-check、backend/kiosk 启动限流、健康失败自动回滚和 OTA 状态日志，进入 failed 时清除健康检查临时放行并停止生产服务；`scripts/verify-install-board-preflight.sh`、`scripts/verify-production-backup-schedule.mjs`、`scripts/verify-production-backup-script.ps1`、`scripts/verify-ota-ab-release-path.mjs`、`scripts/verify-ota-systemd-boot-gate.mjs`、`scripts/verify-ota-tar-safety.sh`、`scripts/verify-ota-busy-state.sh`、`scripts/verify-ota-input-guards.sh`、`scripts/verify-ota-pre-switch-rejection.sh`、`scripts/verify-ota-cleanup.sh`、`scripts/verify-ota-slot-integrity.sh`、`scripts/verify-ota-command-preflight.sh`、`scripts/verify-ota-durability-sync.sh`、`scripts/verify-ota-boot-check.sh`、`scripts/verify-ota-failed-state.sh` 与 `scripts/verify-ota-dry-run.sh` 已纳入一键验收。`ops wipe` 已覆盖 SQLite 主文件、WAL/SHM/JOURNAL、`<db>.key` 和同目录 `backups/` 匹配快照，但 SSD/NVMe 物理擦除仍需运维 SOP | 部分完成 | 自动备份和应用级 A/B OTA 发布路径已补；仍缺现场恢复演练、备份保留/异地归档策略验收、真实 OTA 演练和退役介质物理擦除证据 | 在 RK/现场执行 timer、恢复演练、A/B 更新/失败回滚演练、NFS/离线归档和 blkdiscard/hdparm 等介质退役流程 |
-| D7 | PRD 2.2 非功能指标持续证明 | 已有本地 perf smoke 和 Windows debug 资源快照，但无 release/RK 长稳态 CI 断言 | 部分完成 | 可支持 PoC 说明，不能替代正式性能验收 | 在 RK/release 环境补 CPU、内存、采集延迟、RS485 丢包率、7x24 或 30 天报告 |
+| D7 | PRD 2.2 非功能指标持续证明 | 已有本地 perf smoke 和 Windows debug 资源快照；已针对 LubanCat 2 / RK3568 做 release 运行时调优（`[profile.release]` fat LTO + `codegen-units=1` + `panic=abort` + `strip`，tokio worker 限 2 线程，SQLite `synchronous=NORMAL`/`wal_autocheckpoint`/`temp_store=MEMORY`/`cache_size` 收敛），ARM64 交叉编译产出 stripped 二进制；但无 release/RK 长稳态 CI 断言，运行时内存/CPU 仍未在 ARM64 实测 | 部分完成 | 可支持 PoC 说明和"已为目标板调优"表述，不能替代正式性能验收 | 在 RK/QEMU 实测优化后二进制的内存/CPU/采集延迟，补 RS485 丢包率、7x24 或 30 天报告 |
 | D8 | 七大页面命名 | Vue 生产 HMI 当前按 PRD 七大页面提供 `monitor/control/ai/history/audit/modbus/settings` 七个 hash 路由；legacy `static/index.html` 历史证据中曾拆成 9 个 tab | 当前已对齐；legacy 证据需注明来源 | 当前 Vue HMI 不再因页面数量产生偏离；旧截图归档时需要说明是 legacy fallback 历史证据 | 正式验收以 Vue 七路由截图和用例为主，legacy 9-tab 截图仅作为回退能力证据 |
 | D9 | 双模型融合 AI 决策 | 当前是云端 StepFun 优先，本地优化器 fallback/补充；不是两个模型同时融合 | 部分完成 | AI 决策能力可演示，但不满足“融合模型”表述 | 明确当前策略为 cloud-first + local fallback；双模型融合另行排期 |
 | D10 | 防火墙/VPN、STM32 物理急停 | 当前应用层提供 TLS/RBAC/软件急停和状态字段；网络边界和物理急停属于部署/硬件 | 外部边界 | 上位机不能单独完成这些 PRD 项 | 部署文档补 iptables/VPN 建议；硬件侧提供急停信号上报链路和联调记录 |
@@ -113,6 +113,26 @@ PRD 和团队分工写的是七大页面。当前 Vue 生产 HMI 已按 PRD 七�
 - 不覆盖真实 RS485、STM32、执行器链路和本地 LoRA 模型权重。
 
 因此资源指标当前应标记为“本地快照通过 / 待正式稳态验收”，不能直接标记为“PRD 完全通过”。
+
+### 4.1 LubanCat 2 / RK3568 运行时调优（已做 / 待实测）
+
+已针对目标板 LubanCat 2（RK3568 / 4×Cortex-A55 / ARM64）做了一轮 release 运行时调优，目标是这类“长跑、低负载边缘进程”的二进制体积与常驻内存：
+
+- `Cargo.toml` 新增 `[profile.release]`：`lto = "fat"`、`codegen-units = 1`（跨 crate 内联、去死码）、`panic = "abort"`（去 unwind 表；代码无 `catch_unwind` 依赖，安全）、`strip = "symbols"`；保留 `overflow-checks = true` 不牺牲安全。
+- tokio 运行时限 2 worker 线程（默认每核一 worker，A55 上 4 个对低负载是浪费）。
+- SQLite 两条连接路径（rusqlite + SQLx pool）统一加 `synchronous=NORMAL`（WAL 下安全，减 fsync 与 eMMC 写放大）、`wal_autocheckpoint=400`、`temp_store=MEMORY`、`cache_size=-4096`（约 4 MiB）。
+
+已实测的客观产物（ARM64 交叉编译包 `dist/reactor-os-lubancat2-...`）：
+
+- 三个二进制 daemon / safety-guard / xingshu 均为 ARM aarch64、已 strip。
+- tar.gz 与 sha256 sidecar 校验通过，`run.sh` 默认带 `--safety-guard`。
+
+仍未取得的证据（本机无 ARM64 binfmt/QEMU，无法模拟执行优化后二进制）：
+
+- 优化后二进制在 RK3568/QEMU 上的实测内存（PRD <30MB）、单核 CPU 稳态（PRD <3%）。
+- 采集/控制延迟、RS485 丢包率、长稳态采样。
+
+因此对外只能说“已为 LubanCat 2 目标板做 release 运行时调优并产出 stripped ARM64 交付包”，**不能**说“已实测满足 PRD 内存/CPU 指标”——后者必须在真机或 ARM64 QEMU 上跑优化后二进制取数后才成立。
 
 ## 5. 优先级排期建议
 
