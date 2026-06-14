@@ -1,0 +1,136 @@
+[
+  {
+    "viewport": "desktop",
+    "route": "monitor",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:45\n更新于 23:42:45\n刷新\n现场读数\n实时监控\n实时传感器、报警和样本曲线\n采集链路在线\n加载实时数据\n温度\n44.9 C\n当前读数\n压力\n0.53 MPa\n当前读数\n搅拌\n303 rpm\n当前读数\n酸碱度\n6.35\n当前读数\n实时趋势\n25 条样本\n报警中心\n1 条\n级别\n类型\n说明\n当前/限值\n建议\n高\ndevice_status_unavailable\ndownstream device status unavailable; field state is not proven safe\n--\nverify downstream controller status before enabling control or starting production"
+  },
+  {
+    "viewport": "desktop",
+    "route": "control",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:45\n更新于 23:42:45\n刷新\n目标与联锁\n参数配置\n参数配置、安全限幅和执行前复核\n安全写入已接入\n目标写入\n通过后端 safety gate 写入目标温度、搅拌和摇速；后端会按配置限幅并写入审计链。\n目标温度 C\n搅拌转速 rpm\n摇速 cpm\n安全写入目标\n使用当前目标\n运行开关\n自动控制、人工锁定和急停都复用后端 RBAC、审计和安全状态。\n自动控制\n人工锁定\n触发急停\n复位急停\n复归控制故障\n工艺管理\n列出已有工艺、查看步骤、创建新工艺并通过 engineer/admin 角色写入。\n当前角色: engineer\n工艺名称\n22 / 80\n工艺说明\n20 / 240\n创建工艺\n刷新工艺列表\n工艺列表\n共 2\nID\n名称\n状态\n步骤\n操作\n2\n客户演示工艺 B - 高搅拌对照\n草稿\n2\n查看\n启动\n1\n客户演示工艺 A - 温和优化\n草稿\n3\n查看\n启动\n工艺详情\n查看选中工艺的步骤并通过 engineer/admin 添加新步骤。\n未选择\n先在工艺列表中点击查看，再返回此处添加步骤。\n当前运行\n显示当前活动批次、自动控制状态和最新目标。\n无活动批次\n自动控制已关闭\n目标温度\n60\nC\n搅拌转速\n300\nrpm\n摇速\n30\ncpm\n目标压力\n0.5\nMPa\n停止当前工艺\n安全边界\n当前运行目标与配置限幅用于操作员复核。\n温度上限\t160 C\n温度下限\t20 C\n搅拌上限\t1200 rpm\n当前角色\tengineer\n急停状态\t正常\n控制故障\t无\n批次恢复\t无\n最近批次\n按时间倒序显示最近 8 个批次及其结果。\n6 条\nID\n名称\n工艺\n状态\n开始\n结束\n产品结果\n1\nDEMO-Batch-037 低温短时\n1\n--\n2026-06-13T15:42:18.939024Z\n2026-06-13T15:42:18.939079600Z\n未命名 · 61.2%\n2\nDEMO-Batch-038 搅拌不足\n1\n--\n2026-06-13T15:42:18.939203900Z\n2026-06-13T15:42:18.939251500Z\n未命名 · 64.7%\n3\nDEMO-Batch-039 基准参数\n1\n--\n2026-06-13T15:42:18.939354100Z\n2026-06-13T15:42:18.939557900Z\n未命名 · 74.8"
+  },
+  {
+    "viewport": "desktop",
+    "route": "ai",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:45\n更新于 23:42:45\n刷新\n模型与优化\nAI 决策\n本地模型边界、推荐来源、AI 主控 dry-run/execute 和 SOP 草案\n未启用\n刷新推荐\n基础模型入口\t否\nLoRA 推理闭环\t否\n训练就绪\t否\nPRD LoRA/RK 闭环\t否\n推理端点\t--\n模型路径\t--\n适配器路径\t--\n本地优化器\t已激活\n最新推荐来源\n本地优化器\n等待 AI 推荐上下文。\n参考批次:6\n推荐内容\nDEMO: AI 识别到高搅拌/长保温在安全范围内但产率下降；建议靠近温和优化区域。Based on the top 3 batches from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/trend-correction optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and elite trend correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference batches.\n目标温度 C\n93.45\nC\n目标搅拌 rpm\n556.96\nrpm\n加热时长 min\n94.49\nmin\n搅拌时长 min\n75.63\nmin\n预期分数\n84.8\n/100\n当前摇速 cpm（来源：runtime）\t30\n当前压力 MPa（来源：runtime）\t0.5\nAI 主控\n默认仅 dry-run，operator 复核后再以 execute 提交；执行会受 RBAC、急停、人工锁定、传感器新鲜度共同约束。\n意图\n寻优并控制\n允许工艺启动\n允许工艺停止\n允许部件控制\n允许目标调整\nDry-run\nExecute (受 RBAC 约束)\nAI 结果复核\n尚未生成 dry-run 或 execute 结果。先运行 Dry-run，可在这里复核决策摘要、动作复核、安全门控和推荐目标。\n决"
+  },
+  {
+    "viewport": "desktop",
+    "route": "history",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:50\n更新于 23:42:50\n刷新\n批次与导出\n历史数据\n批次、产物结果、报告与 CSV/XLSX 导出\n6 / 6 批次\n导出 CSV\n导出 XLSX\n刷新\n历史筛选\n本地联动\n搜索\n状态\n全部状态\n产物比例\n全部比例\n清空筛选\nID\n批次\n工艺\n状态\n产物比例\n产率 %\n开始\n结束\n1\nDEMO-Batch-037 低温短时\n1\n--\n0.66\n61.2\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n2\nDEMO-Batch-038 搅拌不足\n1\n--\n0.7\n64.7\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n3\nDEMO-Batch-039 基准参数\n1\n--\n0.81\n74.8\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n4\nDEMO-Batch-040 高搅拌对照\n2\n--\n0.74\n67.5\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n5\nDEMO-Batch-041 温和优化\n1\n--\n0.88\n82.4\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n6\nDEMO-Batch-042 延长保温\n1\n--\n0.84\n78.1\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n批次详情\n选择左侧批次查看详情和报告。\n产物结果录入\n驱动 AI 推荐更新\n批次\n#1 - DEMO-Batch-037 低温短时\n产率 %\n产物比例\n备注\n保存产物结果\n产物结果\n6 / 6 条\n批次\n产率 %\n产物比例\n目标温度\n目标搅拌\n加热时长\n搅拌时长\n1\n61.2\n0.66\n72\n420\n70\n58\n2\n64.7\n0.7\n84\n360\n82\n66\n3\n74.8\n0.81\n92\n520\n95\n72\n4\n67.5\n0.74\n118\n820\n125\n95\n5\n82.4\n0.88\n96\n560\n92\n78\n6\n78.1\n0.84\n98\n580\n120\n110"
+  },
+  {
+    "viewport": "desktop",
+    "route": "audit",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:50\n更新于 23:42:50\n刷新\n防篡改链\n审计日志\n操作事件、哈希链校验和 CSV 导出权限\n链校验通过\n窗口通过\n哈希事件总数\n1\n已写入防篡改链的事件数\n本次校验\n1\n1 -> 1\n链式事件\n1\n具有 previous_hash 的连续事件\n断链事件\n0\n校验窗口内发现的断链数量\n事件类型\n全部事件\n每页条数\n查询审计\n导出 CSV\n校验窗口\n上限 10000 · 已截断 否\n最后事件哈希 d775991a2c3a371430baceecf974c74c467121630f11e7047ebe9423440d1d52\n事件列表\n第 1 页，共 1 条\n#\n时间\n事件\n目标\n原因\n哈希\n1\n2026-06-13T15:42:18.944208500Z\ndemo_seed_applied\n-- C / -- rpm\nDEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only\nd775991a2c3a371430baceecf974c74c467121630f11e7047ebe9423440d1d52\n上一页\n下一页"
+  },
+  {
+    "viewport": "desktop",
+    "route": "modbus",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:50\n更新于 23:42:50\n刷新\n寄存器读写\nModbus 调试\n寄存器映射、调试权限和第三方接口验收\n仅管理员可写\n寄存器调试\n读操作可直接执行；写操作仅允许管理员，并且必须填写非空审计原因。\n读寄存器\ntarget_temperature_c @10\n写寄存器\ntarget_temperature_c @10\n写入值\n审计原因\n27 / 160\n读取寄存器\n写入并读回\n调试结果\n写入结果展示 requested/applied/raw，读回结果展示 runtime 或传感器来源。\n集成接口状态\nModbus / MQTT / AINAS / LoRA 边界\nModbus TCP\n否\n0.0.0.0:502\nMQTT\n否\n127.0.0.1:8883\nAINAS\n是\n是\n基础模型入口\n否\n--\nLoRA 推理闭环\n否\n--\nPRD LoRA/RK 闭环\n否\n未启用\n保持/输入寄存器\n15 个映射\n地址\n名称\n访问\n单位\n当前值\n原始值\n0\ntemperature_c\nread\n47.61\n476\n1\nstirrer_rpm\nread\n298.7\n299\n2\npressure_mpa\nread\n0.53\n53\n3\nshake_speed_cpm\nread\n30\n30\n4\ntilt_angle_deg\nread\n5.62\n5062\n5\nflow_rate_l_min\nread\n1.69\n169\n6\nproduct_concentration_percent\nread\n11.34\n113\n7\nph\nread\n6.35\n635\n10\ntarget_temperature_c\nwrite\n60\n600\n11\ntarget_stirrer_rpm\nwrite\n300\n300\n12\ntarget_shake_speed_cpm\nwrite\n30\n30\n13\ntarget_pressure_mpa\nwrite\n0.5\n50\n14\nheat_time_s\nwrite\n300\n300\n15\nhold_time_s\nwrite\n600\n600\n16\ncool_time_s\nwrite\n180\n180\n线圈\n4 个映射\n地址\n名称\n访问\n0\nauto_enabled\nread_write\n1\nmanual_lock\nread_write\n2\nemergency_stop\nread"
+  },
+  {
+    "viewport": "desktop",
+    "route": "settings",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 1440,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:50\n更新于 23:42:50\n刷新\n系统配置\n系统配置\n设备、安全、AI、集成、存储、权限和端点矩阵\n角色: engineer\n已登录\n设备模式\t管线模式\n设备驱动\t管线模式\n推荐 provider\tlocal-ga-sa-pid\nProvider 模式\t本地优化器\nAI 模式\t未启用\n基础模型入口\t否\nLoRA 推理闭环\t否\nLoRA 训练就绪\t否\nPRD LoRA/RK 闭环\t否\nAI 记忆\tlab-poc-waterlike-reaction / 2026-05-22\n参考批次\t3\n禁区数量\t2\n存储安全\n算法:AES-256-GCM\n启用:是\n密钥来源:XINGSHU_DB_ENCRYPTION_KEY\n加密字段:integration_tasks.request_json, integration_tasks.response_json\n温度上限\t160 C\n温度下限\t20 C\n温度步长\t2 C / call\n搅拌上限\t1200 rpm\n搅拌步长\t50 rpm / call\n控制间隔\t2000 ms\n传感器超时\t6000 ms\n安全进程超时\t1000 ms\n优化器温度区间\t35 - 140 C\n优化器转速区间\t100 - 1000 rpm\n禁区\n名称\n温度区间\n转速区间\n说明\nhot-low-stir\n125 - 160\n0 - 350\nHigh temperature with weak mixing is blocked at the control layer.\nMQTT\n未启用\n127.0.0.1:8883\nModbus RTU\n未启用\n已配置 TLS\nModbus TCP\n未启用\n0.0.0.0:502\nAINAS\n已接入\n是\nREST API\n已上线\n--\nCLI\n已发布\nxingshu\n集成状态\nMQTT: --\nModbus TCP: --\n权限矩阵\n本地用户名/密码登录会签发 Bearer 会话；写入和导出操作会按角色权限校验。\n认证:Bearer 会话认证\n模式:本地角色策略\n默认用户:operator (操作员), engineer (工程师), admin (管理员)\n角色\n能力数\n能力\n操作员\n7\n查看监控, 查看历史, 导出报告, 启停工艺, 写入安全目标, 应用 AI 建议, 急停控制\n工程师\n12\n查看监控, 查看历史"
+  },
+  {
+    "viewport": "desktop",
+    "route": "control-boundary",
+    "boundary": {
+      "attempted": true,
+      "inputCount": 3,
+      "primaryBtnCount": 4,
+      "status": 400,
+      "body": "{\"code\":400,\"message\":\"temperature_c: target_temp exceeds device maximum temperature 160.0\",\"data\":{\"error\":\"temperature_c: target_temp exceeds device maximum temperature 160.0\"}}"
+    }
+  },
+  {
+    "viewport": "mobile",
+    "route": "monitor",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:56\n更新于 23:42:56\n刷新\n现场读数\n实时监控\n实时传感器、报警和样本曲线\n采集链路在线\n加载实时数据\n温度\n50.9 C\n当前读数\n压力\n0.54 MPa\n当前读数\n搅拌\n294 rpm\n当前读数\n酸碱度\n6.35\n当前读数\n实时趋势\n36 条样本\n报警中心\n1 条\n级别\n类型\n说明\n当前/限值\n建议\n高\ndevice_status_unavailable\ndownstream device status unavailable; field state is not proven safe\n--\nverify downstream controller status before enabling control or starting production"
+  },
+  {
+    "viewport": "mobile",
+    "route": "control",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:56\n更新于 23:42:56\n刷新\n目标与联锁\n参数配置\n参数配置、安全限幅和执行前复核\n安全写入已接入\n目标写入\n通过后端 safety gate 写入目标温度、搅拌和摇速；后端会按配置限幅并写入审计链。\n目标温度 C\n搅拌转速 rpm\n摇速 cpm\n安全写入目标\n使用当前目标\n运行开关\n自动控制、人工锁定和急停都复用后端 RBAC、审计和安全状态。\n自动控制\n人工锁定\n触发急停\n复位急停\n复归控制故障\n工艺管理\n列出已有工艺、查看步骤、创建新工艺并通过 engineer/admin 角色写入。\n当前角色: engineer\n工艺名称\n22 / 80\n工艺说明\n20 / 240\n创建工艺\n刷新工艺列表\n工艺列表\n共 2\nID\n名称\n状态\n步骤\n操作\n2\n客户演示工艺 B - 高搅拌对照\n草稿\n2\n查看\n启动\n1\n客户演示工艺 A - 温和优化\n草稿\n3\n查看\n启动\n工艺详情\n查看选中工艺的步骤并通过 engineer/admin 添加新步骤。\n未选择\n先在工艺列表中点击查看，再返回此处添加步骤。\n当前运行\n显示当前活动批次、自动控制状态和最新目标。\n无活动批次\n自动控制已关闭\n目标温度\n60\nC\n搅拌转速\n300\nrpm\n摇速\n30\ncpm\n目标压力\n0.5\nMPa\n停止当前工艺\n安全边界\n当前运行目标与配置限幅用于操作员复核。\n温度上限\t160 C\n温度下限\t20 C\n搅拌上限\t1200 rpm\n当前角色\tengineer\n急停状态\t正常\n控制故障\t无\n批次恢复\t无\n最近批次\n按时间倒序显示最近 8 个批次及其结果。\n6 条\nID\n名称\n工艺\n状态\n开始\n结束\n产品结果\n1\nDEMO-Batch-037 低温短时\n1\n--\n2026-06-13T15:42:18.939024Z\n2026-06-13T15:42:18.939079600Z\n未命名 · 61.2%\n2\nDEMO-Batch-038 搅拌不足\n1\n--\n2026-06-13T15:42:18.939203900Z\n2026-06-13T15:42:18.939251500Z\n未命名 · 64.7%\n3\nDEMO-Batch-039 基准参数\n1\n--\n2026-06-13T15:42:18.939354100Z\n2026-06-13T15:42:18.939557900Z\n未命名 · 74.8"
+  },
+  {
+    "viewport": "mobile",
+    "route": "ai",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:56\n更新于 23:42:56\n刷新\n模型与优化\nAI 决策\n本地模型边界、推荐来源、AI 主控 dry-run/execute 和 SOP 草案\n未启用\n刷新推荐\n基础模型入口\t否\nLoRA 推理闭环\t否\n训练就绪\t否\nPRD LoRA/RK 闭环\t否\n推理端点\t--\n模型路径\t--\n适配器路径\t--\n本地优化器\t已激活\n最新推荐来源\n本地优化器\n等待 AI 推荐上下文。\n参考批次:6\n推荐内容\nDEMO: AI 识别到高搅拌/长保温在安全范围内但产率下降；建议靠近温和优化区域。Based on the top 3 batches from 6 recorded and 3 file reference outcomes; best batch -468837 reached yield 84.00% and product ratio 0.880. Local GA/SA/trend-correction optimizer searched with genetic crossover/mutation, simulated annealing acceptance, and elite trend correction. Memory profile lab-poc-waterlike-reaction v2026-05-22 applied; 2 forbidden zones checked. Included 3 file reference batches.\n目标温度 C\n93.45\nC\n目标搅拌 rpm\n556.96\nrpm\n加热时长 min\n94.49\nmin\n搅拌时长 min\n75.63\nmin\n预期分数\n84.8\n/100\n当前摇速 cpm（来源：runtime）\t30\n当前压力 MPa（来源：runtime）\t0.5\nAI 主控\n默认仅 dry-run，operator 复核后再以 execute 提交；执行会受 RBAC、急停、人工锁定、传感器新鲜度共同约束。\n意图\n寻优并控制\n允许工艺启动\n允许工艺停止\n允许部件控制\n允许目标调整\nDry-run\nExecute (受 RBAC 约束)\nAI 结果复核\n尚未生成 dry-run 或 execute 结果。先运行 Dry-run，可在这里复核决策摘要、动作复核、安全门控和推荐目标。\n决"
+  },
+  {
+    "viewport": "mobile",
+    "route": "history",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:42:56\n更新于 23:42:56\n刷新\n批次与导出\n历史数据\n批次、产物结果、报告与 CSV/XLSX 导出\n6 / 6 批次\n导出 CSV\n导出 XLSX\n刷新\n历史筛选\n本地联动\n搜索\n状态\n全部状态\n产物比例\n全部比例\n清空筛选\nID\n批次\n工艺\n状态\n产物比例\n产率 %\n开始\n结束\n1\nDEMO-Batch-037 低温短时\n1\n--\n0.66\n61.2\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n2\nDEMO-Batch-038 搅拌不足\n1\n--\n0.7\n64.7\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n3\nDEMO-Batch-039 基准参数\n1\n--\n0.81\n74.8\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n4\nDEMO-Batch-040 高搅拌对照\n2\n--\n0.74\n67.5\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n5\nDEMO-Batch-041 温和优化\n1\n--\n0.88\n82.4\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n6\nDEMO-Batch-042 延长保温\n1\n--\n0.84\n78.1\n2026-06-13 23:42:18\n2026-06-13 23:42:18\n批次详情\n选择左侧批次查看详情和报告。\n产物结果录入\n驱动 AI 推荐更新\n批次\n#1 - DEMO-Batch-037 低温短时\n产率 %\n产物比例\n备注\n保存产物结果\n产物结果\n6 / 6 条\n批次\n产率 %\n产物比例\n目标温度\n目标搅拌\n加热时长\n搅拌时长\n1\n61.2\n0.66\n72\n420\n70\n58\n2\n64.7\n0.7\n84\n360\n82\n66\n3\n74.8\n0.81\n92\n520\n95\n72\n4\n67.5\n0.74\n118\n820\n125\n95\n5\n82.4\n0.88\n96\n560\n92\n78\n6\n78.1\n0.84\n98\n580\n120\n110"
+  },
+  {
+    "viewport": "mobile",
+    "route": "audit",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:43:01\n更新于 23:43:01\n刷新\n防篡改链\n审计日志\n操作事件、哈希链校验和 CSV 导出权限\n链校验通过\n窗口通过\n哈希事件总数\n1\n已写入防篡改链的事件数\n本次校验\n1\n1 -> 1\n链式事件\n1\n具有 previous_hash 的连续事件\n断链事件\n0\n校验窗口内发现的断链数量\n事件类型\n全部事件\n每页条数\n查询审计\n导出 CSV\n校验窗口\n上限 10000 · 已截断 否\n最后事件哈希 d775991a2c3a371430baceecf974c74c467121630f11e7047ebe9423440d1d52\n事件列表\n第 1 页，共 1 条\n#\n时间\n事件\n目标\n原因\n哈希\n1\n2026-06-13T15:42:18.944208500Z\ndemo_seed_applied\n-- C / -- rpm\nDEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only\nd775991a2c3a371430baceecf974c74c467121630f11e7047ebe9423440d1d52\n上一页\n下一页"
+  },
+  {
+    "viewport": "mobile",
+    "route": "modbus",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:43:01\n更新于 23:43:01\n刷新\n寄存器读写\nModbus 调试\n寄存器映射、调试权限和第三方接口验收\n仅管理员可写\n寄存器调试\n读操作可直接执行；写操作仅允许管理员，并且必须填写非空审计原因。\n读寄存器\ntarget_temperature_c @10\n写寄存器\ntarget_temperature_c @10\n写入值\n审计原因\n27 / 160\n读取寄存器\n写入并读回\n调试结果\n写入结果展示 requested/applied/raw，读回结果展示 runtime 或传感器来源。\n集成接口状态\nModbus / MQTT / AINAS / LoRA 边界\nModbus TCP\n否\n0.0.0.0:502\nMQTT\n否\n127.0.0.1:8883\nAINAS\n是\n是\n基础模型入口\n否\n--\nLoRA 推理闭环\n否\n--\nPRD LoRA/RK 闭环\n否\n未启用\n保持/输入寄存器\n15 个映射\n地址\n名称\n访问\n单位\n当前值\n原始值\n0\ntemperature_c\nread\n53.66\n537\n1\nstirrer_rpm\nread\n292.09\n292\n2\npressure_mpa\nread\n0.54\n54\n3\nshake_speed_cpm\nread\n30\n30\n4\ntilt_angle_deg\nread\n23.06\n6806\n5\nflow_rate_l_min\nread\n1.69\n169\n6\nproduct_concentration_percent\nread\n11.43\n114\n7\nph\nread\n6.35\n635\n10\ntarget_temperature_c\nwrite\n60\n600\n11\ntarget_stirrer_rpm\nwrite\n300\n300\n12\ntarget_shake_speed_cpm\nwrite\n30\n30\n13\ntarget_pressure_mpa\nwrite\n0.5\n50\n14\nheat_time_s\nwrite\n300\n300\n15\nhold_time_s\nwrite\n600\n600\n16\ncool_time_s\nwrite\n180\n180\n线圈\n4 个映射\n地址\n名称\n访问\n0\nauto_enabled\nread_write\n1\nmanual_lock\nread_write\n2\nemergency_stop\nre"
+  },
+  {
+    "viewport": "mobile",
+    "route": "settings",
+    "errors": [],
+    "hScroll": false,
+    "scrollW": 393,
+    "bodyText": "XS\nReactorOS HMI\n边缘控制上位机\n实时监控\n传感器与曲线\n参数配置\n安全限幅\nAI 决策\n推荐与复核\n历史数据\n批次与结果\n审计日志\n哈希链\nModbus 调试\n寄存器映射\n系统配置\n设备与安全\n会话\nengineer\n工程师\n操作员\n工程师\n管理员\n退出登录\n星宿智能反应釜上位机\n可审计 · 可离线 · 安全限幅\n中文\nEN\nreactor-edge-daemon\n现场 23:43:01\n更新于 23:43:01\n刷新\n系统配置\n系统配置\n设备、安全、AI、集成、存储、权限和端点矩阵\n角色: engineer\n已登录\n设备模式\t管线模式\n设备驱动\t管线模式\n推荐 provider\tlocal-ga-sa-pid\nProvider 模式\t本地优化器\nAI 模式\t未启用\n基础模型入口\t否\nLoRA 推理闭环\t否\nLoRA 训练就绪\t否\nPRD LoRA/RK 闭环\t否\nAI 记忆\tlab-poc-waterlike-reaction / 2026-05-22\n参考批次\t3\n禁区数量\t2\n存储安全\n算法:AES-256-GCM\n启用:是\n密钥来源:XINGSHU_DB_ENCRYPTION_KEY\n加密字段:integration_tasks.request_json, integration_tasks.response_json\n温度上限\t160 C\n温度下限\t20 C\n温度步长\t2 C / call\n搅拌上限\t1200 rpm\n搅拌步长\t50 rpm / call\n控制间隔\t2000 ms\n传感器超时\t6000 ms\n安全进程超时\t1000 ms\n优化器温度区间\t35 - 140 C\n优化器转速区间\t100 - 1000 rpm\n禁区\n名称\n温度区间\n转速区间\n说明\nhot-low-stir\n125 - 160\n0 - 350\nHigh temperature with weak mixing is blocked at the control layer.\nMQTT\n未启用\n127.0.0.1:8883\nModbus RTU\n未启用\n已配置 TLS\nModbus TCP\n未启用\n0.0.0.0:502\nAINAS\n已接入\n是\nREST API\n已上线\n--\nCLI\n已发布\nxingshu\n集成状态\nMQTT: --\nModbus TCP: --\n权限矩阵\n本地用户名/密码登录会签发 Bearer 会话；写入和导出操作会按角色权限校验。\n认证:Bearer 会话认证\n模式:本地角色策略\n默认用户:operator (操作员), engineer (工程师), admin (管理员)\n角色\n能力数\n能力\n操作员\n7\n查看监控, 查看历史, 导出报告, 启停工艺, 写入安全目标, 应用 AI 建议, 急停控制\n工程师\n12\n查看监控, 查看历史"
+  },
+  {
+    "viewport": "mobile",
+    "route": "control-boundary",
+    "boundary": {
+      "attempted": true,
+      "inputCount": 3,
+      "primaryBtnCount": 4,
+      "status": 400,
+      "body": "{\"code\":400,\"message\":\"temperature_c: target_temp exceeds device maximum temperature 160.0\",\"data\":{\"error\":\"temperature_c: target_temp exceeds device maximum temperature 160.0\"}}"
+    }
+  }
+]

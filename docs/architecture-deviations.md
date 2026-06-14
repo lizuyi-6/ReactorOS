@@ -79,6 +79,7 @@ Vue 工艺生命周期切片（`/#/control` 工艺/批次面板、`src/stores/pl
 - systemd unit 已有 `NoNewPrivileges=true`、`PrivateTmp=true`、`ProtectSystem=full`、`ProtectHome=true` 和服务用户/组配置。
 - 仍缺现场 RK/生产环境的 watchdog 重启演练、低权限账号确认、guard 异常/超时故障注入记录和安全扫描报告。
 - 独立进程 JSON 往返 p95 在本地 debug 快照中约 315ms，只适合作为诊断路径，不应被当作控制计算本身耗时。
+- **子进程不可用时的降级语义（需明确）**：当 `reactor-safety-guard` 子进程超时、退出或返回非预期响应时，daemon **不会**保守停机，而是回退到进程内 `evaluate_safety_request`（与子进程同一套 `decide_control_with_device_status` 联锁逻辑）继续做安全判定。设计取舍是避免子进程偶发抖动导致生产频繁急停；代价是"主进程被漏洞/状态污染时仍由主进程自救"这层隔离在子进程不可用期间不成立。对外不应表述为"子进程超时即触发停机"，应表述为"子进程不可用 ⇒ 降级到非隔离判定，自动控制继续按同一套联锁运行；要恢复隔离需保证子进程可用"。生产侧应把 guard 子进程不可用纳入监控告警。
 
 对外应表述为“安全逻辑已实现，独立进程可运行；生产级隔离和 watchdog 验收待补”。
 
