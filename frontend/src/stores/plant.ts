@@ -49,6 +49,60 @@ export interface AiControlRequest {
   intent?: string;
 }
 
+export interface ComponentControlPayload {
+  action: string;
+  value?: string | number | boolean;
+  reason?: string;
+}
+
+export interface AinasTaskPayload {
+  external_task_id?: string;
+  action: string;
+  process_id?: number | null;
+  target_temperature_c?: number | null;
+  target_stirrer_rpm?: number | null;
+  target_shake_speed_cpm?: number | null;
+  target_pressure_mpa?: number | null;
+  heat_time_s?: number | null;
+  hold_time_s?: number | null;
+  cool_time_s?: number | null;
+  reason?: string;
+}
+
+/** PATCH-style update for PUT /api/processes/:id — all fields optional, omitted = keep. */
+export interface UpdateProcessPayload {
+  name?: string;
+  description?: string;
+  status?: string;
+}
+
+/** PUT /api/processes/:id/steps/:step_id — full step (same shape as ProcessStepPayload). */
+export type UpdateProcessStepPayload = ProcessStepPayload;
+
+/** POST /api/batches/start — at least one of these must be set (backend rejects all-absent). */
+export interface StartBatchPayload {
+  name?: string;
+  process_id?: number | null;
+  target_temperature_c?: number | null;
+  target_stirrer_rpm?: number | null;
+  target_shake_speed_cpm?: number | null;
+  heating_minutes?: number | null;
+  stirring_minutes?: number | null;
+}
+
+/** POST /api/processes/:id/stop — reason is optional. */
+export interface StopProcessPayload {
+  reason?: string;
+}
+
+/** v1 realtime query window for GET /api/v1/reactor/:id/history. */
+export interface HistoryQueryOptions {
+  startTime?: string;
+  endTime?: string;
+  page?: number;
+  pageSize?: number;
+}
+
 interface RequestOptions {
   method?: HttpMethod;
   body?: unknown;
@@ -126,9 +180,18 @@ export const usePlantStore = defineStore("plant", () => {
   const selectedProcess = ref<ApiRecord | null>(null);
   const batches = ref<ApiRecord | null>(null);
   const recommendation = ref<ApiRecord | null>(null);
+  const demoContext = ref<ApiRecord | null>(null);
+  const deviceStatus = ref<ApiRecord | null>(null);
+  const deviceCapabilities = ref<ApiRecord | null>(null);
+  const permissionRoles = ref<ApiRecord | null>(null);
+  const ainasTasks = ref<ApiRecord[]>([]);
+  const selectedAinasTask = ref<ApiRecord | null>(null);
   const runtimeFallback = ref<ApiRecord | null>(null);
   const liveStatus = ref<"fresh" | "unavailable">("unavailable");
   const liveLastUpdated = ref<string | null>(null);
+  const realtimeConnected = ref(false);
+  let realtimeSocket: WebSocket | null = null;
+  let realtimeReconnectTimer: number | null = null;
   const loading = ref(false);
   const error = ref<string | null>(null);
   const lastUpdated = ref<string | null>(null);
@@ -255,6 +318,12 @@ export const usePlantStore = defineStore("plant", () => {
     selectedProcess.value = null;
     batches.value = null;
     recommendation.value = null;
+    demoContext.value = null;
+    deviceStatus.value = null;
+    deviceCapabilities.value = null;
+    permissionRoles.value = null;
+    ainasTasks.value = [];
+    selectedAinasTask.value = null;
     runtimeFallback.value = null;
     liveStatus.value = "unavailable";
     liveLastUpdated.value = null;
@@ -303,6 +372,72 @@ export const usePlantStore = defineStore("plant", () => {
     if (Array.isArray(processesPayload)) processes.value = processesPayload;
     if (batchesPayload && typeof batchesPayload === "object") batches.value = batchesPayload;
     if (recommendationPayload && typeof recommendationPayload === "object") recommendation.value = recommendationPayload;
+  }
+
+  async function loadDemoContext(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/demo/context", { auth: false });
+    demoContext.value = response;
+    return response;
+  }
+
+  async function loadDeviceStatus(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/devices/status", { auth: false });
+    deviceStatus.value = response;
+    return response;
+  }
+
+  async function loadDeviceCapabilities(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/devices/capabilities", { auth: false });
+    deviceCapabilities.value = response;
+    return response;
+  }
+
+  async function loadPermissionRoles(): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/permissions/roles", { auth: false });
+    permissionRoles.value = response;
+    return response;
+  }
+
+  async function controlDeviceComponent(
+    deviceId: string,
+    componentId: string,
+    payload: ComponentControlPayload
+  ): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(
+      `/api/devices/${encodeURIComponent(deviceId)}/components/${encodeURIComponent(componentId)}/control`,
+      {
+        method: "POST",
+        body: payload
+      }
+    );
+    await loadDeviceStatus();
+    await loadDeviceCapabilities();
+    await refreshLive();
+    return response;
+  }
+
+  async function loadAinasTasks(limit = 20): Promise<ApiRecord[]> {
+    const response = await request<ApiRecord[]>(`/api/integrations/ainas/tasks?limit=${limit}`);
+    ainasTasks.value = Array.isArray(response) ? response : [];
+    return ainasTasks.value;
+  }
+
+  async function loadAinasTask(id: number): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/integrations/ainas/tasks/${id}`);
+    selectedAinasTask.value = response;
+    return response;
+  }
+
+  async function createAinasTask(payload: AinasTaskPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/integrations/ainas/tasks", {
+      method: "POST",
+      body: payload
+    });
+    selectedAinasTask.value = response;
+    await loadAinasTasks();
+    await refreshLive();
+    await refreshProtected();
+    return response;
   }
 
   async function refreshAll(): Promise<void> {
@@ -507,6 +642,138 @@ export const usePlantStore = defineStore("plant", () => {
     return response;
   }
 
+  async function updateProcess(processId: number, payload: UpdateProcessPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}`, { method: "PUT", body: payload });
+    await refreshProtected();
+    return response;
+  }
+
+  async function updateProcessStep(
+    processId: number,
+    stepId: number,
+    payload: UpdateProcessStepPayload
+  ): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}/steps/${stepId}`, {
+      method: "PUT",
+      body: payload
+    });
+    await refreshProtected();
+    return response;
+  }
+
+  async function applyProcess(processId: number): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}/apply`, { method: "POST" });
+    await refreshLive();
+    await refreshProtected();
+    return response;
+  }
+
+  async function stopProcessById(processId: number, reason?: string): Promise<ApiRecord> {
+    const response = await request<ApiRecord>(`/api/processes/${processId}/stop`, {
+      method: "POST",
+      body: { reason: reason ?? null }
+    });
+    await refreshLive();
+    await refreshProtected();
+    return response;
+  }
+
+  async function startBatch(payload: StartBatchPayload): Promise<ApiRecord> {
+    const response = await request<ApiRecord>("/api/batches/start", { method: "POST", body: payload });
+    await refreshLive();
+    await refreshProtected();
+    return response;
+  }
+
+  async function finishBatch(batchId: number): Promise<void> {
+    await request<void>(`/api/batches/${batchId}/finish`, { method: "POST" });
+    await refreshLive();
+    await refreshProtected();
+  }
+
+  async function loadRealtime(deviceId: string): Promise<ApiRecord> {
+    return request<ApiRecord>(`/api/v1/reactor/${encodeURIComponent(deviceId)}/realtime`);
+  }
+
+  async function loadHistory(deviceId: string, options: HistoryQueryOptions = {}): Promise<ApiRecord> {
+    const params = new URLSearchParams();
+    if (options.startTime) params.set("start_time", options.startTime);
+    if (options.endTime) params.set("end_time", options.endTime);
+    if (options.page !== undefined) params.set("page", String(options.page));
+    if (options.pageSize !== undefined) params.set("page_size", String(options.pageSize));
+    const query = params.toString();
+    const path = `/api/v1/reactor/${encodeURIComponent(deviceId)}/history${query ? `?${query}` : ""}`;
+    return request<ApiRecord>(path, { allowFailure: true });
+  }
+
+  // WebSocket realtime push (/ws/v1/reactor/:id/realtime, ~1 Hz from backend).
+  // The WS payload is a single-device realtime snapshot, NOT the full /api/live
+  // aggregate — so on each push we trigger a lightweight refreshLive() rather
+  // than replace `live` (which would drop batches/processes/recommendation).
+  // Net effect: latency drops from the 5 s poll to "push → refresh".
+  function connectRealtimeSocket(deviceId: string): void {
+    if (typeof WebSocket === "undefined") return;
+    disconnectRealtimeSocket();
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${window.location.host}/ws/v1/reactor/${encodeURIComponent(deviceId)}/realtime`;
+    try {
+      realtimeSocket = new WebSocket(url);
+    } catch {
+      scheduleReconnect(deviceId);
+      return;
+    }
+    realtimeSocket.onopen = () => {
+      realtimeConnected.value = true;
+    };
+    realtimeSocket.onclose = () => {
+      realtimeConnected.value = false;
+      scheduleReconnect(deviceId);
+    };
+    realtimeSocket.onerror = () => {
+      realtimeConnected.value = false;
+      try {
+        realtimeSocket?.close();
+      } catch {
+        /* ignore */
+      }
+    };
+    realtimeSocket.onmessage = () => {
+      // Any push means the pipeline is alive — refresh the aggregate. We do not
+      // parse the payload into live directly (shape mismatch with /api/live);
+      // a refresh keeps batches/processes/recommendation consistent.
+      void refreshLive();
+    };
+  }
+
+  function scheduleReconnect(deviceId: string): void {
+    if (realtimeReconnectTimer !== null) return;
+    realtimeReconnectTimer = window.setTimeout(() => {
+      realtimeReconnectTimer = null;
+      connectRealtimeSocket(deviceId);
+    }, 3000);
+  }
+
+  function disconnectRealtimeSocket(): void {
+    if (realtimeReconnectTimer !== null) {
+      window.clearTimeout(realtimeReconnectTimer);
+      realtimeReconnectTimer = null;
+    }
+    if (realtimeSocket) {
+      const sock = realtimeSocket;
+      realtimeSocket = null;
+      sock.onclose = null;
+      sock.onerror = null;
+      sock.onmessage = null;
+      sock.onopen = null;
+      try {
+        sock.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    realtimeConnected.value = false;
+  }
+
   return {
     token,
     user,
@@ -523,9 +790,16 @@ export const usePlantStore = defineStore("plant", () => {
     selectedProcess,
     batches,
     recommendation,
+    demoContext,
+    deviceStatus,
+    deviceCapabilities,
+    permissionRoles,
+    ainasTasks,
+    selectedAinasTask,
     runtimeFallback,
     liveStatus,
     liveLastUpdated,
+    realtimeConnected,
     loading,
     error,
     lastUpdated,
@@ -544,6 +818,14 @@ export const usePlantStore = defineStore("plant", () => {
     triggerEmergencyStop,
     resetEmergencyStop,
     resetControlFault,
+    loadDemoContext,
+    loadDeviceStatus,
+    loadDeviceCapabilities,
+    loadPermissionRoles,
+    controlDeviceComponent,
+    loadAinasTasks,
+    loadAinasTask,
+    createAinasTask,
     readModbusRegister,
     writeModbusRegister,
     loadAudit,
@@ -562,6 +844,16 @@ export const usePlantStore = defineStore("plant", () => {
     createProcess,
     addProcessStep,
     startProcess,
-    stopCurrentProcess
+    stopCurrentProcess,
+    updateProcess,
+    updateProcessStep,
+    applyProcess,
+    stopProcessById,
+    startBatch,
+    finishBatch,
+    loadRealtime,
+    loadHistory,
+    connectRealtimeSocket,
+    disconnectRealtimeSocket
   };
 });

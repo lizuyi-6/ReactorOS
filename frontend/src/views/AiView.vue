@@ -6,6 +6,11 @@ import type { AiControlRequest, ApiRecord } from "../stores/plant";
 
 const store = usePlantStore();
 const localAi = computed(() => objectAt(store.config, "local_ai"));
+// missing: Vec<String> of absent local-LoRA assets (local_ai.rs:36). Surfaced
+// so the operator can see exactly which env vars / files block local inference,
+// rather than just a boolean "not ready".
+const localAiMissing = computed(() => arrayAt<string>(localAi.value, "missing"));
+const aiMemory = computed(() => objectAt(store.config, "ai_memory"));
 const localAiModeLabels: Record<string, Translation> = {
   prd_lora_ready: { zh: "PRD LoRA/RK 闭环", en: "PRD LoRA/RK ready" },
   lora_inference_ready: { zh: "LoRA 推理入口就绪", en: "LoRA inference ready" },
@@ -487,10 +492,29 @@ const localAiTagType = computed(() => {
         <el-descriptions-item :label="store.tr('训练就绪', 'Training ready')">{{ displayAt(localAi, "ready_for_training") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('PRD LoRA/RK 闭环', 'PRD LoRA/RK')">{{ displayAt(localAi, "ready_for_prd_lora") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('推理端点', 'Inference endpoint')">{{ displayAt(localAi, "inference_endpoint") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('训练端点', 'Training endpoint')">{{ displayAt(localAi, "training_endpoint") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('模型路径', 'Model path')">{{ displayAt(localAi, "model_path") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('适配器路径', 'Adapter path')">{{ displayAt(localAi, "adapter_path") }}</el-descriptions-item>
         <el-descriptions-item :label="store.tr('本地优化器', 'Local optimizer')">{{ store.tr("已激活", "Active") }}</el-descriptions-item>
       </el-descriptions>
+      <div v-if="localAiMissing.length > 0" class="analysis-block" style="border-color: var(--amber);">
+        <h2>{{ store.tr("本地 LoRA 缺失资产", "Missing Local-LoRA Assets") }}</h2>
+        <p>{{ store.tr("以下环境变量/文件缺失，阻塞本地推理与训练闭环。补齐后才能脱离云端 StepFun。", "The following env vars / files are absent and block the local inference/training loop. Fill them to leave cloud StepFun behind.") }}</p>
+        <ul class="endpoint-card ul" style="margin-top: 8px;">
+          <li v-for="item in localAiMissing" :key="item">{{ item }}</li>
+        </ul>
+      </div>
+      <div class="analysis-block">
+        <h2>{{ store.tr("AI 记忆", "AI Memory") }}</h2>
+        <el-descriptions :column="1" border size="small">
+          <el-descriptions-item :label="store.tr('优化目标', 'Objective (optimize_for)')">{{ textAt(aiMemory, "objective") || "--" }}</el-descriptions-item>
+          <el-descriptions-item :label="store.tr('已配置传感器限值', 'Sensor limits configured')">{{ textAt(aiMemory, "sensor_limit_count") }}</el-descriptions-item>
+          <el-descriptions-item :label="store.tr('参考批次数', 'Reference batches')">{{ textAt(aiMemory, "reference_batch_count") }}</el-descriptions-item>
+          <el-descriptions-item :label="store.tr('禁区数', 'Forbidden zones')">{{ textAt(aiMemory, "forbidden_zone_count") }}</el-descriptions-item>
+          <el-descriptions-item :label="store.tr('已启用', 'Enabled')">{{ textAt(aiMemory, "enabled") === "true" ? store.tr("是", "Yes") : store.tr("否", "No") }}</el-descriptions-item>
+        </el-descriptions>
+        <p class="muted">{{ store.tr("本地推理/训练由后端 local_ai 模块内部触发（无独立 REST 端点）；前端经 experiment-plan 间接可见其就绪态与缺失资产。", "Local inference/training is triggered internally by the backend local_ai module (no standalone REST endpoint); the frontend sees readiness and missing assets indirectly via experiment-plan.") }}</p>
+      </div>
       <div class="analysis-block">
         <h2>{{ store.tr("最新推荐来源", "Latest Recommendation Provider") }}</h2>
         <p>{{ providerModeLabel(rawAt(provider, "mode")) }}</p>

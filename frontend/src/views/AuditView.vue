@@ -24,11 +24,26 @@ const truncated = computed(() => textAt(chain.value, "verification_truncated", "
 const eventTypeOptions = [
   { labelZh: "全部事件", labelEn: "All events", value: "" },
   { labelZh: "目标写入", labelEn: "Target writes", value: "operator_targets_updated" },
+  { labelZh: "设备写入", labelEn: "Device writes", value: "device_write" },
+  { labelZh: "设备写失败", labelEn: "Device write failed", value: "device_write_failed" },
+  { labelZh: "组件控制", labelEn: "Component control", value: "component_control" },
   { labelZh: "Modbus 写入", labelEn: "Modbus writes", value: "modbus_register_write" },
   { labelZh: "AI 决策", labelEn: "AI decisions", value: "ai_master_decision" },
+  { labelZh: "AI 目标更新", labelEn: "AI targets", value: "ai_targets_updated" },
+  { labelZh: "工艺创建", labelEn: "Process created", value: "process_created" },
+  { labelZh: "工艺应用", labelEn: "Process applied", value: "process_applied" },
   { labelZh: "工艺启动", labelEn: "Process started", value: "process_started" },
+  { labelZh: "工艺启动失败", labelEn: "Process start failed", value: "process_start_failed" },
   { labelZh: "工艺停止", labelEn: "Process stopped", value: "process_stopped" },
-  { labelZh: "批次完成", labelEn: "Batch finished", value: "batch_finished" }
+  { labelZh: "批次启动", labelEn: "Batch started", value: "batch_started" },
+  { labelZh: "批次完成", labelEn: "Batch finished", value: "batch_finished" },
+  { labelZh: "急停", labelEn: "Emergency stop", value: "emergency_stop" },
+  { labelZh: "急停复位", labelEn: "Emergency stop reset", value: "emergency_stop_reset" },
+  { labelZh: "人工锁定", labelEn: "Manual lock", value: "manual_lock_on" },
+  { labelZh: "人工解锁", labelEn: "Manual unlock", value: "manual_lock_off" },
+  { labelZh: "控制故障自动禁用", labelEn: "Control fault auto-disabled", value: "control_fault_auto_disabled" },
+  { labelZh: "控制故障复归", labelEn: "Control fault reset", value: "control_fault_reset" },
+  { labelZh: "控制环终止", labelEn: "Control loop terminated", value: "control_loop_terminated" }
 ];
 
 const chainMetrics = computed(() => [
@@ -168,9 +183,21 @@ async function exportCsv(): Promise<void> {
           </template>
         </el-table-column>
         <el-table-column prop="reason" :label="store.tr('原因', 'Reason')" />
+        <el-table-column :label="store.tr('批次', 'Batch')" width="90">
+          <template #default="{ row }">
+            <span v-if="textAt(row, 'batch_id')" :title="store.tr('事件归属批次', 'Batch this event belongs to')">#{{ textAt(row, "batch_id") }}</span>
+            <span v-else class="muted">--</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="store.tr('哈希', 'Hash')" width="150">
           <template #default="{ row }">
-            <span class="hash-cell">{{ textAt(row, "event_hash") }}</span>
+            <span class="hash-cell" :title="textAt(row, 'event_hash')">{{ textAt(row, "event_hash") }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="store.tr('前环哈希', 'Previous hash')" width="150">
+          <template #default="{ row }">
+            <span v-if="textAt(row, 'previous_hash')" class="hash-cell" :title="store.tr('哈希链前一环（首事件为空）', 'Hash-chain previous link (empty for genesis)')">{{ textAt(row, "previous_hash") }}</span>
+            <span v-else class="muted">{{ store.tr("（创世）", "(genesis)") }}</span>
           </template>
         </el-table-column>
       </el-table>
