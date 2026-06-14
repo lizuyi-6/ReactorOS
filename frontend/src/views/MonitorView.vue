@@ -20,7 +20,7 @@ const samples = computed(() => recentSamples(store.live));
 const alarms = computed(() => (Array.isArray(store.live?.alarms) ? (store.live!.alarms as Record<string, unknown>[]) : []));
 const metrics = computed(() => [
   { label: "Temperature", zh: "温度", value: fixed(numberAt(sample.value, "temperature_c"), 1, " C") },
-  { label: "Pressure", zh: "压力", value: fixed(numberAt(sample.value, "pressure_kpa"), 1, " kPa") },
+  { label: "Pressure", zh: "压力", value: fixed(numberAt(sample.value, "pressure_mpa"), 2, " MPa") },
   { label: "Stirrer", zh: "搅拌", value: fixed(numberAt(sample.value, "stirrer_rpm"), 0, " rpm") },
   { label: "pH", zh: "酸碱度", value: fixed(numberAt(sample.value, "ph"), 2) }
 ]);
@@ -192,10 +192,10 @@ function drawChart(): void {
         connectNulls: true
       },
       {
-        name: store.tr("压力 kPa", "Pressure kPa"),
+        name: store.tr("压力 MPa", "Pressure MPa"),
         type: "line",
         smooth: true,
-        data: rows.map((row) => numberAt(row, "pressure_kpa")),
+        data: rows.map((row) => numberAt(row, "pressure_mpa")),
         connectNulls: true
       }
     ]
@@ -220,7 +220,7 @@ onBeforeUnmount(() => {
   <section class="view-stack">
     <div class="view-heading">
       <div>
-        <p class="eyebrow">Vue + ECharts</p>
+        <p class="eyebrow">{{ store.tr("现场读数", "Field readings") }}</p>
         <h1>{{ store.tr("实时监控", "Realtime Monitor") }}</h1>
         <span>{{ store.tr("实时传感器、报警和样本曲线", "Live sensors, alarms, and sample trends") }}</span>
       </div>

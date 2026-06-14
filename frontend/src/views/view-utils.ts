@@ -25,6 +25,19 @@ export function textAt(source: unknown, key: string, fallback = "--"): string {
   return String(value);
 }
 
+// Format an ISO-8601 timestamp (e.g. backend "2026-06-13T15:26:28.179151100Z",
+// with nanosecond precision) into a concise local time for operators. Returns
+// the fallback for empty/invalid input so the column never shows a raw ISO
+// string or "Invalid Date".
+export function formatTimestamp(value: unknown, fallback = "--"): string {
+  if (value === null || value === undefined || value === "") return fallback;
+  const text = String(value);
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return fallback;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 export function fixed(value: number | null, digits = 1, suffix = ""): string {
   return value === null ? "--" : `${value.toFixed(digits)}${suffix}`;
 }

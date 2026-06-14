@@ -293,7 +293,7 @@ function outcomeForBatch(batchId: number | null): string {
   <section class="view-stack">
     <div class="view-heading">
       <div>
-        <p class="eyebrow">{{ store.tr("Element Plus 表单", "Element Plus Forms") }}</p>
+        <p class="eyebrow">{{ store.tr("目标与联锁", "Targets & interlocks") }}</p>
         <h1>{{ store.tr("参数配置", "Process Control") }}</h1>
         <span>{{ store.tr("参数配置、安全限幅和执行前复核", "Parameter setup, safety limits, and pre-execution review") }}</span>
       </div>

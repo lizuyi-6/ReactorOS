@@ -468,7 +468,7 @@ const localAiTagType = computed(() => {
   <section class="view-stack">
     <div class="view-heading">
       <div>
-        <p class="eyebrow">{{ store.tr("Qwen / LoRA 边界", "Qwen / LoRA Readiness") }}</p>
+        <p class="eyebrow">{{ store.tr("模型与优化", "Models & optimization") }}</p>
         <h1>{{ store.tr("AI 决策", "AI Decision") }}</h1>
         <span>{{ store.tr("本地模型边界、推荐来源、AI 主控 dry-run/execute 和 SOP 草案", "Local model readiness, recommendation source, AI master-control dry-run/execute, and SOP draft") }}</span>
       </div>

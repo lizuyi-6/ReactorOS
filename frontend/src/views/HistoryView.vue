@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
 import { usePlantStore } from "../stores/plant";
-import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
+import { arrayAt, formatTimestamp, numberAt, objectAt, textAt } from "./view-utils";
 
 const store = usePlantStore();
 const batches = computed(() => arrayAt(store.batches, "batches"));
@@ -303,7 +303,7 @@ watch(
   <section class="view-stack">
     <div class="view-heading">
       <div>
-        <p class="eyebrow">{{ store.tr("SQLite 历史 API", "SQLite History API") }}</p>
+        <p class="eyebrow">{{ store.tr("批次与导出", "Batches & export") }}</p>
         <h1>{{ store.tr("历史数据", "History Data") }}</h1>
         <span>{{ store.tr("批次、产物结果、报告与 CSV/XLSX 导出", "Batches, outcomes, reports, and CSV/XLSX export") }}</span>
       </div>
@@ -378,10 +378,10 @@ watch(
             <template #default="{ row }">{{ outcomeText(outcomeForBatchId(numberAt(row, "id")), "yield_percent") }}</template>
           </el-table-column>
           <el-table-column :label="store.tr('开始', 'Started')" min-width="160">
-            <template #default="{ row }">{{ textAt(row, "started_at") }}</template>
+            <template #default="{ row }">{{ formatTimestamp(textAt(row, "started_at", "")) }}</template>
           </el-table-column>
           <el-table-column :label="store.tr('结束', 'Finished')" min-width="160">
-            <template #default="{ row }">{{ textAt(row, "finished_at") || "--" }}</template>
+            <template #default="{ row }">{{ formatTimestamp(textAt(row, "finished_at", "")) }}</template>
           </el-table-column>
         </el-table>
       </div>
@@ -398,8 +398,8 @@ watch(
                 {{ processStatusText(textAt(selectedBatch, 'status')) }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item :label="store.tr('开始', 'Started')">{{ textAt(selectedBatch, "started_at") }}</el-descriptions-item>
-            <el-descriptions-item :label="store.tr('结束', 'Finished')">{{ textAt(selectedBatch, "finished_at") || "--" }}</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('开始', 'Started')">{{ formatTimestamp(textAt(selectedBatch, "started_at", "")) }}</el-descriptions-item>
+            <el-descriptions-item :label="store.tr('结束', 'Finished')">{{ formatTimestamp(textAt(selectedBatch, "finished_at", "")) }}</el-descriptions-item>
             <el-descriptions-item :label="store.tr('产物比例', 'Product ratio')">{{ outcomeText(selectedOutcome, "product_ratio", store.tr("未填写", "n/a")) }}</el-descriptions-item>
             <el-descriptions-item :label="store.tr('产率', 'Yield')">{{ selectedOutcome ? textAt(selectedOutcome, "yield_percent", "--") : "--" }} %</el-descriptions-item>
             <el-descriptions-item :label="store.tr('目标温度', 'Target temperature')">{{ outcomeText(selectedOutcome, "target_temperature_c") }} C</el-descriptions-item>

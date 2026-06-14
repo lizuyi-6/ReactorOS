@@ -166,7 +166,7 @@ async function writeSelectedRegister(): Promise<void> {
   <section class="view-stack">
     <div class="view-heading">
       <div>
-        <p class="eyebrow">tokio-modbus Migration Target</p>
+        <p class="eyebrow">{{ store.tr("寄存器读写", "Register access") }}</p>
         <h1>{{ store.tr("Modbus 调试", "Modbus Debug") }}</h1>
         <span>{{ store.tr("寄存器映射、调试权限和第三方接口验收", "Register map, debug permissions, and third-party interface acceptance") }}</span>
       </div>

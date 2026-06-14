@@ -23,6 +23,22 @@ function routeText(item: (typeof navItems)[number], zhKey: "zh" | "subZh", enKey
   return store.tr(String(meta?.[zhKey] ?? meta?.label ?? item.path), String(meta?.[enKey] ?? meta?.label ?? item.path));
 }
 
+// Display the logged-in user's ROLE rather than a raw permission-count: the
+// backend login response does not always populate a permissions array, so
+// "0 项权限" was shown to a logged-in engineer — misleading. The role label is
+// the meaningful, always-available signal of what the session can do.
+const roleLabels: Record<string, { zh: string; en: string }> = {
+  operator: { zh: "操作员", en: "Operator" },
+  engineer: { zh: "工程师", en: "Engineer" },
+  admin: { zh: "管理员", en: "Administrator" }
+};
+const sessionRoleLabel = computed(() => {
+  const role = store.user?.role;
+  if (!role) return store.tr("未登录", "not signed in");
+  const label = roleLabels[role] ?? { zh: role, en: role };
+  return store.tr(label.zh, label.en);
+});
+
 async function login(role: string): Promise<void> {
   try {
     await store.login(role);
@@ -50,7 +66,7 @@ onBeforeUnmount(() => {
         <span class="brand-mark">XS</span>
         <div>
           <strong>ReactorOS HMI</strong>
-          <small>{{ store.tr("PRD Vue 技术栈", "PRD Vue Stack") }}</small>
+          <small>{{ store.tr("边缘控制上位机", "Edge control HMI") }}</small>
         </div>
       </div>
 
@@ -70,7 +86,7 @@ onBeforeUnmount(() => {
       <div class="auth-panel">
         <span class="panel-label">{{ store.tr("会话", "Session") }}</span>
         <strong>{{ store.user?.username ?? store.tr("未登录", "not signed in") }}</strong>
-        <small>{{ store.tr(`${store.user?.permissions?.length ?? 0} 项权限`, `${store.user?.permissions?.length ?? 0} permissions`) }}</small>
+        <small>{{ sessionRoleLabel }}</small>
         <div class="role-buttons">
           <el-button size="small" @click="login('operator')">{{ store.tr("操作员", "Operator") }}</el-button>
           <el-button size="small" @click="login('engineer')">{{ store.tr("工程师", "Engineer") }}</el-button>
@@ -84,7 +100,7 @@ onBeforeUnmount(() => {
       <el-header class="topbar" height="72px">
         <div>
           <strong>{{ store.tr("星宿智能反应釜上位机", "Xingshu Intelligent Reactor HMI") }}</strong>
-          <small>{{ store.tr("Vue 3 / Element Plus / ECharts / Pinia 迁移分支", "Vue 3 / Element Plus / ECharts / Pinia migration branch") }}</small>
+          <small>{{ store.tr("可审计 · 可离线 · 安全限幅", "Auditable · Offline-capable · Safety-clamped") }}</small>
         </div>
         <div class="topbar-actions">
           <el-segmented
