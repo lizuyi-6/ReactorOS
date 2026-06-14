@@ -9,6 +9,12 @@ const readRegisters = computed(() => arrayAt(store.modbus, "read_registers"));
 const writeRegisters = computed(() => arrayAt(store.modbus, "write_registers"));
 const registers = computed(() => [...readRegisters.value, ...writeRegisters.value]);
 const coils = computed(() => arrayAt(store.modbus, "coils"));
+// discrete_inputs: 5 boolean inputs (device_connected/sensor_fresh/alarm_active/tilt_state/active_batch)
+const discreteInputs = computed(() => arrayAt(store.modbus, "discrete_inputs"));
+// channel identity + TCP server runtime status from /api/modbus/registers payload
+const slaveId = computed(() => textAt(store.modbus, "slave_id", "--"));
+const serialConfig = computed(() => textAt(store.modbus, "serial", "--"));
+const tcpStatus = computed(() => objectAt(store.modbus, "tcp"));
 const integrations = computed(() => objectAt(store.config, "integrations"));
 const mqttStatus = computed(() => objectAt(integrations.value, "mqtt_status"));
 const modbusTcpStatus = computed(() => objectAt(integrations.value, "modbus_tcp_status"));
@@ -309,6 +315,58 @@ async function writeSelectedRegister(): Promise<void> {
         <el-table-column prop="name" :label="store.tr('名称', 'Name')" />
         <el-table-column prop="access" :label="store.tr('访问', 'Access')" width="120" />
       </el-table>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("离散输入 (Discrete Inputs)", "Discrete Inputs") }}</h2>
+        <span>{{ store.tr(`功能码 0x02 · ${discreteInputs.length} 个布尔输入`, `FC 0x02 · ${discreteInputs.length} bool inputs`) }}</span>
+      </div>
+      <p>{{ store.tr("只读布尔输入点，反映设备连接、传感器新鲜度、告警、倾角与活动批次等运行时状态。", "Read-only boolean inputs reflecting device link, sensor freshness, alarms, tilt, and active-batch runtime state.") }}</p>
+      <el-table v-if="discreteInputs.length > 0" :data="discreteInputs" class="data-table" size="small">
+        <el-table-column :label="store.tr('地址', 'Address')" width="90">
+          <template #default="{ row }">{{ textAt(row, "address") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('名称', 'Name')" min-width="160">
+          <template #default="{ row }">{{ textAt(row, "name") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('标签', 'Label')" min-width="200">
+          <template #default="{ row }">{{ textAt(row, "label") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('值', 'Value')" width="90">
+          <template #default="{ row }">
+            <el-tag :type="textAt(row, 'value') === 'true' ? 'success' : 'info'" size="small">
+              {{ textAt(row, "value") === "true" ? store.tr("ON", "ON") : store.tr("OFF", "OFF") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="store.tr('来源', 'Source')" width="200">
+          <template #default="{ row }">{{ textAt(row, "source") }}</template>
+        </el-table-column>
+      </el-table>
+      <div v-else class="process-empty">
+        {{ store.tr("无离散输入映射（当前设备模式可能未启用 Modbus）。", "No discrete inputs mapped (current device mode may not enable Modbus).") }}
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("通道与 TCP 服务器状态", "Channel & TCP Server Status") }}</h2>
+        <span>{{ store.tr("从站号 / 串口 / TCP·TLS 运行态", "Slave id / Serial / TCP·TLS runtime") }}</span>
+      </div>
+      <el-descriptions :column="2" border>
+        <el-descriptions-item :label="store.tr('从站号', 'Slave ID')">{{ slaveId }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('串口', 'Serial')">{{ serialConfig }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('TCP 监听', 'TCP listening')">
+          <el-tag :type="textAt(tcpStatus, 'listening') === 'true' ? 'success' : 'info'" size="small">
+            {{ textAt(tcpStatus, "listening") === "true" ? store.tr("监听中", "Listening") : store.tr("未监听", "Not listening") }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('TLS 状态', 'TLS status')">{{ textAt(tcpStatus, "tls_status") || "--" }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('强制 TLS', 'Require TLS')">{{ textAt(tcpStatus, "require_tls") === "true" ? store.tr("是", "Yes") : store.tr("否", "No") }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('单元 ID', 'Unit ID')">{{ textAt(tcpStatus, "unit_id") || "--" }}</el-descriptions-item>
+        <el-descriptions-item :label="store.tr('更新时间', 'Updated at')">{{ textAt(tcpStatus, "updated_at") || "--" }}</el-descriptions-item>
+      </el-descriptions>
     </section>
   </section>
 </template>

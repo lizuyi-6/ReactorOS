@@ -25,6 +25,31 @@ const productResultForm = reactive({
   product_ratio: 0.8,
   notes: ""
 });
+// Standalone batch start form (POST /api/batches/start) — requires at least one
+// explicit target/duration field (backend rejects all-absent). process_id optional.
+const startBatchForm = reactive({
+  name: "",
+  process_id: "",
+  target_temperature_c: "" as string | number,
+  target_stirrer_rpm: "" as string | number,
+  heating_minutes: "" as string | number,
+  stirring_minutes: "" as string | number
+});
+const startBatchDisabled = computed(() => {
+  const has = (v: string | number) => v !== "" && v !== null;
+  return !(
+    has(startBatchForm.target_temperature_c) ||
+    has(startBatchForm.target_stirrer_rpm) ||
+    has(startBatchForm.heating_minutes) ||
+    has(startBatchForm.stirring_minutes)
+  );
+});
+// Paged sample time-series history (GET /api/v1/reactor/:id/history)
+const DEVICE_ID = "reactor_001";
+const historySamples = ref<unknown[]>([]);
+const historyLoading = ref(false);
+const historyPage = ref(1);
+const historyPageSize = ref(50);
 // `loadBatchDetail` returns a wrapper object { batch, outcome, samples, events }
 // (see src/api.rs `get_batch_detail`). The previous code stored the wrapper
 // directly into `selectedBatch`, so the detail panel read fields like
@@ -249,6 +274,63 @@ async function saveProductResult(): Promise<void> {
   }
 }
 
+async function startStandaloneBatch(): Promise<void> {
+  try {
+    store.error = null;
+    actionMessage.value = "";
+    const num = (v: string | number): number | null => (v === "" ? null : Number(v));
+    const pid = startBatchForm.process_id.trim();
+    await store.startBatch({
+      name: startBatchForm.name.trim() || undefined,
+      process_id: pid === "" ? null : Number(pid),
+      target_temperature_c: num(startBatchForm.target_temperature_c),
+      target_stirrer_rpm: num(startBatchForm.target_stirrer_rpm),
+      heating_minutes: num(startBatchForm.heating_minutes),
+      stirring_minutes: num(startBatchForm.stirring_minutes)
+    });
+    actionMessage.value = store.tr("批次已启动。", "Batch started.");
+    startBatchForm.name = "";
+    startBatchForm.target_temperature_c = "";
+    startBatchForm.target_stirrer_rpm = "";
+    startBatchForm.heating_minutes = "";
+    startBatchForm.stirring_minutes = "";
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function finishActiveBatch(): Promise<void> {
+  if (activeBatchId.value === null) return;
+  try {
+    store.error = null;
+    actionMessage.value = "";
+    await store.finishBatch(activeBatchId.value);
+    actionMessage.value = store.tr(`批次 #${activeBatchId.value} 已结束。`, `Batch #${activeBatchId.value} finished.`);
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function loadHistorySamples(): Promise<void> {
+  historyLoading.value = true;
+  try {
+    const resp = await store.loadHistory(DEVICE_ID, {
+      page: historyPage.value,
+      pageSize: historyPageSize.value
+    });
+    // response shape: { data: [...] } per v1_history; fall back to arrayAt.
+    historySamples.value = arrayAt<object>(resp, "data");
+    if (historySamples.value.length === 0) {
+      actionMessage.value = store.tr("无样本历史数据（当前无管线样本入库）。", "No sample history (no pipeline samples persisted yet).");
+    }
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error);
+    historySamples.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
 async function downloadBatchesCsv(): Promise<void> {
   try {
     store.error = null;
@@ -320,6 +402,94 @@ watch(
         </el-button>
       </div>
     </div>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("批次生命周期", "Batch Lifecycle") }}</h2>
+        <el-tag type="info">{{ store.tr("独立启动 / 结束活动批次", "Standalone start / finish active") }}</el-tag>
+      </div>
+      <p>{{ store.tr("启动独立批次至少需要一项目标或时长（后端拒绝全空）。结束将停机活动批次并关闭记录。", "Starting a standalone batch requires at least one target or duration field (backend rejects all-absent). Finishing stops the active batch and closes its record.") }}</p>
+      <el-form label-position="top" class="product-result-form">
+        <el-form-item :label="store.tr('批次名称', 'Batch name')">
+          <el-input v-model="startBatchForm.name" :placeholder="store.tr('可选', 'optional')" />
+        </el-form-item>
+        <el-form-item :label="store.tr('目标温度 C', 'Target temp C')">
+          <el-input-number v-model="startBatchForm.target_temperature_c" :min="0" :max="220" controls-position="right" :placeholder="store.tr('可选', 'optional')" />
+        </el-form-item>
+        <el-form-item :label="store.tr('搅拌 rpm', 'Stirrer rpm')">
+          <el-input-number v-model="startBatchForm.target_stirrer_rpm" :min="0" :max="1800" controls-position="right" />
+        </el-form-item>
+        <el-form-item :label="store.tr('加热 min', 'Heating min')">
+          <el-input-number v-model="startBatchForm.heating_minutes" :min="0" :max="600" controls-position="right" />
+        </el-form-item>
+        <el-form-item :label="store.tr('搅拌 min', 'Stirring min')">
+          <el-input-number v-model="startBatchForm.stirring_minutes" :min="0" :max="600" controls-position="right" />
+        </el-form-item>
+        <el-form-item :label="store.tr('工艺 ID', 'Process ID')">
+          <el-input v-model="startBatchForm.process_id" :placeholder="store.tr('可选', 'optional')" />
+        </el-form-item>
+        <div class="control-actions">
+          <el-button
+            type="primary"
+            :disabled="!store.isAuthenticated || startBatchDisabled || batchRecoveryBlocked"
+            @click="startStandaloneBatch"
+          >
+            {{ store.tr("启动批次", "Start Batch") }}
+          </el-button>
+          <el-button
+            type="danger"
+            plain
+            :disabled="!store.isAuthenticated || activeBatchId === null || batchRecoveryBlocked"
+            @click="finishActiveBatch"
+          >
+            {{ store.tr("结束活动批次", "Finish Active Batch") }}{{ activeBatchId !== null ? ` #${activeBatchId}` : "" }}
+          </el-button>
+        </div>
+      </el-form>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>{{ store.tr("样本时序历史", "Sample Time-Series History") }}</h2>
+        <el-tag type="info">GET /api/v1/reactor/:id/history</el-tag>
+      </div>
+      <p>{{ store.tr("从后端分页端点拉取已持久化的传感器样本（区别于本地批次过滤）。", "Fetch persisted sensor samples from the backend paged endpoint (distinct from local batch filtering).") }}</p>
+      <div class="control-actions">
+        <el-input-number v-model="historyPage" :min="1" :max="9999" controls-position="right" />
+        <span class="muted">{{ store.tr("页", "page") }}</span>
+        <el-input-number v-model="historyPageSize" :min="10" :max="500" controls-position="right" />
+        <span class="muted">{{ store.tr("条/页", "per page") }}</span>
+        <el-button :loading="historyLoading" @click="loadHistorySamples">
+          {{ store.tr("拉取样本", "Fetch Samples") }}
+        </el-button>
+      </div>
+      <el-table v-if="historySamples.length > 0" :data="historySamples" class="data-table" size="small" max-height="360">
+        <el-table-column :label="store.tr('时间', 'Time')" min-width="160">
+          <template #default="{ row }">{{ formatTimestamp(textAt(row, "created_at")) }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('温度 C', 'Temp')" width="90">
+          <template #default="{ row }">{{ textAt(row, "temperature_c") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('压力 MPa', 'Press')" width="100">
+          <template #default="{ row }">{{ textAt(row, "pressure_mpa") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('rpm', 'rpm')" width="70">
+          <template #default="{ row }">{{ textAt(row, "stirrer_rpm") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('流量', 'Flow')" width="80">
+          <template #default="{ row }">{{ textAt(row, "flow_rate_l_min") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('浓度 %', 'Conc.')" width="80">
+          <template #default="{ row }">{{ textAt(row, "product_concentration_percent") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('pH', 'pH')" width="60">
+          <template #default="{ row }">{{ textAt(row, "ph") }}</template>
+        </el-table-column>
+      </el-table>
+      <div v-else class="process-empty">
+        {{ store.tr("尚未拉取样本历史。", "No sample history fetched yet.") }}
+      </div>
+    </section>
 
     <section class="panel">
       <div class="panel-title">

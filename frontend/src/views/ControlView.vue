@@ -25,6 +25,11 @@ const runtimeFlags = computed(() => ({
   manual_lock: textAt(runtime.value, "manual_lock", "false") === "true",
   emergency_stop: textAt(runtime.value, "emergency_stop", "false") === "true",
   last_control_error: textAt(runtime.value, "last_control_error", ""),
+  last_sensor_error: textAt(runtime.value, "last_sensor_error", ""),
+  // control_loop_terminated (state.rs:135): supervisor task died; the ONLY
+  // recovery is a process restart. When true, the reset-fault button must be
+  // disabled — backend will 409 any reset anyway.
+  control_loop_terminated: textAt(runtime.value, "control_loop_terminated", "false") === "true",
   active_batch_id: textAt(runtime.value, "active_batch_id", "")
 }));
 
@@ -241,6 +246,51 @@ async function stopCurrent(): Promise<void> {
   );
 }
 
+// --- Process lifecycle gaps (backend endpoints previously unwired) ---
+
+async function applyProcessFromList(id: number): Promise<void> {
+  await runControlAction(
+    async () => {
+      await store.applyProcess(id);
+    },
+    store.tr("工艺已应用（applied）", "Process applied")
+  );
+}
+
+async function stopProcessFromList(id: number): Promise<void> {
+  await runControlAction(
+    async () => {
+      await store.stopProcessById(id, store.tr("操作员按 id 停止", "operator stop by id"));
+    },
+    store.tr("指定工艺已停止", "Process stopped")
+  );
+}
+
+async function updateSelectedProcessMeta(): Promise<void> {
+  const id = selectedProcessId.value;
+  if (id === null) return;
+  await runControlAction(
+    async () => {
+      await store.updateProcess(id, {
+        name: processForm.name.trim() || undefined,
+        description: processForm.description.trim() || undefined
+      });
+    },
+    store.tr("工艺已更新", "Process updated")
+  );
+}
+
+async function editStepFromSelected(stepId: number): Promise<void> {
+  const id = selectedProcessId.value;
+  if (id === null) return;
+  await runControlAction(
+    async () => {
+      await store.updateProcessStep(id, stepId, { ...stepForm });
+    },
+    store.tr("步骤已更新", "Step updated")
+  );
+}
+
 function statusTagType(status: string): "success" | "warning" | "info" | "danger" {
   if (status === "running" || status === "applied") return "success";
   if (status === "failed" || status === "rejected") return "danger";
@@ -366,11 +416,33 @@ function outcomeForBatch(batchId: number | null): string {
           <el-button plain :disabled="riskIncreasingDisabled" @click="runControlAction(store.resetEmergencyStop, store.tr('急停已复位', 'Emergency stop reset'))">
             {{ store.tr("复位急停", "Reset Stop") }}
           </el-button>
-          <el-button plain :disabled="riskIncreasingDisabled || !runtimeFlags.last_control_error" @click="resetControlFault">
+          <el-button
+            plain
+            :disabled="riskIncreasingDisabled || runtimeFlags.control_loop_terminated || !runtimeFlags.last_control_error"
+            @click="resetControlFault"
+          >
             {{ store.tr("复归控制故障", "Reset Control Fault") }}
           </el-button>
         </div>
       </div>
+      <el-alert
+        v-if="runtimeFlags.control_loop_terminated"
+        class="control-alert"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="store.tr('控制环监督已终止 — 必须重启进程', 'Control loop supervisor terminated — process restart required')"
+        :description="store.tr('监督任务已退出，自动控制被禁用，且只能通过重启进程恢复。复归/启动操作将被后端拒绝（409）。', 'The supervisor task has exited; automatic control is disabled and can ONLY be cleared by a process restart. Reset/start will be rejected (409) by the backend.')"
+      />
+      <el-alert
+        v-if="runtimeFlags.last_sensor_error"
+        class="control-alert"
+        type="warning"
+        :closable="false"
+        show-icon
+        :title="store.tr('传感器故障 (fail-closed) — 自动控制已关闭', 'Sensor fault (fail-closed) — automatic control disabled')"
+        :description="runtimeFlags.last_sensor_error"
+      />
       <el-alert
         v-if="batchRecoveryBlocked"
         class="control-alert"
@@ -454,10 +526,17 @@ function outcomeForBatch(batchId: number | null): string {
             <el-table-column :label="store.tr('步骤', 'Steps')" width="72">
               <template #default="{ row }">{{ textAt(row, "step_count") }}</template>
             </el-table-column>
-            <el-table-column :label="store.tr('操作', 'Actions')" width="180" align="right">
+            <el-table-column :label="store.tr('操作', 'Actions')" width="290" align="right">
               <template #default="{ row }">
                 <el-button size="small" :disabled="!store.isAuthenticated || submitting" @click.stop="selectProcessFromList(numberAt(row, 'id'))">
                   {{ store.tr("查看", "View") }}
+                </el-button>
+                <el-button
+                  size="small"
+                  :disabled="riskIncreasingDisabled || productionBasisWriteDisabled"
+                  @click.stop="applyProcessFromList(numberAt(row, 'id') ?? 0)"
+                >
+                  {{ store.tr("应用", "Apply") }}
                 </el-button>
                 <el-button
                   size="small"
@@ -466,6 +545,15 @@ function outcomeForBatch(batchId: number | null): string {
                   @click.stop="startProcessFromList(numberAt(row, 'id') ?? 0)"
                 >
                   {{ store.tr("启动", "Start") }}
+                </el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  plain
+                  :disabled="riskIncreasingDisabled || runtimeFlags.control_loop_terminated"
+                  @click.stop="stopProcessFromList(numberAt(row, 'id') ?? 0)"
+                >
+                  {{ store.tr("停止", "Stop") }}
                 </el-button>
               </template>
             </el-table-column>
@@ -532,6 +620,18 @@ function outcomeForBatch(batchId: number | null): string {
             </el-table-column>
             <el-table-column :label="store.tr('降温', 'Cooling')" width="100">
               <template #default="{ row }">{{ textAt(row, "cooling_mode") }}</template>
+            </el-table-column>
+            <el-table-column :label="store.tr('操作', 'Actions')" width="90" align="right">
+              <template #default="{ row }">
+                <el-button
+                  size="small"
+                  plain
+                  :disabled="riskIncreasingDisabled || productionBasisWriteDisabled"
+                  @click="editStepFromSelected(numberAt(row, 'id') ?? 0)"
+                >
+                  {{ store.tr("编辑", "Edit") }}
+                </el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div v-else class="process-empty">
