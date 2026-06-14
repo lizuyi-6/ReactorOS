@@ -254,6 +254,28 @@ fn failing_target_device() -> SharedDevice {
 }
 
 #[derive(Default)]
+struct FailingTargetRecordingDevice {
+    writes: Mutex<Vec<SafeCommand>>,
+}
+
+#[async_trait::async_trait]
+impl ReactorDevice for FailingTargetRecordingDevice {
+    async fn read_sample(&self) -> anyhow::Result<SensorSnapshot> {
+        Err(anyhow::anyhow!("test device is driven by pipeline samples"))
+    }
+
+    async fn write_targets(&self, command: &SafeCommand) -> anyhow::Result<()> {
+        self.writes.lock().unwrap().push(command.clone());
+        Err(anyhow::anyhow!("target bus timeout"))
+    }
+}
+
+fn failing_target_recording_device() -> (SharedDevice, Arc<FailingTargetRecordingDevice>) {
+    let device = Arc::new(FailingTargetRecordingDevice::default());
+    (device.clone(), device)
+}
+
+#[derive(Default)]
 struct RecordingDevice {
     writes: Mutex<Vec<SafeCommand>>,
 }
@@ -5395,6 +5417,77 @@ async fn process_start_fails_closed_when_control_fault_is_uncleared() {
 }
 
 #[tokio::test]
+async fn control_fault_reset_refuses_to_clear_a_terminated_control_loop_supervisor() {
+    // Regression for the main.rs fail-safe monitor: when the control-loop task
+    // dies it latches control_loop_terminated = true. reset_control_fault must
+    // REFUSE to clear that fault, because the supervisor is gone and is only
+    // re-spawned by a process restart. If reset cleared it, the API would report
+    // "no fault" while nothing supervises the device, and ensure_target_update_
+    // interlock_clear would then let automatic control resume unsupervised.
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(50.0, 0.1, 240.0, 24.0, 10.0)).await;
+    {
+        let mut state = runtime.write().await;
+        state.device_status = Some(healthy_device_status());
+        // Simulate the fail-safe monitor having latched the supervisor death.
+        state.control_loop_terminated = true;
+        state.latch_control_fault(
+            "control loop task terminated; automatic control disabled until process restart and field re-verification",
+        );
+    }
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let reset = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/control/fault/reset")
+                .header("authorization", auth_header("operator"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    // Field state is otherwise healthy, but the supervisor is dead, so reset
+    // must still be refused — a process restart is the only recovery.
+    assert_eq!(reset.status(), StatusCode::CONFLICT);
+    let body = to_bytes(reset.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(body["message"]
+        .as_str()
+        .unwrap()
+        .contains("control loop task has terminated"));
+    let state = runtime.read().await;
+    assert!(
+        state.last_control_error.is_some(),
+        "fault must NOT be cleared"
+    );
+    assert!(state.control_loop_terminated);
+    drop(state);
+    // No successful reset audit row must have been written.
+    assert!(!db
+        .recent_control_events(10)
+        .unwrap()
+        .iter()
+        .any(|event| event.event_type == "control_fault_reset"));
+}
+
+#[tokio::test]
 async fn control_fault_requires_explicit_reset_and_keeps_auto_disabled() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -6738,19 +6831,39 @@ async fn manual_lock_unlock_rejects_lock_generation_change_after_audit() {
     assert!(body["message"]
         .as_str()
         .unwrap()
-        .contains("manual lock changed during unlock"));
+        .contains("a safety latch fired during the audit window"));
     let state = runtime.read().await;
     assert!(state.manual_lock);
     assert!(!state.auto_enabled);
     assert!(state.manual_lock_generation >= 2);
     drop(state);
-    assert!(db
-        .recent_control_events(10)
-        .unwrap()
+    // The refused-unlock path must write a manual_unlock_refused audit row so
+    // the chain is self-consistent about the lock still being engaged. A
+    // manual_lock_off row may also be present (it is the audit anchor the
+    // generation re-check needs); if so, the refused row must be newer.
+    let events = db.recent_control_events(10).unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| event.event_type == "manual_unlock_refused"),
+        "refused unlock must leave a manual_unlock_refused audit row: {events:?}"
+    );
+    let off_idx = events
         .iter()
-        .any(|event| event.event_type == "manual_lock_off"));
+        .position(|event| event.event_type == "manual_lock_off");
+    let refused_idx = events
+        .iter()
+        .position(|event| event.event_type == "manual_unlock_refused");
+    // recent_control_events returns oldest-first (ORDER BY id ASC), so a larger
+    // index means a newer event. The refused row must be newer than the off
+    // anchor so a reader sees the refusal as the final word.
+    if let (Some(off), Some(refused)) = (off_idx, refused_idx) {
+        assert!(
+            refused > off,
+            "manual_unlock_refused must be newer than the manual_lock_off anchor: {events:?}"
+        );
+    }
 }
-
 #[tokio::test]
 async fn risk_increasing_switches_do_not_commit_when_audit_fails() {
     let safety = Arc::new(safety());
@@ -12696,6 +12809,90 @@ async fn start_failures_before_activation_are_audited_without_arming_runtime() {
     assert!(failure_reasons
         .iter()
         .any(|reason| reason.contains("v1 control start failed before activation")));
+}
+
+#[tokio::test]
+async fn v1_auto_start_does_not_send_stop_write_when_device_start_write_fails() {
+    // Regression for c1361d1e: when the device start write fails, the field was
+    // never commanded on, so the failure path must NOT call the post-activation
+    // rollback (which re-sends a stop write and conservatively re-arms
+    // active_batch_id). Only the single failed start write should reach the
+    // device, and runtime must stay unarmed. The pre-fix code invoked
+    // rollback_v1_auto_start_activation on the start-write-failure branch, which
+    // is only correct after a successful start.
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(50.0, 0.1, 240.0, 24.0, 10.0)).await;
+    let (device, recorded_device) = failing_target_recording_device();
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device,
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/reactor/reactor_001/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "command_id": "cmd_start_write_fail_no_stop",
+                        "params": {
+                            "heat_time": 300,
+                            "hold_time": 600,
+                            "cool_time": 180,
+                            "stir_speed": 650,
+                            "shake_speed": 30,
+                            "target_temp": 90.0,
+                            "target_pressure": 0.5
+                        },
+                        "priority": "normal",
+                        "auto_start": true
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    {
+        let state = runtime.read().await;
+        assert_eq!(
+            state.active_batch_id, None,
+            "runtime must not arm an active batch when the start write never reached the field"
+        );
+        assert!(!state.auto_enabled);
+        assert!(state.last_control_error.is_some());
+    }
+    let writes = recorded_device.writes.lock().unwrap();
+    assert_eq!(
+        writes.len(),
+        1,
+        "device start-write failure must not trigger a rollback stop write; the field was never commanded on"
+    );
+    drop(writes);
+
+    let events = db.recent_control_events(10).unwrap();
+    assert!(events.iter().any(|event| {
+        event.event_type == "process_start_failed"
+            && event
+                .reason
+                .contains("v1 control start failed before activation")
+    }));
 }
 
 #[tokio::test]

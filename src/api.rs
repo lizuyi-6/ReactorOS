@@ -3990,47 +3990,103 @@ async fn set_manual_lock(
     ApiJson(payload): ApiJson<ManualLockRequest>,
 ) -> Result<StatusCode, AppError> {
     require_permission(&headers, Permission::SetSafeTargets)?;
-    let acknowledged_manual_lock_generation = if !payload.locked {
+    let acknowledged_safety_latches = if !payload.locked {
         let runtime = {
             let mut runtime = state.runtime.write().await;
             runtime.auto_enabled = false;
             runtime.clone()
         };
         ensure_manual_unlock_interlock_clear(&state, &runtime).await?;
-        Some(runtime.manual_lock_generation)
+        // Snapshot all three latch generations (not just manual_lock): unlocking is a
+        // risk-increasing action, and an emergency-stop or control-fault that fired and
+        // cleared transiently during the audit window must refuse the unlock just as the
+        // commit_*_after_final_interlock paths refuse other risk-increasing commits.
+        Some(SafetyLatchGenerations::from_runtime(&runtime))
     } else {
         None
     };
     if payload.locked {
         let mut runtime = state.runtime.write().await;
         runtime.engage_manual_lock();
+        // Locking is a risk-reducing action and cannot be refused by a latch
+        // change in the audit window, so audit it unconditionally.
+        state
+            .db
+            .insert_control_event_sqlx(
+                None,
+                "manual_lock_on",
+                None,
+                "operator enabled manual lock; automatic control disabled",
+            )
+            .await?;
+        return Ok(StatusCode::NO_CONTENT);
     }
+    // Unlocking is risk-INCREASING, so we must NOT write the "manual_lock_off"
+    // audit row until the generation re-check below confirms the field state is
+    // still the one we audited. Writing it before the re-check (as the prior
+    // code did) left a stale "lock off" row in the hash-chained audit trail even
+    // when the unlock was refused and runtime.manual_lock stayed true.
+    let interlock_runtime = { state.runtime.read().await.clone() };
+    ensure_manual_unlock_interlock_clear(&state, &interlock_runtime).await?;
+    // Order rationale (this was the hard part):
+    //  - The generation re-check must run AFTER an audit insert succeeds, because
+    //    that audit commit is the "time anchor": the test hook (and any real
+    //    concurrent latch) fires inside that window, and only a re-check after it
+    //    can catch a generation change "during the audit window". Re-checking
+    //    before any audit would miss it (regression: returned 204 instead of 409).
+    //  - But we must NOT mutate runtime state until the audit that precedes it has
+    //    succeeded — so an audit failure leaves manual_lock engaged (fail-closed,
+    //    matches commit_*_after_final_interlock). clear_manual_lock only runs on
+    //    the success path, AFTER the re-check passes.
+    //  - And we must not leave a stale "manual_lock_off" row when the unlock is
+    //    refused (#7). We accept that the off row is written first (it is the
+    //    audit anchor that the re-check needs), but on refusal we immediately
+    //    append a "manual_unlock_refused" compensating row stating the lock is
+    //    STILL engaged. The chain is therefore self-consistent: an off row
+    //    followed by a refused row means "attempted off, but it was refused and
+    //    did not take effect".
     state
         .db
         .insert_control_event_sqlx(
             None,
-            if payload.locked {
-                "manual_lock_on"
-            } else {
-                "manual_lock_off"
-            },
+            "manual_lock_off",
             None,
-            if payload.locked {
-                "operator enabled manual lock; automatic control disabled"
-            } else {
-                "operator disabled manual lock; automatic control remains disabled until explicitly enabled"
-            },
+            "operator requested manual lock disable; awaiting final generation re-check before clearing",
         )
         .await?;
-    if !payload.locked {
-        let mut runtime = state.runtime.write().await;
-        ensure_manual_unlock_interlock_clear(&state, &runtime).await?;
-        if runtime.manual_lock_generation != acknowledged_manual_lock_generation.unwrap_or(0) {
+    // Final generation re-check: any latch that advanced during the audit window
+    // (manual re-lock, emergency stop, or control fault) refuses the unlock.
+    let refused = {
+        let runtime = state.runtime.read().await;
+        acknowledged_safety_latches
+            .map(|acknowledged| acknowledged.changed_since(&runtime))
+            .unwrap_or(false)
+    };
+    if refused {
+        // The off row above was written but the lock is STILL engaged — record a
+        // compensating refused row so the audit chain is self-consistent, then
+        // refuse. We never call clear_manual_lock here.
+        state
+            .db
+            .insert_control_event_sqlx(
+                None,
+                "manual_unlock_refused",
+                None,
+                "manual lock unlock refused: a safety latch fired during the audit window; the preceding manual_lock_off did NOT take effect and manual lock remains engaged",
+            )
+            .await?;
+        {
+            let mut runtime = state.runtime.write().await;
             runtime.auto_enabled = false;
-            return Err(AppError::conflict(
-                "manual lock changed during unlock; operator must re-check field state",
-            ));
         }
+        return Err(AppError::conflict(
+            "manual lock unlock blocked: a safety latch fired during the audit window; field state changed, so the unlock was refused. Re-verify field state before retrying",
+        ));
+    }
+    // Re-check passed: clear the lock. The audit anchor (off row) is already
+    // durably persisted, so the field change follows a durable record.
+    {
+        let mut runtime = state.runtime.write().await;
         runtime.clear_manual_lock();
     }
     Ok(StatusCode::NO_CONTENT)
@@ -4075,6 +4131,17 @@ async fn reset_control_fault(
                 "no latched device control fault to reset",
             ));
         };
+        // A terminated control-loop task is not a recoverable device-write
+        // fault: the supervisor is gone and is only re-spawned by a process
+        // restart. Clearing last_control_error here would make the API report
+        // "no fault" while nothing is supervising the device, and
+        // ensure_target_update_interlock_clear would then let automatic control
+        // resume unsupervised. Refuse; the operator must restart the process.
+        if runtime.control_loop_terminated {
+            return Err(AppError::conflict(
+                "control loop task has terminated; this fault cannot be cleared via the API. Restart the daemon process and re-verify field state before re-enabling automatic control",
+            ));
+        }
         runtime.auto_enabled = false;
         ensure_no_active_batch_for_reset(&runtime, "resetting the control fault")?;
         ensure_no_unfinished_batch_recovery_for_reset(&state, &runtime, "control fault reset")

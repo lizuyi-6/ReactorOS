@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
     let loop_device = Arc::clone(&device);
     let loop_device_mode = device_mode.clone();
     let loop_safety_guard = args.safety_guard.clone();
-    tokio::spawn(async move {
+    let control_task = tokio::spawn(async move {
         control_loop(
             loop_device,
             loop_db,
@@ -158,6 +158,53 @@ async fn main() -> Result<()> {
         )
         .await;
     });
+    // Fail-safe monitor: the control loop runs in a spawned task whose JoinHandle
+    // we previously dropped, so a panic inside it would be silently swallowed and
+    // the device would be left in its last commanded state while the API kept
+    // serving — the hardest field failure to diagnose. If the task ever exits or
+    // panics, disable automatic control, latch a control fault, and record an
+    // audit event so the operator must re-verify field state before re-enabling.
+    {
+        let monitor_state = Arc::clone(&runtime);
+        let monitor_db = db.clone();
+        tokio::spawn(async move {
+            let outcome = control_task.await;
+            match &outcome {
+                Err(join_err) => {
+                    tracing::error!("control loop task panicked; failing safe: {join_err}");
+                }
+                Ok(()) => {
+                    tracing::error!("control loop task exited unexpectedly; failing safe");
+                }
+            }
+            let mut runtime = monitor_state.write().await;
+            runtime.auto_enabled = false;
+            // Mark the supervisor as dead: reset_control_fault refuses to clear
+            // a fault while this is true, so the only way back to automatic
+            // control is a process restart (which re-spawns the loop).
+            runtime.control_loop_terminated = true;
+            runtime.latch_control_fault(
+                "control loop task terminated; automatic control disabled until process restart and field re-verification",
+            );
+            drop(runtime);
+            if let Err(err) = monitor_db
+                .insert_control_event_sqlx(
+                    None,
+                    "control_loop_terminated",
+                    None,
+                    match &outcome {
+                        Err(_) => "control loop task panicked; automatic control disabled",
+                        Ok(()) => {
+                            "control loop task exited unexpectedly; automatic control disabled"
+                        }
+                    },
+                )
+                .await
+            {
+                tracing::error!("failed to audit control loop termination: {err}");
+            }
+        });
+    }
 
     let app_state = AppState {
         db,
@@ -773,7 +820,17 @@ fn decide_control_with_optional_guard(
     }
     match reactor_edge_daemon::control::evaluate_safety_request(request) {
         reactor_edge_daemon::control::SafetyGuardResponse::ControlDecision(decision) => decision,
-        reactor_edge_daemon::control::SafetyGuardResponse::ClampedTargets(_) => unreachable!(),
+        // A DecideControl request must yield a ControlDecision. If the shared
+        // evaluator ever returns ClampedTargets here (e.g. after a future
+        // refactor of evaluate_safety_request), fail safe instead of panicking
+        // inside the control-loop task — a panic there would only be caught by
+        // the termination monitor above, not by the caller of this function.
+        reactor_edge_daemon::control::SafetyGuardResponse::ClampedTargets(_) => {
+            tracing::error!(
+                "in-process safety evaluation returned clamped targets for a decide-control request; failing safe"
+            );
+            ControlDecision::Blocked(ControlBlockReason::ControlFault)
+        }
     }
 }
 

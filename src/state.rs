@@ -125,6 +125,14 @@ pub struct RuntimeState {
     pub active_batch_id: Option<i64>,
     pub last_sensor_error: Option<String>,
     pub last_control_error: Option<String>,
+    /// Latched `true` by the main.rs fail-safe monitor when the control-loop
+    /// task has exited or panicked. Unlike a normal control fault this can ONLY
+    /// be cleared by a process restart (the task is spawned once and never
+    /// re-spawned), so `reset_control_fault` must refuse to clear it — otherwise
+    /// the API would report "no fault" while no supervisor is running. Serialized
+    /// so /api/live can surface a dead supervisor to clients.
+    #[serde(default)]
+    pub control_loop_terminated: bool,
     #[serde(default, skip_serializing)]
     pub control_fault_generation: u64,
     pub device_status: Option<DeviceStatusSnapshot>,
@@ -182,6 +190,7 @@ impl RuntimeState {
             active_batch_id: None,
             last_sensor_error: None,
             last_control_error: None,
+            control_loop_terminated: false,
             control_fault_generation: 0,
             device_status: None,
         }
