@@ -547,12 +547,15 @@ fn xingshu_ops_backup_cleans_temp_hash_sidecar_when_publish_fails() {
         .unwrap();
 
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // --json sends the structured error envelope to stdout.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let message = value["error"]["message"].as_str().unwrap_or("");
     assert!(
-        stderr.contains("failed to publish backup hash sidecar")
-            || stderr.contains("failed to create backup hash sidecar")
-            || stderr.contains("refusing to replace backup hash sidecar directory"),
-        "backup should fail when the hash sidecar cannot be atomically published: {stderr}"
+        message.contains("failed to publish backup hash sidecar")
+            || message.contains("failed to create backup hash sidecar")
+            || message.contains("refusing to replace backup hash sidecar directory"),
+        "backup should fail when the hash sidecar cannot be atomically published: {message}"
     );
     assert!(
         hash_sidecar_path.is_dir(),
@@ -600,10 +603,13 @@ fn xingshu_ops_backup_refuses_to_overwrite_existing_snapshot() {
         .unwrap();
 
     assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    // --json sends the structured error envelope to stdout.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let message = value["error"]["message"].as_str().unwrap_or("");
     assert!(
-        stderr.contains("refusing to overwrite existing backup snapshot"),
-        "backup should fail before touching an existing output path: {stderr}"
+        message.contains("refusing to overwrite existing backup snapshot"),
+        "backup should fail before touching an existing output path: {message}"
     );
     assert_eq!(
         std::fs::read(&backup_path).unwrap(),
@@ -657,15 +663,32 @@ fn xingshu_ops_preflight_fails_production_defaults() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
+    // --json sends the structured error envelope to stdout; preflight carries
+    // the full findings array in error.details so an agent keeps every check.
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["kind"], "precondition");
+    let findings = value["error"]["details"]["findings"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|f| f["detail"].as_str().unwrap_or("").to_string())
+                .collect::<Vec<_>>()
+                .join(
+                    "
+",
+                )
+        })
+        .unwrap_or_default();
     assert!(
-        stderr.contains("XINGSHU_AUTH_SECRET is not set")
-            || stderr.contains("XINGSHU_AUTH_SECRET still uses"),
-        "preflight should reject default auth secret: {stderr}"
+        findings.contains("XINGSHU_AUTH_SECRET is not set")
+            || findings.contains("XINGSHU_AUTH_SECRET still uses"),
+        "preflight should reject default auth secret: {findings}"
     );
     assert!(
-        stderr.contains("XINGSHU_DB_ENCRYPTION_KEY is not set"),
-        "preflight should require DB encryption key: {stderr}"
+        findings.contains("XINGSHU_DB_ENCRYPTION_KEY is not set"),
+        "preflight should require DB encryption key: {findings}"
     );
 }
 
@@ -2463,4 +2486,355 @@ fn raw_sqlite_family_text(path: &Path) -> String {
         }
     }
     text
+}
+
+// --- AI-agent machine-readable CLI surface (structured errors + exit codes) ---
+
+/// A tiny canned HTTP server for a single expected request. Returns the given
+/// status line and JSON body, then closes. Used to exercise xingshu's error
+/// classification (safety_reject vs network) and exit codes without a real
+/// daemon. The bound port keeps tests parallel-safe.
+fn spawn_single_shot_server(status_line: &str, body: &str) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    let status_line = status_line.to_string();
+    let body = body.to_string();
+    thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let _ = stream.read(&mut buf);
+            let response = format!(
+                "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    api
+}
+
+#[test]
+fn xingshu_json_reports_safety_reject_with_exit_code_3() {
+    // A 409 from the daemon means "refused by a safety interlock". Under --json
+    // the CLI must print a structured error envelope (ok:false, kind:safety_reject,
+    // status:409) to stdout and exit 3 — NOT 2, which clap owns for parse errors,
+    // so a usage typo can't masquerade as a safety rejection for exit-code consumers.
+    let api = spawn_single_shot_server(
+        "HTTP/1.1 409 Conflict",
+        r#"{"message":"set targets blocked: emergency stop is active"}"#,
+    );
+    let output = xingshu()
+        .args([
+            "--api", &api, "--json", "control", "set", "--temp", "85", "--rpm", "400",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "safety interlock rejection must exit 3 (not 2, which clap uses for parse errors); stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["kind"], "safety_reject");
+    assert_eq!(value["error"]["status"], 409);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("emergency stop is active"));
+}
+
+#[test]
+fn xingshu_json_reports_network_error_with_exit_code_1() {
+    // No server on this port: the request never lands, so it must classify as a
+    // network error (kind:network, no status) and exit 1 — distinct from a
+    // safety rejection (exit 2).
+    let api = "http://127.0.0.1:9"; // discard port; nothing listens
+    let output = xingshu()
+        .args(["--api", api, "--json", "status"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "network failure must exit 1; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["kind"], "network");
+    assert!(value["error"]["status"].is_null());
+}
+
+#[test]
+fn xingshu_stop_fallback_reports_outcome_field() {
+    // When /api/processes/current/stop fails but the auto-disable fallback
+    // succeeds, the JSON must carry outcome:"fallback_auto_disabled" so an agent
+    // can tell it did not get a clean stop.
+    let (api, _handle) = spawn_stop_fallback_server();
+    let output = xingshu()
+        .args(["--api", &api, "--json", "control", "stop"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "fallback path is a success status; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["outcome"], "fallback_auto_disabled");
+}
+
+/// Canned server that answers a fixed sequence of (status, body) pairs, in
+/// request order. Lets us drive multi-endpoint commands like `status` without a
+/// real daemon.
+fn spawn_sequence_server(responses: Vec<(&'static str, &'static str)>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let api = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        for (status_line, body) in responses {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "{status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        }
+    });
+    api
+}
+
+#[test]
+fn xingshu_status_json_promotes_summary_fields() {
+    // status hits /health, /api/devices/status, /api/live in order. The summary
+    // must lift the runtime latch booleans and active_batch_id to the top level
+    // so an agent decides in one call, and report live_available:false when the
+    // live endpoint fails (returns non-2xx).
+    let api = spawn_sequence_server(vec![
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"ok":true,"service":"reactor-edge-daemon"}"#,
+        ),
+        (
+            "HTTP/1.1 200 OK",
+            r#"{"data":{"online_count":1,"total_count":2}}"#,
+        ),
+        (
+            // /api/live fails (e.g. no samples yet -> 503); live becomes None.
+            "HTTP/1.1 503 Service Unavailable",
+            r#"{"message":"no current device read"}"#,
+        ),
+    ]);
+    let output = xingshu()
+        .args(["--api", &api, "--json", "status"])
+        .output()
+        .unwrap();
+    // /api/live returns 503 (no samples yet); status swallows live failures
+    // (.ok()) and still succeeds overall, reporting live_available:false.
+    assert!(
+        output.status.success(),
+        "status should not fail hard when /api/live is unavailable; got {:?}; stderr: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["summary"]["service_up"], true);
+    assert_eq!(value["summary"]["online_count"], 1);
+    assert_eq!(value["summary"]["total_count"], 2);
+    assert_eq!(value["summary"]["live_available"], false);
+    // When live is unavailable the latch booleans fall back to conservative defaults.
+    assert_eq!(value["summary"]["emergency_stop"], false);
+    assert_eq!(value["summary"]["auto_enabled"], false);
+}
+
+#[test]
+fn xingshu_audit_list_has_more_false_on_partial_last_page() {
+    // Regression: has_more must be computed from the page cursor
+    // (page * page_size < total), not page * events.len(). With total=25 and
+    // page_size=20, page 2 is a partial last page (5 events). The buggy formula
+    // 2 * 5 = 10 < 25 left has_more stuck true forever; the cursor formula
+    // 2 * 20 = 40 >= 25 correctly reports no next page.
+    let body = r#"{"ok":true,"data":{"page":2,"page_size":20,"total":25,"events":[
+        {"id":21,"timestamp":"2026-06-13T00:00:00Z","event_type":"control","reason":"r","actor":"a"},
+        {"id":22,"timestamp":"2026-06-13T00:00:01Z","event_type":"control","reason":"r","actor":"a"},
+        {"id":23,"timestamp":"2026-06-13T00:00:02Z","event_type":"control","reason":"r","actor":"a"},
+        {"id":24,"timestamp":"2026-06-13T00:00:03Z","event_type":"control","reason":"r","actor":"a"},
+        {"id":25,"timestamp":"2026-06-13T00:00:04Z","event_type":"control","reason":"r","actor":"a"}
+    ],"chain":null}}"#;
+    let api = spawn_single_shot_server("HTTP/1.1 200 OK", body);
+    let output = xingshu()
+        .args([
+            "--api",
+            &api,
+            "--json",
+            "audit",
+            "list",
+            "--page",
+            "2",
+            "--page-size",
+            "20",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "audit list should succeed; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["page"], 2);
+    assert_eq!(value["total"], 25);
+    // 5 events on this partial last page.
+    assert_eq!(value["events"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        value["has_more"], false,
+        "partial last page must report has_more=false (cursor 2*20=40 >= total 25)"
+    );
+}
+
+#[test]
+fn xingshu_audit_list_has_more_true_when_cursor_below_total() {
+    // Sanity for the other direction: a full page whose cursor has not yet
+    // reached total must still report has_more=true. total=45, page_size=20,
+    // page=2 -> cursor 40 < 45, so a page 3 exists.
+    let mut events = String::new();
+    for id in 21..=40 {
+        events.push_str(&format!(
+            "{{\"id\":{id},\"timestamp\":\"2026-06-13T00:00:00Z\",\"event_type\":\"control\",\"reason\":\"r\",\"actor\":\"a\"}},"
+        ));
+    }
+    let events = events.trim_end_matches(',');
+    let body = format!(
+        r#"{{"ok":true,"data":{{"page":2,"page_size":20,"total":45,"events":[{events}],"chain":null}}}}"#
+    );
+    let api = spawn_single_shot_server("HTTP/1.1 200 OK", &body);
+    let output = xingshu()
+        .args([
+            "--api",
+            &api,
+            "--json",
+            "audit",
+            "list",
+            "--page",
+            "2",
+            "--page-size",
+            "20",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["events"].as_array().unwrap().len(), 20);
+    assert_eq!(
+        value["has_more"], true,
+        "full page 2 with cursor 40 < total 45 must report has_more=true"
+    );
+}
+
+#[test]
+fn xingshu_json_classifies_503_as_http_not_safety_reject() {
+    // A 503 from the daemon is a device-execution failure (write/start failed,
+    // latching a control_fault) or field-unhealthy state — NOT a safety
+    // interlock refusal (those are 409). It must classify as kind:http and exit
+    // 1, not safety_reject/exit 3, so an agent investigates hardware instead of
+    // retrying/adjusting targets as if a safety rule blocked it.
+    let api = spawn_single_shot_server(
+        "HTTP/1.1 503 Service Unavailable",
+        r#"{"message":"device process start command failed: bus timeout"}"#,
+    );
+    let output = xingshu()
+        .args([
+            "--api", &api, "--json", "control", "set", "--temp", "85", "--rpm", "400",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "503 is a device fault, not a safety rejection; must exit 1 not 3; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["kind"], "http");
+    assert_eq!(value["error"]["status"], 503);
+    assert!(value["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("device process start command failed"));
+}
+
+#[test]
+fn xingshu_control_set_envelope_promotes_controltargets() {
+    // `control set` hits /api/control/targets, which returns bare
+    // ControlTargets serialized with field `temperature_c`. write_envelope must
+    // promote the committed targets to the top-level applied_targets (previously
+    // it probed the wrong key `target_temperature_c` and always emitted null).
+    let body = r#"{"temperature_c":85.0,"heat_time_s":300.0,"hold_time_s":600.0,"cool_time_s":180.0,"stirrer_rpm":400.0,"shake_speed_cpm":30.0,"target_pressure_mpa":0.5}"#;
+    let api = spawn_single_shot_server("HTTP/1.1 200 OK", body);
+    let output = xingshu()
+        .args([
+            "--api", &api, "--json", "control", "set", "--temp", "85", "--rpm", "400",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["outcome"], "committed");
+    // applied_targets must be the committed ControlTargets, not null.
+    assert_eq!(value["applied_targets"]["temperature_c"], 85.0);
+    assert_eq!(value["applied_targets"]["stirrer_rpm"], 400.0);
+    assert_eq!(value["applied_targets"]["cool_time_s"], 180.0);
+}
+
+#[test]
+fn xingshu_control_start_with_process_id_promotes_nested_ids() {
+    // `control start --process-id` hits /api/processes/{id}/start, returning
+    // V1Envelope<ProcessApplyResponse> with ids NESTED under data.batch.id /
+    // data.process.id. write_envelope must surface them top-level (previously
+    // it read top-level id/process_id and emitted null).
+    let body = r#"{"ok":true,"data":{"process":{"id":7,"name":"p"},"batch":{"id":42,"process_id":7,"name":"b","target_temperature_c":85.0,"target_stirrer_rpm":400.0,"heating_minutes":10.0,"stirring_minutes":20.0},"applied_targets":{"temperature_c":85.0,"heat_time_s":300.0,"hold_time_s":600.0,"cool_time_s":180.0,"stirrer_rpm":400.0,"shake_speed_cpm":30.0,"target_pressure_mpa":0.5},"status":"started"}}"#;
+    let api = spawn_single_shot_server("HTTP/1.1 200 OK", body);
+    let output = xingshu()
+        .args([
+            "--api",
+            &api,
+            "--json",
+            "control",
+            "start",
+            "--process-id",
+            "7",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap();
+    assert_eq!(value["outcome"], "started");
+    // Nested ids must be promoted; previously both were null.
+    assert_eq!(value["batch_id"], 42);
+    assert_eq!(value["process_id"], 7);
+    // applied_targets is the real ControlTargets field on ProcessApplyResponse.
+    assert_eq!(value["applied_targets"]["temperature_c"], 85.0);
+    assert_eq!(value["applied_targets"]["cool_time_s"], 180.0);
 }

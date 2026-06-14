@@ -302,6 +302,8 @@ struct AuditArgs {
 enum AuditCommand {
     /// List audit events.
     List {
+        #[arg(long, default_value_t = 1)]
+        page: usize,
         #[arg(long, default_value_t = 20)]
         page_size: usize,
         #[arg(long)]
@@ -389,6 +391,69 @@ struct CommandOutput {
     human: String,
     json: Value,
 }
+
+/// Structured error type so `main` can emit machine-readable error JSON and a
+/// distinguishable exit code when `--json` is set. Wrapped in `anyhow::Error` at
+/// the error sites (it implements `std::error::Error`), then recovered in
+/// `main` via `downcast_ref::<CliError>()`. Anything that fails to downcast is
+/// reported as `kind: "other"`.
+#[derive(Debug)]
+enum CliError {
+    /// HTTP 409 — the request reached the daemon but was refused by a safety
+    /// interlock (latch, generation change, unfinished-batch recovery, stale-
+    /// field guard). Maps to exit code 3 (NOT 2, which clap owns for parse
+    /// errors) so non-JSON shell consumers can tell "blocked by safety" from
+    /// "something broke" or a usage error.
+    SafetyReject {
+        status: u16,
+        message: String,
+        url: String,
+    },
+    /// Any other non-2xx HTTP response from the daemon.
+    Http {
+        status: u16,
+        message: String,
+        url: String,
+    },
+    /// The request never reached the daemon (connect refused, timeout, DNS).
+    Network { message: String, url: String },
+    /// A local precondition failed (missing --yes, daemon still running for a
+    /// destructive op, production preflight findings, etc.). `details` carries
+    /// machine-readable context (e.g. the full preflight findings array) so an
+    /// agent reading `--json` does not lose it when the command fails.
+    Precondition {
+        message: String,
+        details: Option<Value>,
+    },
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::SafetyReject {
+                status,
+                message,
+                url,
+            } => write!(
+                f,
+                "{url} rejected by safety interlock (HTTP {status}): {message}"
+            ),
+            CliError::Http {
+                status,
+                message,
+                url,
+            } => {
+                write!(f, "{url} returned HTTP {status}: {message}")
+            }
+            CliError::Network { message, url } => {
+                write!(f, "network error requesting {url}: {message}")
+            }
+            CliError::Precondition { message, .. } => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
 
 #[derive(Debug, Args)]
 struct OpsArgs {
@@ -504,7 +569,12 @@ enum KeyCommand {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    let exit_code = run().await;
+    std::process::exit(exit_code);
+}
+
+async fn run() -> i32 {
     let cli = Cli::parse();
     let client = Client::new();
     let env_token = env::var("XINGSHU_TOKEN")
@@ -526,14 +596,156 @@ async fn main() -> Result<()> {
         Commands::Perf(args) => perf(&client, &cli.api, args).await,
         Commands::Ops(args) => ops(args),
         Commands::Key(args) => key(args),
-    }?;
+    };
 
-    if cli.json {
-        println!("{}", serde_json::to_string_pretty(&output.json)?);
-    } else if !output.human.is_empty() {
-        println!("{}", output.human);
+    match output {
+        Ok(output) => {
+            if cli.json {
+                match serde_json::to_string_pretty(&output.json) {
+                    Ok(text) => println!("{text}"),
+                    Err(err) => {
+                        emit_error(&cli, &anyhow::anyhow!(err.to_string()));
+                        return 1;
+                    }
+                }
+            } else if !output.human.is_empty() {
+                println!("{}", output.human);
+            }
+            0
+        }
+        Err(err) => {
+            emit_error(&cli, &err);
+            error_exit_code(&err)
+        }
     }
-    Ok(())
+}
+
+/// Print an error in the form the consumer asked for: structured JSON to stdout
+/// when `--json` (so an agent always reads one stream), or the anyhow chain to
+/// stderr for humans.
+fn emit_error(cli: &Cli, err: &anyhow::Error) {
+    if cli.json {
+        let body = structured_error_json(err);
+        println!(
+            "{}",
+            serde_json::to_string(&body).unwrap_or_else(|_| "{\"ok\":false}".to_string())
+        );
+    } else {
+        eprintln!("{err:#}");
+    }
+}
+
+/// Exit code policy: `3` = blocked by a safety interlock (HTTP 409), so shell
+/// scripts and systemd can distinguish "refused for safety" from any other
+/// failure (`1`). We deliberately do NOT use exit code 2 for safety: clap uses 2
+/// for argument-parse errors (a typo'd subcommand/flag exits 2 before any
+/// command runs), so reusing 2 would make a usage error indistinguishable from
+/// a safety rejection for any consumer that only checks the exit code. 3 keeps
+/// the three cases (success 0 / safety-reject 3 / everything-else 1) distinct.
+fn error_exit_code(err: &anyhow::Error) -> i32 {
+    match err.downcast_ref::<CliError>() {
+        Some(CliError::SafetyReject { .. }) => 3,
+        _ => 1,
+    }
+}
+
+/// Wrap an arbitrary write-command API response so an AI agent gets a stable
+/// top-level envelope: `outcome`, plus any referenceable id or applied-targets
+/// the backend happened to return, and the raw `response` underneath. Fields the
+/// backend does not provide for this endpoint are `null`, so the agent can rely
+/// on the keys always existing without depending on per-endpoint response shape.
+fn write_envelope(outcome: &str, response: &Value) -> Value {
+    let data = unwrap_data(response);
+    // Referenceable ids live in different places per endpoint:
+    //   - ad-hoc batch start  -> /api/batches/start returns bare Json<Batch>;
+    //     the batch id is at data.id.
+    //   - process start       -> /api/processes/{id}/start returns
+    //     V1Envelope<ProcessApplyResponse> { process, batch, applied_targets };
+    //     ids are NESTED at data.batch.id / data.process.id (no top-level id).
+    // Read both shapes so the agent always gets the real ids.
+    let batch_id = data
+        .get("id")
+        .and_then(Value::as_i64)
+        .or_else(|| data.get("batch_id").and_then(Value::as_i64))
+        .or_else(|| {
+            data.get("batch")
+                .and_then(|b| b.get("id"))
+                .and_then(Value::as_i64)
+        });
+    let process_id = data.get("process_id").and_then(Value::as_i64).or_else(|| {
+        data.get("process")
+            .and_then(|p| p.get("id"))
+            .and_then(Value::as_i64)
+    });
+    // applied_targets must be a ControlTargets-shaped object. The backend
+    // serializes ControlTargets with the field name `temperature_c` (NOT
+    // `target_temperature_c`, which is a Batch field). Probing `target_temperature_c`
+    // — as the prior code did — never matched a ControlTargets (so `control set`
+    // reported null) but DID match a Batch (so ad-hoc `control start` cloned the
+    // whole Batch record, dropping heat_time_s/cool_time_s/etc.). Probe the real
+    // ControlTargets key instead. An explicit `applied_targets` field (present on
+    // the process-start ProcessApplyResponse) takes precedence.
+    let applied_targets = data.get("applied_targets").cloned().or_else(|| {
+        if data.get("temperature_c").is_some() {
+            Some(data.clone())
+        } else {
+            None
+        }
+    });
+    json!({
+        "outcome": outcome,
+        "batch_id": batch_id,
+        "process_id": process_id,
+        "applied_targets": applied_targets,
+        "response": response,
+    })
+}
+
+fn structured_error_json(err: &anyhow::Error) -> Value {
+    let (kind, status, message, url, mut extra) = match err.downcast_ref::<CliError>() {
+        Some(CliError::SafetyReject {
+            status,
+            message,
+            url,
+        }) => (
+            "safety_reject",
+            Some(*status),
+            message.clone(),
+            Some(url.clone()),
+            None,
+        ),
+        Some(CliError::Http {
+            status,
+            message,
+            url,
+        }) => (
+            "http",
+            Some(*status),
+            message.clone(),
+            Some(url.clone()),
+            None,
+        ),
+        Some(CliError::Network { message, url }) => {
+            ("network", None, message.clone(), Some(url.clone()), None)
+        }
+        Some(CliError::Precondition { message, details }) => {
+            ("precondition", None, message.clone(), None, details.clone())
+        }
+        None => ("other", None, format!("{err:#}"), None, None),
+    };
+    let mut error = json!({
+        "kind": kind,
+        "status": status,
+        "message": message,
+        "url": url,
+    });
+    if let Some(details) = extra.take() {
+        error["details"] = details;
+    }
+    json!({
+        "ok": false,
+        "error": error,
+    })
 }
 
 fn start_daemon(args: &DaemonStartArgs) -> Result<CommandOutput> {
@@ -634,31 +846,65 @@ async fn status(client: &Client, api: &str) -> Result<CommandOutput> {
         .and_then(|value| value.get("emergency_stop"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let manual_lock = runtime
+        .and_then(|value| value.get("manual_lock"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let control_fault = runtime
+        .and_then(|value| value.get("last_control_error"))
+        .map(|value| !value.is_null())
+        .unwrap_or(false);
     let auto = runtime
         .and_then(|value| value.get("auto_enabled"))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    let active_batch_id = runtime
+        .and_then(|value| value.get("active_batch_id"))
+        .and_then(Value::as_i64);
     let model = live
         .as_ref()
         .and_then(|value| value.get("ai_provider"))
         .and_then(|value| value.get("model"))
         .and_then(Value::as_str)
         .unwrap_or("--");
+    let live_available = live.is_some();
+    let service_up = health.get("ok").and_then(Value::as_bool).unwrap_or(false);
 
     Ok(CommandOutput {
         human: format!(
-            "service: {}\ndevices: {online}/{total} online\nauto: {}\nemergency_stop: {}\nai_model: {model}",
+            "service: {}\ndevices: {online}/{total} online\nauto: {}\nmanual_lock: {}\nemergency_stop: {}\ncontrol_fault: {}\nactive_batch: {}\nai_model: {model}",
             health
                 .get("service")
                 .and_then(Value::as_str)
                 .unwrap_or("reactor-edge-daemon"),
             if auto { "enabled" } else { "standby" },
+            if manual_lock { "on" } else { "off" },
             if emergency { "active" } else { "clear" },
+            if control_fault { "latched" } else { "clear" },
+            active_batch_id
+                .map(|id| format!("#{id}"))
+                .unwrap_or_else(|| "none".to_string()),
         ),
         json: json!({
             "health": health,
             "devices": devices,
             "live": live,
+            // Stable top-level summary an AI agent can read in one shot to
+            // decide whether it is safe to dispatch control. When /api/live is
+            // unavailable (live == None) the latch booleans fall back to their
+            // conservative defaults and live_available reports false.
+            "summary": {
+                "service_up": service_up,
+                "live_available": live_available,
+                "online_count": online,
+                "total_count": total,
+                "emergency_stop": emergency,
+                "manual_lock": manual_lock,
+                "auto_enabled": auto,
+                "control_fault": control_fault,
+                "active_batch_id": active_batch_id,
+                "ai_model": model,
+            }
         }),
     })
 }
@@ -742,6 +988,14 @@ async fn data(
 ) -> Result<CommandOutput> {
     match &args.command {
         DataCommand::List { limit } => {
+            // The backend's /api/batches has NO pagination: list_batches
+            // (src/api.rs) always returns the most recent 100 batches and
+            // ignores every query parameter. So we do NOT send a (meaningless)
+            // ?limit query, and we do NOT report has_more — there is no second
+            // page to fetch, so any has_more signal would either dead-loop an
+            // agent (re-requesting returns the same 100) or falsely report "no
+            // more" when the backend simply capped the window at 100. --limit
+            // only truncates the human-readable output to the N most recent rows.
             let value =
                 request_json(client, Method::GET, api, "/api/batches", None, None, &[]).await?;
             let data = unwrap_data(&value);
@@ -750,6 +1004,10 @@ async fn data(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            // Preserve the backend's `outcomes` array (BatchListResponse has both
+            // `batches` and `outcomes`); it carries yield_percent / product_ratio
+            // per batch, which an agent loses if we only forward `batches`.
+            let outcomes = data.get("outcomes").cloned().unwrap_or(Value::Null);
             let human = batches
                 .iter()
                 .rev()
@@ -763,7 +1021,11 @@ async fn data(
                 } else {
                     human
                 },
-                json: value,
+                json: json!({
+                    "returned": batches.len(),
+                    "batches": batches,
+                    "outcomes": outcomes,
+                }),
             })
         }
         DataCommand::Export { out } => {
@@ -1033,7 +1295,7 @@ async fn control(
             .await?;
             Ok(CommandOutput {
                 human: "targets updated through safety gate".to_string(),
-                json: value,
+                json: write_envelope("committed", &value),
             })
         }
         ControlCommand::Start {
@@ -1077,7 +1339,7 @@ async fn control(
             let value = request_json(client, Method::POST, api, &path, token, body, &[]).await?;
             Ok(CommandOutput {
                 human: "process or batch started".to_string(),
-                json: value,
+                json: write_envelope("started", &value),
             })
         }
         ControlCommand::Stop(args) => safe_stop(client, api, token, args).await,
@@ -1141,7 +1403,10 @@ async fn safe_stop(
     {
         Ok(value) => Ok(CommandOutput {
             human: "active process stopped".to_string(),
-            json: value,
+            json: json!({
+                "outcome": "stopped",
+                "response": value,
+            }),
         }),
         Err(err) => {
             let stop_error = err.to_string();
@@ -1163,6 +1428,7 @@ async fn safe_stop(
                     "process stop result unknown; automatic control disabled as fallback\n  stop_error: {stop_error}"
                 ),
                 json: json!({
+                    "outcome": "fallback_auto_disabled",
                     "stop_status": "unknown",
                     "fallback": "auto_disabled",
                     "stop_error": stop_error,
@@ -1803,10 +2069,14 @@ async fn audit(
 ) -> Result<CommandOutput> {
     match &args.command {
         AuditCommand::List {
+            page,
             page_size,
             event_type,
         } => {
-            let mut query = vec![("page_size", page_size.to_string())];
+            let mut query = vec![
+                ("page", page.to_string()),
+                ("page_size", page_size.to_string()),
+            ];
             if let Some(event_type) = event_type {
                 query.push(("event_type", event_type.clone()));
             }
@@ -1830,9 +2100,27 @@ async fn audit(
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
+            // Promote pagination metadata to the top level so an agent can page
+            // through the log without digging into the API envelope, and know
+            // when it has reached the end (has_more).
+            let total = data.get("total").and_then(Value::as_u64).unwrap_or(0);
+            // has_more = "is there a next page?". Use the page cursor
+            // (page * page_size) < total, NOT page * events.len(): on a partial
+            // last page events.len() < page_size, so the events.len() formula
+            // undercounts what we've already seen and leaves has_more stuck true
+            // forever (and on trailing empty pages it is 0 < total, also true).
+            // The cursor formula is correct regardless of whether this page is full.
+            let has_more = (*page as u64).saturating_mul(*page_size as u64) < total;
             Ok(CommandOutput {
                 human: events.iter().map(audit_line).collect::<Vec<_>>().join("\n"),
-                json: value,
+                json: json!({
+                    "page": *page,
+                    "page_size": *page_size,
+                    "total": total,
+                    "has_more": has_more,
+                    "events": events,
+                    "chain": data.get("chain").cloned().unwrap_or(Value::Null),
+                }),
             })
         }
         AuditCommand::Export { out, event_type } => {
@@ -1893,9 +2181,13 @@ async fn modbus(
             });
             let value =
                 request_json(client, Method::POST, api, &path, token, Some(body), &[]).await?;
+            let mut json = write_envelope("committed", &value);
+            // Keep the addressed register name at the top level so an agent can
+            // correlate the write without re-reading its own request.
+            json["register"] = json!(register);
             Ok(CommandOutput {
                 human: "register write accepted through safety gate".to_string(),
-                json: value,
+                json,
             })
         }
     }
@@ -2169,7 +2461,10 @@ async fn measure_get(
         .query(query)
         .send()
         .await
-        .with_context(|| format!("failed to request {url}"))?;
+        .map_err(|err| CliError::Network {
+            message: err.to_string(),
+            url: url.clone(),
+        })?;
     let elapsed_ms = started.elapsed().as_millis() as u64;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
@@ -2245,10 +2540,10 @@ async fn request_json(
     if let Some(body) = body {
         request = request.json(&body);
     }
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("failed to request {url}"))?;
+    let response = request.send().await.map_err(|err| CliError::Network {
+        message: err.to_string(),
+        url: url.clone(),
+    })?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -2272,10 +2567,10 @@ async fn request_text(
     if let Some(token) = token.filter(|value| !value.trim().is_empty()) {
         request = request.bearer_auth(token.trim());
     }
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("failed to request {url}"))?;
+    let response = request.send().await.map_err(|err| CliError::Network {
+        message: err.to_string(),
+        url: url.clone(),
+    })?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -2296,10 +2591,10 @@ async fn request_bytes(
     if let Some(token) = token.filter(|value| !value.trim().is_empty()) {
         request = request.bearer_auth(token.trim());
     }
-    let response = request
-        .send()
-        .await
-        .with_context(|| format!("failed to request {url}"))?;
+    let response = request.send().await.map_err(|err| CliError::Network {
+        message: err.to_string(),
+        url: url.clone(),
+    })?;
     let status = response.status();
     let bytes = response.bytes().await.unwrap_or_default();
     if !status.is_success() {
@@ -2319,7 +2614,31 @@ fn api_error(status: StatusCode, url: &str, text: &str) -> anyhow::Error {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| text.trim().to_string());
-    anyhow!("{url} returned HTTP {status}: {message}")
+    let code = status.as_u16();
+    // Only HTTP 409 (Conflict) means the request reached the daemon but a
+    // safety interlock refused it (manual/e-stop latch, generation change,
+    // unfinished-batch recovery, stale-field guard) — these are all
+    // AppError::conflict in the backend. 503 (Service Unavailable) is a
+    // different failure class: the daemon uses it for device-execution failures
+    // (write_targets/start failed, latching a control_fault) and for
+    // field-unhealthy / device-offline states. Those are NOT "your request was
+    // blocked by a safety rule"; treating them as safety_reject would tell an
+    // agent to retry/adjust targets when it should investigate hardware. Map
+    // only 409 to SafetyReject; 503 and everything else stay generic HTTP.
+    let error: CliError = if code == 409 {
+        CliError::SafetyReject {
+            status: code,
+            message,
+            url: url.to_string(),
+        }
+    } else {
+        CliError::Http {
+            status: code,
+            message,
+            url: url.to_string(),
+        }
+    };
+    error.into()
 }
 
 fn endpoint(api: &str, path: &str) -> String {
@@ -2682,7 +3001,32 @@ fn ops_preflight(
         }),
     };
     if production && fail_count > 0 {
-        return Err(anyhow!(output.human));
+        // Build a message that carries the per-finding table, so a HUMAN running
+        // `xingshu ops preflight --production` (no --json) still sees each failed
+        // check on stderr via emit_error's eprintln!("{err:#}"). The --json path
+        // additionally gets the structured findings array in error.details, so an
+        // agent loses nothing either way. (Previously the rewrite returned only a
+        // one-line summary and dropped the table that the old anyhow!(output.human)
+        // used to print, which hid the actionable per-check breakdown exactly where
+        // operators look before a production deploy.)
+        let mut message = format!(
+            "production preflight failed: {fail_count} check(s) at fail level\n{}",
+            output.human
+        );
+        if message.ends_with('\n') {
+            message.pop();
+        }
+        return Err(CliError::Precondition {
+            message,
+            // Preserve the full findings so an agent reading --json still sees
+            // exactly which checks failed, instead of just a summary string.
+            details: Some(json!({
+                "status": status,
+                "counts": { "pass": pass_count, "warn": warn_count, "fail": fail_count },
+                "findings": json_findings,
+            })),
+        }
+        .into());
     }
     Ok(output)
 }
