@@ -30,6 +30,7 @@ use crate::{
         ProcessDetail, ProcessStep, ProductResult, SensorSampleRecord,
     },
     device::{ComponentControlCommand, ComponentControlOutcome, SharedDevice},
+    field_scenario::{detect_field_scenario, FieldScenarioContext, FieldScenarioProfile},
     local_ai::LocalAiStatus,
     memory::{AiMemory, AiMemorySummary, LimitLevel, SensorLimit},
     number::round2,
@@ -135,6 +136,7 @@ pub struct LiveResponse {
     pub recent_events: Vec<ControlEvent>,
     pub alarms: Vec<Value>,
     pub ai_memory: AiMemorySummary,
+    pub field_scenario: FieldScenarioProfile,
 }
 
 #[derive(Debug, Serialize)]
@@ -747,6 +749,15 @@ async fn live(
         state.ai_memory.as_ref(),
     )
     .await?;
+    let field_scenario = detect_field_scenario(FieldScenarioContext {
+        device_mode: &state.device_mode,
+        runtime: Some(&runtime),
+        include_runtime_signals: true,
+        memory: state.ai_memory.as_ref(),
+        processes: &processes,
+        recent_batches: &recent_batches,
+        recent_outcomes: &recent_outcomes,
+    });
     Ok(Json(LiveResponse {
         runtime,
         device_status,
@@ -759,6 +770,7 @@ async fn live(
         recent_events,
         alarms,
         ai_memory,
+        field_scenario,
     }))
 }
 
@@ -852,10 +864,15 @@ async fn auth_me(headers: HeaderMap) -> Result<Json<V1Envelope<AuthUser>>, AppEr
 async fn config_summary(State(state): State<AppState>) -> Json<V1Envelope<Value>> {
     let mqtt_status = crate::mqtt::mqtt_status_snapshot().await;
     let modbus_tcp_status = crate::modbus_tcp::modbus_tcp_status_snapshot().await;
+    let field_scenario = detect_field_scenario(FieldScenarioContext::config_only(
+        &state.device_mode,
+        state.ai_memory.as_ref(),
+    ));
     Json(success(json!({
         "device_mode": state.device_mode,
         "device": state.device_config.as_ref(),
         "safety": state.safety.as_ref(),
+        "field_scenario": field_scenario,
         "ai_memory": AiMemorySummary::from(state.ai_memory.as_ref()),
         "ai_provider": local_provider_for(&state),
         "local_ai": LocalAiStatus::from_env(),
