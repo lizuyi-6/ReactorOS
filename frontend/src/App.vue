@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { routes } from "./router";
+import { hmiNavItems, useAppShellState } from "./app-shell";
 import { usePlantStore } from "./stores/plant";
 
 const store = usePlantStore();
@@ -11,50 +12,27 @@ let clockTimer: number | null = null;
 const now = ref(new Date());
 
 const navItems = routes.filter((item) => item.path !== "/" && item.meta);
-const healthStatus = computed(() => String(store.health?.status ?? store.health?.service ?? "unknown"));
 const activePath = computed(() => route.path);
-const lastUpdatedText = computed(() => store.lastUpdated ?? "--");
-const runtime = computed(() => {
-  const value = store.live?.runtime;
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : store.runtimeFallback;
-});
-const batchLabel = computed(() => {
-  const id = runtime.value?.active_batch_id;
-  return id === null || id === undefined || id === "" ? "Batch --" : `Batch #${id}`;
-});
-const clockText = computed(() =>
-  now.value.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  })
-);
-const liveStatusText = computed(() =>
-  store.liveStatus === "fresh"
-    ? store.tr(`现场 ${store.liveLastUpdated ?? "--"}`, `Live ${store.liveLastUpdated ?? "--"}`)
-    : store.tr("现场不可用", "Live unavailable")
-);
+const {
+  alarmStatusType,
+  alarmSummaryText,
+  batchLabel,
+  clockText,
+  commandReceiptText,
+  commandStatusType,
+  contentClasses,
+  healthStatus,
+  lastUpdatedText,
+  liveStatusText,
+  safetyStatusType,
+  safetySummaryText,
+  sessionRoleLabel
+} = useAppShellState(store, activePath, now);
 
 function routeText(item: (typeof navItems)[number], zhKey: "zh" | "subZh", enKey: "en" | "subEn"): string {
   const meta = item.meta as Record<string, unknown> | undefined;
   return store.tr(String(meta?.[zhKey] ?? meta?.label ?? item.path), String(meta?.[enKey] ?? meta?.label ?? item.path));
 }
-
-// Display the logged-in user's ROLE rather than a raw permission-count: the
-// backend login response does not always populate a permissions array, so
-// "0 项权限" was shown to a logged-in engineer — misleading. The role label is
-// the meaningful, always-available signal of what the session can do.
-const roleLabels: Record<string, { zh: string; en: string }> = {
-  operator: { zh: "操作员", en: "Operator" },
-  engineer: { zh: "工程师", en: "Engineer" },
-  admin: { zh: "管理员", en: "Administrator" }
-};
-const sessionRoleLabel = computed(() => {
-  const role = store.user?.role;
-  if (!role) return store.tr("未登录", "not signed in");
-  const label = roleLabels[role] ?? { zh: role, en: role };
-  return store.tr(label.zh, label.en);
-});
 
 async function login(role: string): Promise<void> {
   try {
@@ -86,7 +64,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <el-container class="app-shell" :class="{ 'monitor-route': activePath === '/monitor' }">
+  <el-container class="app-shell monitor-route">
     <el-header class="topbar" height="48px">
       <div class="brand-line">
         <strong>ReactorOS</strong>
@@ -96,9 +74,10 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="status-cluster">
-        <el-tag type="warning">{{ store.tr("系统待机", "System standby") }}</el-tag>
+        <el-tag :type="alarmStatusType">{{ alarmSummaryText }}</el-tag>
         <el-tag :type="store.liveStatus === 'fresh' ? 'success' : 'danger'">{{ liveStatusText }}</el-tag>
-        <el-tag type="primary">AI {{ store.tr("引擎就绪", "engine ready") }}</el-tag>
+        <el-tag :type="safetyStatusType">{{ safetySummaryText }}</el-tag>
+        <el-tag :type="commandStatusType">{{ commandReceiptText }}</el-tag>
       </div>
 
       <div class="topbar-clock">
@@ -112,33 +91,15 @@ onBeforeUnmount(() => {
     </el-header>
 
     <aside class="legacy-sidebar" aria-label="Legacy HMI navigation">
-      <RouterLink to="/monitor" class="legacy-nav-item active">
-        <span class="legacy-nav-icon">▦</span>
-        <span>Monitor</span>
-      </RouterLink>
-      <RouterLink to="/history" class="legacy-nav-item">
-        <span class="legacy-nav-icon">▤</span>
-        <span>Batches</span>
-      </RouterLink>
-      <RouterLink to="/control" class="legacy-nav-item">
-        <span class="legacy-nav-icon">≋</span>
-        <span>Control</span>
-      </RouterLink>
-      <RouterLink to="/ai" class="legacy-nav-item">
-        <span class="legacy-nav-icon">AI</span>
-        <span>AI Lab</span>
-      </RouterLink>
-      <RouterLink to="/audit" class="legacy-nav-item">
-        <span class="legacy-nav-icon">↺</span>
-        <span>History</span>
-      </RouterLink>
-      <RouterLink to="/settings" class="legacy-nav-item">
-        <span class="legacy-nav-icon">⚠</span>
-        <span>Alarms</span>
-      </RouterLink>
-      <RouterLink to="/settings" class="legacy-nav-item">
-        <span class="legacy-nav-icon">⚙</span>
-        <span>Settings</span>
+      <RouterLink
+        v-for="item in hmiNavItems"
+        :key="item.path"
+        :to="item.path"
+        class="legacy-nav-item"
+        :class="{ active: activePath === item.path }"
+      >
+        <span class="legacy-nav-icon">{{ item.icon }}</span>
+        <span>{{ item.label }}</span>
       </RouterLink>
     </aside>
 
@@ -184,7 +145,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <el-main class="content">
+    <el-main class="content" :class="contentClasses">
       <el-alert
         v-if="store.error"
         class="error-alert"

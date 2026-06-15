@@ -6,6 +6,7 @@ use clap::Parser;
 use reactor_edge_daemon::{
     ai_provider::AiProvider,
     api::{serve, AppState, HttpTlsConfig},
+    bootstrap::{enforce_network_auth_gate, resolve_assets_dir},
     config::{load_device_config, load_safety_config, DeviceMode},
     control::{ControlBlockReason, ControlDecision},
     db::Db,
@@ -23,20 +24,6 @@ use reactor_edge_daemon::{
 };
 use tokio::{sync::RwLock, time::sleep};
 use tracing_subscriber::EnvFilter;
-
-fn resolve_assets_dir(requested: &PathBuf) -> PathBuf {
-    let requested_str = requested.to_string_lossy();
-    if requested_str != "auto" {
-        return requested.clone();
-    }
-    let candidates = [PathBuf::from("frontend/dist"), PathBuf::from("static")];
-    for candidate in candidates.iter() {
-        if candidate.join("index.html").is_file() {
-            return candidate.clone();
-        }
-    }
-    PathBuf::from("static")
-}
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -94,6 +81,8 @@ async fn main() -> Result<()> {
             args.bind
         );
     }
+    let auth_secret = std::env::var("XINGSHU_AUTH_SECRET").ok();
+    enforce_network_auth_gate(args.bind, auth_secret.as_deref())?;
     let device_config = load_device_config(&args.config)?;
     let device_mode = device_config.mode.clone();
     let device_config = Arc::new(device_config);
@@ -103,6 +92,11 @@ async fn main() -> Result<()> {
     ai_memory.validate_against_optimizer_bounds(&safety.optimizer)?;
     let ai_provider = AiProvider::from_env()?.map(Arc::new);
     let db = Db::open(&args.db)?;
+    if !db.encryption_status().enabled {
+        tracing::warn!(
+            "DB column encryption is disabled; AINAS/MQTT integration task payloads will be stored as plaintext. Set XINGSHU_DB_ENCRYPTION_KEY (32 raw bytes / 64 hex / base64 of 32 bytes) to enable AES-256-GCM."
+        );
+    }
     if args.seed_demo_context {
         let inserted = seed_demo_context(&db, &safety, &ai_memory)?;
         if inserted {
