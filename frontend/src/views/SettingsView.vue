@@ -24,6 +24,12 @@ const aiMemory = computed(() => objectAt(store.config, "ai_memory"));
 const aiProvider = computed(() => objectAt(store.config, "ai_provider"));
 const localAi = computed(() => objectAt(store.config, "local_ai"));
 const permissions = computed(() => objectAt(store.config, "permissions"));
+const configFieldScenario = computed(() => objectAt(store.config, "field_scenario"));
+const liveFieldScenario = computed(() => objectAt(store.live, "field_scenario"));
+const fieldScenario = computed(() => liveFieldScenario.value ?? configFieldScenario.value);
+const fieldScenarioSignals = computed(() => arrayAt<string>(fieldScenario.value, "signals"));
+const fieldScenarioActions = computed(() => arrayAt<string>(fieldScenario.value, "actions"));
+const fieldScenarioNotes = computed(() => arrayAt<string>(fieldScenario.value, "notes"));
 const roles = computed(() => arrayAt(permissions.value, "roles"));
 const defaultUsers = computed(() => arrayAt<Record<string, unknown> | string>(permissions.value, "default_users"));
 const defaultUserLabels = computed(() => defaultUsers.value.map(defaultUserLabel));
@@ -193,6 +199,28 @@ const modbusTcpOn = computed(() => boolFrom(integrations.value?.modbus_tcp));
 const ainasOn = computed(() => boolFrom(integrations.value?.ainas_ready));
 const restOn = computed(() => boolFrom(integrations.value?.rest_api));
 const cliOn = computed(() => boolFrom(integrations.value?.cli));
+const fieldScenarioTagType = computed(() => {
+  if (textAt(fieldScenario.value, "petrochemical_handling_required", "false") === "true") return "warning";
+  if (textAt(fieldScenario.value, "kind") === "offline_demo") return "info";
+  return "success";
+});
+
+function fieldScenarioSourceLabel(source: string): string {
+  if (source === "environment_override") return store.tr("环境覆盖", "Environment override");
+  return store.tr("自动判断", "Auto detected");
+}
+
+function fieldScenarioListLabel(value: string): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    lab_research: { zh: "实验室研发", en: "Lab research" },
+    pilot_scale: { zh: "中试放大", en: "Pilot scale" },
+    legacy_retrofit: { zh: "旧线改造", en: "Legacy retrofit" },
+    offline_demo: { zh: "离线演示", en: "Offline demo" },
+    petrochemical: { zh: "石油化场景", en: "Petrochemical" }
+  };
+  const hit = labels[value];
+  return hit ? (store.isChinese ? hit.zh : hit.en) : value;
+}
 
 const backendSurfaceLoading = ref(false);
 const backendSurfaceError = ref("");
@@ -679,6 +707,40 @@ onMounted(() => {
             <template #default="{ row }">{{ permissionList(row).join(", ") || "--" }}</template>
           </el-table-column>
         </el-table>
+      </div>
+    </section>
+
+    <section class="panel two-col">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item :label="store.tr('现场场景', 'Field scenario')">
+          <el-tag :type="fieldScenarioTagType" size="small">
+            {{ fieldScenarioListLabel(textAt(fieldScenario, "kind")) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('判定来源', 'Detection source')">
+          {{ fieldScenarioSourceLabel(textAt(fieldScenario, "source")) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('设备模式', 'Device mode')">
+          {{ textAt(fieldScenario, "device_mode") }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('站点标识', 'Site label')">
+          {{ textAt(fieldScenario, "site_label") }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('置信度', 'Confidence')">
+          {{ textAt(fieldScenario, "confidence") }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('石油化处理', 'Petrochemical handling')">
+          <el-tag :type="textAt(fieldScenario, 'petrochemical_handling_required') === 'true' ? 'warning' : 'success'" size="small">
+            {{ textAt(fieldScenario, "petrochemical_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
+          </el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+      <div class="analysis-block">
+        <h2>{{ store.tr("场景动作", "Scenario Actions") }}</h2>
+        <p class="muted">{{ fieldScenarioActions.join("; ") || "--" }}</p>
+        <h2>{{ store.tr("识别信号", "Detection Signals") }}</h2>
+        <p class="muted">{{ fieldScenarioSignals.join(", ") || "--" }}</p>
+        <p v-if="fieldScenarioNotes.length > 0" class="muted">{{ fieldScenarioNotes.join(" ") }}</p>
       </div>
     </section>
 

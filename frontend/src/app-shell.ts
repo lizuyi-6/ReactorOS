@@ -7,6 +7,7 @@ export interface AppShellStoreLike {
   tr(zh: string, en: string): string;
   health: ApiRecord | null;
   live: ApiRecord | null;
+  config: ApiRecord | null;
   runtimeFallback: ApiRecord | null;
   liveStatus: string;
   liveLastUpdated: string | null;
@@ -49,6 +50,31 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
       : store.tr("现场不可用", "Live unavailable")
   );
   const liveAlarms = computed(() => arrayAt<ApiRecord>(store.live, "alarms"));
+  const fieldScenario = computed(() => {
+    const fromLive = store.live?.field_scenario;
+    if (fromLive && typeof fromLive === "object") return fromLive as ApiRecord;
+    const fromConfig = store.config?.field_scenario;
+    return fromConfig && typeof fromConfig === "object" ? (fromConfig as ApiRecord) : null;
+  });
+  const scenarioLabel = computed(() => {
+    const kind = textAt(fieldScenario.value, "kind", "");
+    const translations: Record<string, { zh: string; en: string }> = {
+      lab_research: { zh: "实验室", en: "Lab" },
+      pilot_scale: { zh: "中试", en: "Pilot" },
+      legacy_retrofit: { zh: "改造线", en: "Retrofit" },
+      offline_demo: { zh: "离线演示", en: "Demo" },
+      petrochemical: { zh: "石油化", en: "Petrochem" }
+    };
+    const label = translations[kind];
+    return label ? store.tr(label.zh, label.en) : textAt(fieldScenario.value, "label", "Scenario --");
+  });
+  const scenarioText = computed(() => `SCN ${scenarioLabel.value}`);
+  const scenarioStatusType = computed(() => {
+    if (textAt(fieldScenario.value, "petrochemical_handling_required", "false") === "true") return "warning";
+    const kind = textAt(fieldScenario.value, "kind", "");
+    if (kind === "offline_demo") return "info";
+    return "success";
+  });
   const deviceRows = computed(() => arrayAt<ApiRecord>(store.deviceStatus, "devices"));
   const alarmCounts = computed(() => {
     const counts = { high: 0, warning: 0, info: 0 };
@@ -139,6 +165,8 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
     liveStatusText,
     safetyStatusType,
     safetySummaryText,
+    scenarioStatusType,
+    scenarioText,
     sessionRoleLabel
   };
 }
