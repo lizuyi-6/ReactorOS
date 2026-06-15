@@ -25,18 +25,19 @@ const productResultForm = reactive({
   product_ratio: 0.8,
   notes: ""
 });
+type OptionalBatchNumber = number | null;
 // Standalone batch start form (POST /api/batches/start) — requires at least one
 // explicit target/duration field (backend rejects all-absent). process_id optional.
 const startBatchForm = reactive({
   name: "",
   process_id: "",
-  target_temperature_c: "" as string | number,
-  target_stirrer_rpm: "" as string | number,
-  heating_minutes: "" as string | number,
-  stirring_minutes: "" as string | number
+  target_temperature_c: null as OptionalBatchNumber,
+  target_stirrer_rpm: null as OptionalBatchNumber,
+  heating_minutes: null as OptionalBatchNumber,
+  stirring_minutes: null as OptionalBatchNumber
 });
 const startBatchDisabled = computed(() => {
-  const has = (v: string | number) => v !== "" && v !== null;
+  const has = (v: OptionalBatchNumber) => v !== null;
   return !(
     has(startBatchForm.target_temperature_c) ||
     has(startBatchForm.target_stirrer_rpm) ||
@@ -50,6 +51,13 @@ const historySamples = ref<unknown[]>([]);
 const historyLoading = ref(false);
 const historyPage = ref(1);
 const historyPageSize = ref(50);
+// v1_history item shape: { timestamp, data: {current_temp, current_pressure,
+// stir_speed, flow_rate, ph, product_concentration, ...}, batch_id }.
+// Helper to pull a nested field out of item.data for the table cells.
+function histField(row: unknown, field: string): string {
+  const data = objectAt(row, "data");
+  return textAt(data, field, "--");
+}
 // `loadBatchDetail` returns a wrapper object { batch, outcome, samples, events }
 // (see src/api.rs `get_batch_detail`). The previous code stored the wrapper
 // directly into `selectedBatch`, so the detail panel read fields like
@@ -278,7 +286,7 @@ async function startStandaloneBatch(): Promise<void> {
   try {
     store.error = null;
     actionMessage.value = "";
-    const num = (v: string | number): number | null => (v === "" ? null : Number(v));
+    const num = (v: OptionalBatchNumber): number | null => (v === null ? null : Number(v));
     const pid = startBatchForm.process_id.trim();
     await store.startBatch({
       name: startBatchForm.name.trim() || undefined,
@@ -290,10 +298,10 @@ async function startStandaloneBatch(): Promise<void> {
     });
     actionMessage.value = store.tr("批次已启动。", "Batch started.");
     startBatchForm.name = "";
-    startBatchForm.target_temperature_c = "";
-    startBatchForm.target_stirrer_rpm = "";
-    startBatchForm.heating_minutes = "";
-    startBatchForm.stirring_minutes = "";
+    startBatchForm.target_temperature_c = null;
+    startBatchForm.target_stirrer_rpm = null;
+    startBatchForm.heating_minutes = null;
+    startBatchForm.stirring_minutes = null;
   } catch (error) {
     store.error = error instanceof Error ? error.message : String(error);
   }
@@ -318,8 +326,8 @@ async function loadHistorySamples(): Promise<void> {
       page: historyPage.value,
       pageSize: historyPageSize.value
     });
-    // response shape: { data: [...] } per v1_history; fall back to arrayAt.
-    historySamples.value = arrayAt<object>(resp, "data");
+    // v1_history response shape: { records, items: [{timestamp, data:{current_temp,...}, batch_id}] }
+    historySamples.value = arrayAt<object>(resp, "items");
     if (historySamples.value.length === 0) {
       actionMessage.value = store.tr("无样本历史数据（当前无管线样本入库）。", "No sample history (no pipeline samples persisted yet).");
     }
@@ -464,26 +472,29 @@ watch(
         </el-button>
       </div>
       <el-table v-if="historySamples.length > 0" :data="historySamples" class="data-table" size="small" max-height="360">
-        <el-table-column :label="store.tr('时间', 'Time')" min-width="160">
-          <template #default="{ row }">{{ formatTimestamp(textAt(row, "created_at")) }}</template>
+        <el-table-column :label="store.tr('时间', 'Time')" min-width="170">
+          <template #default="{ row }">{{ formatTimestamp(textAt(row, "timestamp")) }}</template>
         </el-table-column>
         <el-table-column :label="store.tr('温度 C', 'Temp')" width="90">
-          <template #default="{ row }">{{ textAt(row, "temperature_c") }}</template>
+          <template #default="{ row }">{{ histField(row, "current_temp") }}</template>
         </el-table-column>
-        <el-table-column :label="store.tr('压力 MPa', 'Press')" width="100">
-          <template #default="{ row }">{{ textAt(row, "pressure_mpa") }}</template>
+        <el-table-column :label="store.tr('压力 MPa', 'Press')" width="110">
+          <template #default="{ row }">{{ histField(row, "current_pressure") }}</template>
         </el-table-column>
-        <el-table-column :label="store.tr('rpm', 'rpm')" width="70">
-          <template #default="{ row }">{{ textAt(row, "stirrer_rpm") }}</template>
+        <el-table-column :label="store.tr('rpm', 'rpm')" width="80">
+          <template #default="{ row }">{{ histField(row, "stir_speed") }}</template>
         </el-table-column>
         <el-table-column :label="store.tr('流量', 'Flow')" width="80">
-          <template #default="{ row }">{{ textAt(row, "flow_rate_l_min") }}</template>
+          <template #default="{ row }">{{ histField(row, "flow_rate") }}</template>
         </el-table-column>
-        <el-table-column :label="store.tr('浓度 %', 'Conc.')" width="80">
-          <template #default="{ row }">{{ textAt(row, "product_concentration_percent") }}</template>
+        <el-table-column :label="store.tr('浓度 %', 'Conc.')" width="90">
+          <template #default="{ row }">{{ histField(row, "product_concentration") }}</template>
         </el-table-column>
-        <el-table-column :label="store.tr('pH', 'pH')" width="60">
-          <template #default="{ row }">{{ textAt(row, "ph") }}</template>
+        <el-table-column :label="store.tr('pH', 'pH')" width="70">
+          <template #default="{ row }">{{ histField(row, "ph") }}</template>
+        </el-table-column>
+        <el-table-column :label="store.tr('批次', 'Batch')" width="80">
+          <template #default="{ row }">{{ textAt(row, "batch_id") ? "#" + textAt(row, "batch_id") : "--" }}</template>
         </el-table-column>
       </el-table>
       <div v-else class="process-empty">
