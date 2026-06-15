@@ -22,7 +22,11 @@ export default defineConfig(({ mode }) => {
       strictPort: false,
       proxy: {
         "/health": apiTarget,
-        "/api": apiTarget
+        "/api": apiTarget,
+        "/ws": {
+          target: apiTarget,
+          ws: true
+        }
       }
     }
   };

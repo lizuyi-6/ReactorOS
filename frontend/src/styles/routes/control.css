@@ -1,0 +1,114 @@
+/* Control */
+.monitor-route .content.route-control > .view-stack {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: 52px 168px minmax(294px, 1fr) minmax(252px, 0.88fr);
+  grid-template-areas:
+    "head head head head"
+    "targets targets switches switches"
+    "recipes recipes detail detail"
+    "run safety batches batches";
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(1) {
+  grid-area: targets;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(2) {
+  grid-area: switches;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(3) {
+  grid-area: recipes;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(4) {
+  grid-area: detail;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(5) {
+  grid-area: run;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(6) {
+  grid-area: safety;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(7) {
+  grid-area: batches;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.monitor-route .content.route-control .control-panel {
+  grid-template-columns: minmax(180px, 0.58fr) minmax(0, 1.42fr);
+  gap: 10px;
+}
+
+.monitor-route .content.route-control .control-form {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.monitor-route .content.route-control .switch-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.monitor-route .content.route-control .switch-grid .emergency-actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.monitor-route .content.route-control .switch-grid label,
+.monitor-route .content.route-control .emergency-actions {
+  min-height: 56px;
+  padding: 8px;
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(2).control-panel {
+  grid-template-columns: minmax(170px, 0.48fr) minmax(0, 1.52fr);
+}
+
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(5),
+.monitor-route .content.route-control > .view-stack > section:nth-of-type(6) {
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+}
+
+.monitor-route .content.route-control .process-panel {
+  gap: 8px;
+}
+
+.monitor-route .content.route-control .process-grid,
+.monitor-route .content.route-control .process-detail-grid {
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.monitor-route .content.route-control .process-grid {
+  grid-template-columns: minmax(250px, 0.75fr) minmax(0, 1.25fr);
+}
+
+.monitor-route .content.route-control .process-detail-grid {
+  grid-template-columns: minmax(210px, 0.55fr) minmax(0, 1.45fr);
+}
+
+.monitor-route .content.route-control .process-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.monitor-route .content.route-control .process-form .control-actions {
+  grid-column: 1 / -1;
+}
+
+.monitor-route .content.route-control .process-list,
+.monitor-route .content.route-control .process-steps {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+

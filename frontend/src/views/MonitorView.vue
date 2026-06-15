@@ -162,6 +162,18 @@ const currentBatchRows = computed(() => {
   if (activeBatchId.value !== null) rows.push({ label: store.tr("活动批次", "Active batch"), value: String(activeBatchId.value) });
   return rows;
 });
+const currentBatchPanelRows = computed(() => {
+  if (currentBatchRows.value.length > 0) return currentBatchRows.value;
+  const latestEvent = eventRows.value[0];
+  return [
+    { label: store.tr("活动批次", "Active batch"), value: store.tr("无", "None") },
+    { label: store.tr("样本窗口", "Sample window"), value: String(samples.value.length) },
+    { label: store.tr("报警数", "Alarm count"), value: String(alarms.value.length) },
+    { label: store.tr("AI 评分", "AI score"), value: aiScore.value === null ? "--" : fixed(aiScore.value, 1, "%") },
+    { label: store.tr("最新事件", "Latest event"), value: textAt(latestEvent, "event_type", "--") },
+    { label: store.tr("产物记录", "Outcomes"), value: String(batchOutcomes.value.length) }
+  ];
+});
 // Real per-sample freshness from backend device_status (last_seen_age_ms /
 // stale_after_ms / status). No more "PIPELINE ONLINE" boolean masquerade — a
 // stale-but-200 sample now reads "STALE" honestly.
@@ -573,7 +585,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="batch-started">Started --:--:--</div>
           <dl>
-            <template v-for="row in currentBatchRows" :key="row.label">
+            <template v-for="row in currentBatchPanelRows" :key="row.label">
               <dt>{{ row.label }}</dt>
               <dd>{{ row.value }}</dd>
             </template>

@@ -1,5 +1,6 @@
 pub mod ai_provider;
 pub mod api;
+pub mod bootstrap;
 pub mod config;
 pub mod control;
 pub mod db;
