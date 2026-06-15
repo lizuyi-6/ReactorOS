@@ -1,0 +1,206 @@
+/* Scrollbars in the industrial tone */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0c;
+}
+::-webkit-scrollbar-thumb {
+  background: #2d3a2e;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4f6b48;
+}
+
+@media (max-width: 920px) {
+  .app-shell,
+  .topbar,
+  .utility-strip,
+  .view-heading,
+  .legacy-console-grid,
+  .control-panel,
+  .modbus-debug-panel,
+  .audit-toolbar,
+  .process-grid,
+  .process-detail-grid,
+  .two-col,
+  .result-heading {
+    display: block;
+  }
+
+  .backend-surface-grid,
+  .component-action-form {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    width: 100% !important;
+  }
+
+  .topbar {
+    height: auto !important;
+    padding: 16px;
+  }
+
+  .topbar-actions,
+  .metric-grid {
+    margin-top: 12px;
+  }
+
+  .auth-panel {
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 10px 12px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .nav-list {
+    width: 100%;
+  }
+
+  .nav-link {
+    min-height: 38px;
+  }
+
+  .monitor-center-stack,
+  .monitor-right-stack {
+    margin-top: 12px;
+  }
+
+  .parameter-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .monitor-workbench > .panel {
+    overflow-x: auto;
+  }
+
+  .monitor-workbench > .panel .el-table {
+    min-width: 900px;
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .control-form,
+  .modbus-form,
+  .audit-filter-form,
+  .history-filter-form,
+  .product-result-form,
+  .process-form,
+  .switch-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .history-filter-form .control-actions,
+  .product-result-form .notes-field,
+  .product-result-form .control-actions {
+    grid-column: 1;
+  }
+
+  .modbus-form .reason-field {
+    grid-column: auto;
+  }
+
+  .target-summary {
+    margin-bottom: 12px;
+  }
+
+  .result-grid,
+  .sop-list-grid,
+  .compact-targets {
+    grid-template-columns: 1fr;
+  }
+
+  .field-grid,
+  .field-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-action-title {
+    display: grid;
+  }
+}
+
+@media (max-width: 560px) {
+  .metric-grid,
+  .target-summary,
+  .integration-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 920px) {
+  .monitor-route .topbar {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.9fr) minmax(0, 1fr) 122px;
+    height: 48px !important;
+    padding: 0;
+  }
+
+  .monitor-route .brand-line {
+    padding-left: 20px;
+  }
+
+  .monitor-route .brand-line strong {
+    font-size: 26px;
+  }
+
+  .monitor-route .status-cluster {
+    justify-self: stretch;
+  }
+
+  .monitor-route .status-cluster .el-tag {
+    min-width: 0;
+    padding: 0 10px;
+    font-size: 10px;
+  }
+
+  .monitor-route .status-cluster .el-tag:nth-child(3),
+  .monitor-route .topbar-clock {
+    display: none;
+  }
+
+  .monitor-route .content {
+    margin-left: 120px;
+    padding: 0 18px 24px;
+    overflow-x: hidden;
+  }
+
+
+  .legacy-status-row,
+  .dark-monitor-grid,
+  .enterprise-component-grid,
+  .predictive-columns,
+  .operator-fields {
+    grid-template-columns: 1fr;
+  }
+
+
+  .process-line-panel,
+  .detector-panel,
+  .predictive-panel {
+    min-height: auto;
+  }
+
+  .reactor-vessel {
+    height: 310px;
+  }
+
+  .dark-right-stack {
+    grid-row: auto;
+  }
+}
+

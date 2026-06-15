@@ -49,6 +49,9 @@ config/reactor-edge.env
 /output/local-run/*.log*
 /output/local-run/*payload.json
 /output/local-run/ainas-mqtt-selfcheck.json
+/output/dev/
+/output/playwright/
+/output/compliance-audit-report-*.md
 /output/team_*.txt
 /output/xingshu_prd_pdf.txt
 /output/index-script-check.js
