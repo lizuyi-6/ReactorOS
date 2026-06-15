@@ -1,0 +1,59 @@
+/* AI */
+.monitor-route .content.route-ai > .view-stack {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(330px, 0.9fr);
+  grid-template-rows: 52px 210px minmax(0, 1fr);
+  grid-template-areas:
+    "head head head"
+    "readiness readiness recommendation"
+    "master master sop";
+}
+
+.monitor-route .content.route-ai > .view-stack > section:nth-of-type(1) {
+  grid-area: readiness;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.monitor-route .content.route-ai > .view-stack > section:nth-of-type(2) {
+  grid-area: recommendation;
+}
+
+.monitor-route .content.route-ai > .view-stack > section:nth-of-type(3) {
+  grid-area: master;
+}
+
+.monitor-route .content.route-ai > .view-stack > section:nth-of-type(4) {
+  grid-area: sop;
+}
+
+.monitor-route .content.route-ai .control-panel {
+  grid-template-columns: minmax(220px, 0.65fr) minmax(0, 1.35fr);
+  gap: 10px;
+}
+
+.monitor-route .content.route-ai .control-form {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.monitor-route .content.route-ai .ai-result {
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.monitor-route .content.route-ai .result-grid,
+.monitor-route .content.route-ai .sop-list-grid,
+.monitor-route .content.route-ai .sop-step-list,
+.monitor-route .content.route-ai .ai-action-list {
+  gap: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.monitor-route .content.route-ai .result-card,
+.monitor-route .content.route-ai .ai-action-card,
+.monitor-route .content.route-ai .sop-step {
+  padding: 9px;
+}
+
