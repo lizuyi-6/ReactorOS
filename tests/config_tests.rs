@@ -3,8 +3,17 @@ use reactor_edge_daemon::{
         load_device_config, load_safety_config, validate_device_config, validate_safety_config,
         DeviceConfig, DeviceMode, SafetyConfig,
     },
+    db::Batch,
+    field_scenario::{detect_field_scenario, FieldScenarioContext, FieldScenarioKind},
     memory::load_ai_memory,
 };
+
+static FIELD_SCENARIO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn clear_field_scenario_env() {
+    std::env::remove_var("XINGSHU_FIELD_SCENARIO");
+    std::env::remove_var("XINGSHU_FIELD_SITE_LABEL");
+}
 
 #[test]
 fn parses_esp32_serial_device_mode() {
@@ -113,6 +122,106 @@ fn ai_memory_template_is_valid_and_inside_safety_optimizer_bounds() {
     assert_eq!(bounds.max_temperature_c, 135.0);
     assert_eq!(bounds.min_stirrer_rpm, 250.0);
     assert_eq!(memory.sensor_limits.configured_count(), 8);
+}
+
+#[test]
+fn field_scenario_defaults_to_offline_demo_for_empty_pipeline() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+    let profile = detect_field_scenario(FieldScenarioContext {
+        device_mode: &DeviceMode::Pipeline,
+        runtime: None,
+        include_runtime_signals: true,
+        memory: &memory,
+        processes: &[],
+        recent_batches: &[],
+        recent_outcomes: &[],
+    });
+
+    assert_eq!(profile.kind, FieldScenarioKind::OfflineDemo);
+    assert!(!profile.petrochemical_handling_required);
+    assert!(profile
+        .signals
+        .iter()
+        .any(|signal| signal == "recent_batches=0"));
+}
+
+#[test]
+fn field_scenario_flags_petrochemical_materials_conservatively() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    let mut memory = load_ai_memory("config/ai_memory.toml").unwrap();
+    memory.profile.material_family = "petrochemical refinery product".to_string();
+
+    let profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Esp32Serial,
+        &memory,
+    ));
+
+    assert_eq!(profile.kind, FieldScenarioKind::Petrochemical);
+    assert!(profile.petrochemical_handling_required);
+    assert!(profile
+        .actions
+        .iter()
+        .any(|action| action.contains("petroleum")));
+}
+
+#[test]
+fn field_scenario_env_override_wins_over_auto_detection() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    std::env::set_var("XINGSHU_FIELD_SCENARIO", "petrochemical");
+    std::env::set_var("XINGSHU_FIELD_SITE_LABEL", "refinery line A");
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+
+    let profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Pipeline,
+        &memory,
+    ));
+    clear_field_scenario_env();
+
+    assert_eq!(profile.kind, FieldScenarioKind::Petrochemical);
+    assert_eq!(profile.site_label.as_deref(), Some("refinery line A"));
+    assert_eq!(profile.confidence, 1.0);
+    assert!(profile.petrochemical_handling_required);
+}
+
+#[test]
+fn field_scenario_uses_recent_batches_for_pilot_scale() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+    let now = chrono::Utc::now();
+    let batches: Vec<Batch> = (0..5)
+        .map(|id| Batch {
+            id,
+            process_id: None,
+            name: format!("pilot batch {id}"),
+            started_at: now,
+            finished_at: Some(now),
+            target_temperature_c: 80.0,
+            target_stirrer_rpm: 400.0,
+            heating_minutes: 60.0,
+            stirring_minutes: 40.0,
+        })
+        .collect();
+
+    let profile = detect_field_scenario(FieldScenarioContext {
+        device_mode: &DeviceMode::Esp32Serial,
+        runtime: None,
+        include_runtime_signals: false,
+        memory: &memory,
+        processes: &[],
+        recent_batches: &batches,
+        recent_outcomes: &[],
+    });
+
+    assert_eq!(profile.kind, FieldScenarioKind::PilotScale);
+    assert!(profile
+        .signals
+        .iter()
+        .any(|signal| signal == "recent_batches=5"));
 }
 
 #[test]

@@ -26,6 +26,8 @@ const {
   liveStatusText,
   safetyStatusType,
   safetySummaryText,
+  scenarioStatusType,
+  scenarioText,
   sessionRoleLabel
 } = useAppShellState(store, activePath, now);
 
@@ -75,6 +77,7 @@ onBeforeUnmount(() => {
 
       <div class="status-cluster">
         <el-tag :type="alarmStatusType">{{ alarmSummaryText }}</el-tag>
+        <el-tag :type="scenarioStatusType">{{ scenarioText }}</el-tag>
         <el-tag :type="store.liveStatus === 'fresh' ? 'success' : 'danger'">{{ liveStatusText }}</el-tag>
         <el-tag :type="safetyStatusType">{{ safetySummaryText }}</el-tag>
         <el-tag :type="commandStatusType">{{ commandReceiptText }}</el-tag>
