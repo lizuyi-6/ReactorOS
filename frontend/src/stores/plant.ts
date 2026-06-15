@@ -696,13 +696,17 @@ export const usePlantStore = defineStore("plant", () => {
   }
 
   async function loadHistory(deviceId: string, options: HistoryQueryOptions = {}): Promise<ApiRecord> {
+    // Backend requires start_time AND end_time (parse_required_time in
+    // v1_history). Default to "last 24h" so a bare "fetch" click works without
+    // the caller having to supply a time window.
+    const endTime = options.endTime ?? new Date().toISOString();
+    const startTime = options.startTime ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const params = new URLSearchParams();
-    if (options.startTime) params.set("start_time", options.startTime);
-    if (options.endTime) params.set("end_time", options.endTime);
+    params.set("start_time", startTime);
+    params.set("end_time", endTime);
     if (options.page !== undefined) params.set("page", String(options.page));
     if (options.pageSize !== undefined) params.set("page_size", String(options.pageSize));
-    const query = params.toString();
-    const path = `/api/v1/reactor/${encodeURIComponent(deviceId)}/history${query ? `?${query}` : ""}`;
+    const path = `/api/v1/reactor/${encodeURIComponent(deviceId)}/history?${params.toString()}`;
     return request<ApiRecord>(path, { allowFailure: true });
   }
 
@@ -712,7 +716,10 @@ export const usePlantStore = defineStore("plant", () => {
   // than replace `live` (which would drop batches/processes/recommendation).
   // Net effect: latency drops from the 5 s poll to "push → refresh".
   function connectRealtimeSocket(deviceId: string): void {
-    if (typeof WebSocket === "undefined") return;
+    if (typeof WebSocket === "undefined" || !token.value) {
+      realtimeConnected.value = false;
+      return;
+    }
     disconnectRealtimeSocket();
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${proto}//${window.location.host}/ws/v1/reactor/${encodeURIComponent(deviceId)}/realtime`;
