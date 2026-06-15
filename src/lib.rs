@@ -6,6 +6,7 @@ pub mod control;
 pub mod db;
 pub mod demo;
 pub mod device;
+pub mod field_scenario;
 pub mod local_ai;
 pub mod memory;
 pub mod modbus_tcp;
