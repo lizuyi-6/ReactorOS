@@ -8,6 +8,7 @@ use crate::{
 };
 
 const ENV_FIELD_SCENARIO: &str = "XINGSHU_FIELD_SCENARIO";
+const ENV_PRODUCTION_LINE: &str = "XINGSHU_PRODUCTION_LINE";
 const ENV_FIELD_SITE_LABEL: &str = "XINGSHU_FIELD_SITE_LABEL";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,12 +18,21 @@ pub enum FieldScenarioKind {
     PilotScale,
     LegacyRetrofit,
     OfflineDemo,
-    Petrochemical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProductionLineKind {
+    GeneralChemistry,
+    PetrochemicalRefining,
+    Biopharmaceutical,
+    FineChemical,
+    MaterialSynthesis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FieldScenarioSource {
+pub enum AdaptationSource {
     Auto,
     EnvironmentOverride,
 }
@@ -30,7 +40,7 @@ pub enum FieldScenarioSource {
 #[derive(Debug, Clone, Serialize)]
 pub struct FieldScenarioProfile {
     pub kind: FieldScenarioKind,
-    pub source: FieldScenarioSource,
+    pub source: AdaptationSource,
     pub label: &'static str,
     pub confidence: f64,
     pub device_mode: &'static str,
@@ -38,6 +48,19 @@ pub struct FieldScenarioProfile {
     pub signals: Vec<String>,
     pub actions: Vec<String>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProductionLineProfile {
+    pub kind: ProductionLineKind,
+    pub source: AdaptationSource,
+    pub label: &'static str,
+    pub confidence: f64,
+    pub site_label: Option<String>,
+    pub signals: Vec<String>,
+    pub actions: Vec<String>,
+    pub notes: Vec<String>,
+    pub special_handling_required: bool,
     pub petrochemical_handling_required: bool,
 }
 
@@ -68,9 +91,9 @@ impl<'a> FieldScenarioContext<'a> {
 pub fn detect_field_scenario(context: FieldScenarioContext<'_>) -> FieldScenarioProfile {
     let site_label = env_trimmed(ENV_FIELD_SITE_LABEL);
     if let Some(kind) = scenario_override_from_env() {
-        let mut profile = profile_for(
+        let mut profile = scenario_profile_for(
             kind,
-            FieldScenarioSource::EnvironmentOverride,
+            AdaptationSource::EnvironmentOverride,
             context.device_mode,
         );
         profile.confidence = 1.0;
@@ -82,11 +105,9 @@ pub fn detect_field_scenario(context: FieldScenarioContext<'_>) -> FieldScenario
         return profile;
     }
 
-    let text = scenario_text(&context, site_label.as_deref());
-    let text_kind = classify_from_text(&text);
-    let kind = if matches!(text_kind, Some(FieldScenarioKind::Petrochemical)) {
-        FieldScenarioKind::Petrochemical
-    } else if context.include_runtime_signals
+    let text = scenario_text(&context, site_label.as_deref(), false);
+    let text_kind = classify_scenario_from_text(&text);
+    let kind = if context.include_runtime_signals
         && matches!(context.device_mode, DeviceMode::Pipeline)
         && context
             .runtime
@@ -113,10 +134,33 @@ pub fn detect_field_scenario(context: FieldScenarioContext<'_>) -> FieldScenario
         text_kind.unwrap_or(FieldScenarioKind::LabResearch)
     };
 
-    let mut profile = profile_for(kind, FieldScenarioSource::Auto, context.device_mode);
+    let mut profile = scenario_profile_for(kind, AdaptationSource::Auto, context.device_mode);
     profile.site_label = site_label;
-    profile.confidence = confidence_for(&profile, &context);
-    append_common_signals(&mut profile, &context);
+    profile.confidence = scenario_confidence_for(&profile, &context);
+    append_scenario_signals(&mut profile, &context);
+    profile
+}
+
+pub fn detect_production_line(context: FieldScenarioContext<'_>) -> ProductionLineProfile {
+    let site_label = env_trimmed(ENV_FIELD_SITE_LABEL);
+    if let Some(kind) = production_line_override_from_env() {
+        let mut profile = production_line_profile_for(kind, AdaptationSource::EnvironmentOverride);
+        profile.confidence = 1.0;
+        profile.site_label = site_label;
+        profile.signals.push(format!(
+            "{ENV_PRODUCTION_LINE} override selected {}",
+            kind.as_str()
+        ));
+        return profile;
+    }
+
+    let text = scenario_text(&context, site_label.as_deref(), true);
+    let kind =
+        classify_production_line_from_text(&text).unwrap_or(ProductionLineKind::GeneralChemistry);
+    let mut profile = production_line_profile_for(kind, AdaptationSource::Auto);
+    profile.site_label = site_label;
+    profile.confidence = production_line_confidence_for(kind);
+    append_production_line_signals(&mut profile, &context);
     profile
 }
 
@@ -128,6 +172,14 @@ fn scenario_override_from_env() -> Option<FieldScenarioKind> {
     parse_scenario_kind(&value)
 }
 
+fn production_line_override_from_env() -> Option<ProductionLineKind> {
+    let value = env_trimmed(ENV_PRODUCTION_LINE).or_else(|| env_trimmed(ENV_FIELD_SCENARIO))?;
+    if value.eq_ignore_ascii_case("auto") {
+        return None;
+    }
+    parse_production_line_kind(&value)
+}
+
 fn parse_scenario_kind(value: &str) -> Option<FieldScenarioKind> {
     match normalize_token(value).as_str() {
         "labresearch" | "lab" | "research" => Some(FieldScenarioKind::LabResearch),
@@ -136,16 +188,37 @@ fn parse_scenario_kind(value: &str) -> Option<FieldScenarioKind> {
             Some(FieldScenarioKind::LegacyRetrofit)
         }
         "offlinedemo" | "demo" | "offline" => Some(FieldScenarioKind::OfflineDemo),
-        "petrochemical" | "petrochem" | "refinery" | "oil" | "shiyouhua" => {
-            Some(FieldScenarioKind::Petrochemical)
+        _ => None,
+    }
+}
+
+fn parse_production_line_kind(value: &str) -> Option<ProductionLineKind> {
+    match normalize_token(value).as_str() {
+        "generalchemistry" | "general" | "chemistry" => Some(ProductionLineKind::GeneralChemistry),
+        "petrochemicalrefining"
+        | "petrochemical"
+        | "petrochem"
+        | "refinery"
+        | "oil"
+        | "shiyouhua"
+        | "石油炼化"
+        | "石油化"
+        | "炼化"
+        | "炼油" => Some(ProductionLineKind::PetrochemicalRefining),
+        "biopharmaceutical" | "biopharma" | "biotech" | "pharma" | "生物制药" | "发酵" => {
+            Some(ProductionLineKind::Biopharmaceutical)
+        }
+        "finechemical" | "finechem" | "精细化工" => Some(ProductionLineKind::FineChemical),
+        "materialsynthesis" | "material" | "polymer" | "材料合成" | "材料" | "聚合" => {
+            Some(ProductionLineKind::MaterialSynthesis)
         }
         _ => None,
     }
 }
 
-fn profile_for(
+fn scenario_profile_for(
     kind: FieldScenarioKind,
-    source: FieldScenarioSource,
+    source: AdaptationSource,
     device_mode: &DeviceMode,
 ) -> FieldScenarioProfile {
     let (label, actions, notes) = match kind {
@@ -155,7 +228,7 @@ fn profile_for(
                 "keep conservative optimizer bounds and require verified sample freshness".to_string(),
                 "prefer operator confirmation before applying AI recommendations".to_string(),
             ],
-            vec!["bench-scale validation; use recorded outcomes to build confidence".to_string()],
+            vec!["bench-scale validation; production-line chemistry is evaluated separately".to_string()],
         ),
         FieldScenarioKind::PilotScale => (
             "Pilot scale",
@@ -163,7 +236,7 @@ fn profile_for(
                 "treat recent finished batches as the active tuning window".to_string(),
                 "watch batch closure and product-result recording before recommendation updates".to_string(),
             ],
-            vec!["multi-batch operation detected; keep production-state recovery visible".to_string()],
+            vec!["multi-batch operation detected; production-line chemistry is evaluated separately".to_string()],
         ),
         FieldScenarioKind::LegacyRetrofit => (
             "Legacy retrofit",
@@ -181,17 +254,6 @@ fn profile_for(
             ],
             vec!["pipeline mode has no fresh persisted sample; fail-closed behavior remains expected".to_string()],
         ),
-        FieldScenarioKind::Petrochemical => (
-            "Petrochemical",
-            vec![
-                "require petroleum material review before accepting AI or operator target changes".to_string(),
-                "tighten field verification around pressure, temperature, venting, and product handling".to_string(),
-                "keep control fail-closed until site-specific petroleum hazards are validated".to_string(),
-            ],
-            vec![
-                "petroleum-like refining product signal detected; this profile flags stricter handling and review".to_string(),
-            ],
-        ),
     };
 
     FieldScenarioProfile {
@@ -204,13 +266,87 @@ fn profile_for(
         signals: Vec::new(),
         actions,
         notes,
-        petrochemical_handling_required: matches!(kind, FieldScenarioKind::Petrochemical),
     }
 }
 
-fn confidence_for(profile: &FieldScenarioProfile, context: &FieldScenarioContext<'_>) -> f64 {
+fn production_line_profile_for(
+    kind: ProductionLineKind,
+    source: AdaptationSource,
+) -> ProductionLineProfile {
+    let (label, actions, notes, special_handling_required, petrochemical_handling_required) =
+        match kind {
+            ProductionLineKind::GeneralChemistry => (
+                "General chemistry",
+                vec![
+                    "apply the base reactor safety envelope and require verified product-result records"
+                        .to_string(),
+                ],
+                vec!["no production-line-specific material family was detected".to_string()],
+                false,
+                false,
+            ),
+            ProductionLineKind::PetrochemicalRefining => (
+                "Petrochemical refining",
+                vec![
+                    "require petroleum material review before accepting AI or operator target changes".to_string(),
+                    "tighten field verification around pressure, temperature, venting, and product handling".to_string(),
+                    "keep control fail-closed until site-specific petroleum hazards are validated".to_string(),
+                ],
+                vec!["petroleum-like refining product signal detected; deployment scenario remains independent".to_string()],
+                true,
+                true,
+            ),
+            ProductionLineKind::Biopharmaceutical => (
+                "Biopharmaceutical",
+                vec![
+                    "separate sterility, contamination, and cleaning validation from reactor control recommendations".to_string(),
+                    "require batch traceability before using outcomes for optimization".to_string(),
+                ],
+                vec!["bio/pharma signal detected; deployment scenario remains independent".to_string()],
+                true,
+                false,
+            ),
+            ProductionLineKind::FineChemical => (
+                "Fine chemical",
+                vec![
+                    "keep selectivity and impurity notes attached to product-result records".to_string(),
+                    "review forbidden zones against the validated chemistry window".to_string(),
+                ],
+                vec!["fine-chemical signal detected; deployment scenario remains independent".to_string()],
+                false,
+                false,
+            ),
+            ProductionLineKind::MaterialSynthesis => (
+                "Material synthesis",
+                vec![
+                    "track viscosity, mixing, and solid/loading assumptions outside the base sensor envelope".to_string(),
+                    "review product concentration interpretation before optimization".to_string(),
+                ],
+                vec!["material synthesis signal detected; deployment scenario remains independent".to_string()],
+                true,
+                false,
+            ),
+        };
+
+    ProductionLineProfile {
+        kind,
+        source,
+        label,
+        confidence: 0.65,
+        site_label: None,
+        signals: Vec::new(),
+        actions,
+        notes,
+        special_handling_required,
+        petrochemical_handling_required,
+    }
+}
+
+fn scenario_confidence_for(
+    profile: &FieldScenarioProfile,
+    context: &FieldScenarioContext<'_>,
+) -> f64 {
     match profile.kind {
-        FieldScenarioKind::Petrochemical => 0.9,
         FieldScenarioKind::OfflineDemo => 0.86,
         FieldScenarioKind::LegacyRetrofit
             if matches!(
@@ -229,7 +365,17 @@ fn confidence_for(profile: &FieldScenarioProfile, context: &FieldScenarioContext
     }
 }
 
-fn append_common_signals(profile: &mut FieldScenarioProfile, context: &FieldScenarioContext<'_>) {
+fn production_line_confidence_for(kind: ProductionLineKind) -> f64 {
+    match kind {
+        ProductionLineKind::GeneralChemistry => 0.55,
+        ProductionLineKind::PetrochemicalRefining => 0.9,
+        ProductionLineKind::Biopharmaceutical => 0.88,
+        ProductionLineKind::FineChemical => 0.76,
+        ProductionLineKind::MaterialSynthesis => 0.76,
+    }
+}
+
+fn append_scenario_signals(profile: &mut FieldScenarioProfile, context: &FieldScenarioContext<'_>) {
     profile.signals.push(format!(
         "device_mode={}",
         device_mode_label(context.device_mode)
@@ -240,10 +386,6 @@ fn append_common_signals(profile: &mut FieldScenarioProfile, context: &FieldScen
     profile
         .signals
         .push(format!("recent_outcomes={}", context.recent_outcomes.len()));
-    profile.signals.push(format!(
-        "memory_material_family={}",
-        context.memory.profile.material_family
-    ));
     if let Some(runtime) = context.runtime {
         profile.signals.push(format!(
             "runtime_sample={}",
@@ -259,9 +401,29 @@ fn append_common_signals(profile: &mut FieldScenarioProfile, context: &FieldScen
     }
 }
 
-fn scenario_text(context: &FieldScenarioContext<'_>, site_label: Option<&str>) -> String {
+fn append_production_line_signals(
+    profile: &mut ProductionLineProfile,
+    context: &FieldScenarioContext<'_>,
+) {
+    profile.signals.push(format!(
+        "memory_material_family={}",
+        context.memory.profile.material_family
+    ));
+    profile
+        .signals
+        .push(format!("process_count={}", context.processes.len()));
+    profile
+        .signals
+        .push(format!("recent_batches={}", context.recent_batches.len()));
+}
+
+fn scenario_text(
+    context: &FieldScenarioContext<'_>,
+    site_label: Option<&str>,
+    include_memory: bool,
+) -> String {
     let mut fields = Vec::new();
-    if !context.include_runtime_signals {
+    if include_memory {
         fields.extend([
             context.memory.profile.name.as_str(),
             context.memory.profile.reactor_model.as_str(),
@@ -310,10 +472,7 @@ fn scenario_text(context: &FieldScenarioContext<'_>, site_label: Option<&str>) -
     fields.join(" ")
 }
 
-fn classify_from_text(text: &str) -> Option<FieldScenarioKind> {
-    if matches_any(text, &PETROCHEMICAL_KEYWORDS) {
-        return Some(FieldScenarioKind::Petrochemical);
-    }
+fn classify_scenario_from_text(text: &str) -> Option<FieldScenarioKind> {
     if matches_any(text, &OFFLINE_KEYWORDS) {
         return Some(FieldScenarioKind::OfflineDemo);
     }
@@ -325,6 +484,22 @@ fn classify_from_text(text: &str) -> Option<FieldScenarioKind> {
     }
     if matches_any(text, &LAB_KEYWORDS) {
         return Some(FieldScenarioKind::LabResearch);
+    }
+    None
+}
+
+fn classify_production_line_from_text(text: &str) -> Option<ProductionLineKind> {
+    if matches_any(text, &PETROCHEMICAL_KEYWORDS) {
+        return Some(ProductionLineKind::PetrochemicalRefining);
+    }
+    if matches_any(text, &BIOPHARMA_KEYWORDS) {
+        return Some(ProductionLineKind::Biopharmaceutical);
+    }
+    if matches_any(text, &MATERIAL_KEYWORDS) {
+        return Some(ProductionLineKind::MaterialSynthesis);
+    }
+    if matches_any(text, &FINE_CHEMICAL_KEYWORDS) {
+        return Some(ProductionLineKind::FineChemical);
     }
     None
 }
@@ -368,7 +543,18 @@ impl FieldScenarioKind {
             FieldScenarioKind::PilotScale => "pilot_scale",
             FieldScenarioKind::LegacyRetrofit => "legacy_retrofit",
             FieldScenarioKind::OfflineDemo => "offline_demo",
-            FieldScenarioKind::Petrochemical => "petrochemical",
+        }
+    }
+}
+
+impl ProductionLineKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            ProductionLineKind::GeneralChemistry => "general_chemistry",
+            ProductionLineKind::PetrochemicalRefining => "petrochemical_refining",
+            ProductionLineKind::Biopharmaceutical => "biopharmaceutical",
+            ProductionLineKind::FineChemical => "fine_chemical",
+            ProductionLineKind::MaterialSynthesis => "material_synthesis",
         }
     }
 }
@@ -393,6 +579,46 @@ const PETROCHEMICAL_KEYWORDS: &[&str] = &[
     "\u{539f}\u{6cb9}",
     "\u{6cb9}\u{54c1}",
     "\u{70c3}",
+];
+
+const BIOPHARMA_KEYWORDS: &[&str] = &[
+    "biopharma",
+    "biopharmaceutical",
+    "biotech",
+    "pharma",
+    "pharmaceutical",
+    "fermentation",
+    "enzyme",
+    "cell culture",
+    "\u{751f}\u{7269}\u{5236}\u{836f}",
+    "\u{751f}\u{7269}\u{53cd}\u{5e94}",
+    "\u{53d1}\u{9175}",
+    "\u{9176}",
+];
+
+const FINE_CHEMICAL_KEYWORDS: &[&str] = &[
+    "fine chemical",
+    "finechem",
+    "specialty chemical",
+    "intermediate",
+    "selectivity",
+    "\u{7cbe}\u{7ec6}\u{5316}\u{5de5}",
+    "\u{4e2d}\u{95f4}\u{4f53}",
+    "\u{9009}\u{62e9}\u{6027}",
+];
+
+const MATERIAL_KEYWORDS: &[&str] = &[
+    "material",
+    "polymer",
+    "resin",
+    "slurry",
+    "solid loading",
+    "viscosity",
+    "\u{6750}\u{6599}",
+    "\u{805a}\u{5408}",
+    "\u{6811}\u{8102}",
+    "\u{6d46}\u{6599}",
+    "\u{9ecf}\u{5ea6}",
 ];
 
 const OFFLINE_KEYWORDS: &[&str] = &[
