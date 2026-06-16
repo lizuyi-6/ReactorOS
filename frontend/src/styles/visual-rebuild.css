@@ -1,0 +1,618 @@
+/* Visual rebuild: industrial HMI shell polish and fixed monitor composition. */
+:root {
+  --hmi-bg: #07090d;
+  --hmi-bg-grid: rgba(112, 146, 112, 0.1);
+  --hmi-panel: #171a1f;
+  --hmi-panel-2: #1d2229;
+  --hmi-panel-3: #111419;
+  --hmi-line: #304236;
+  --hmi-line-soft: rgba(88, 120, 92, 0.45);
+  --hmi-green: #39f26a;
+  --hmi-blue: #38a7ff;
+  --hmi-cyan: #3edbd2;
+  --hmi-amber: #ffb443;
+  --hmi-red: #ff4e46;
+  --hmi-text: #f4fff3;
+  --hmi-muted: #b6c8b2;
+  --hmi-dim: #7f927d;
+  --hmi-data-shadow: 0 0 16px rgba(57, 242, 106, 0.18);
+}
+
+body {
+  background:
+    linear-gradient(90deg, var(--hmi-bg-grid) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(62, 219, 210, 0.055) 1px, transparent 1px),
+    linear-gradient(180deg, #090b10 0%, #07090d 100%);
+  background-size: 40px 40px, 40px 40px, 100% 100%;
+}
+
+.monitor-route {
+  background:
+    linear-gradient(90deg, rgba(92, 128, 92, 0.11) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(56, 167, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(180deg, #090b10 0%, #07090d 100%);
+  background-size: 40px 40px, 40px 40px, 100% 100%;
+}
+
+/* Top command rail */
+.monitor-route .topbar {
+  grid-template-columns: minmax(236px, 298px) minmax(0, 1fr) minmax(112px, 132px) 112px;
+  height: 48px !important;
+  border-bottom: 1px solid rgba(57, 242, 106, 0.28);
+  background:
+    linear-gradient(180deg, #15181d 0%, #0f1217 100%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.monitor-route .brand-line {
+  position: relative;
+  gap: 10px;
+  padding-left: 18px;
+  border-right: 1px solid rgba(57, 242, 106, 0.18);
+}
+
+.monitor-route .brand-line::before {
+  width: 28px;
+  height: 28px;
+  border-color: rgba(57, 242, 106, 0.78);
+  background: #0c1011;
+  box-shadow:
+    0 0 0 1px rgba(57, 242, 106, 0.16),
+    0 0 18px rgba(57, 242, 106, 0.22);
+}
+
+.monitor-route .brand-line strong {
+  font-size: 22px;
+  letter-spacing: 0.035em;
+}
+
+.monitor-route .brand-line small {
+  left: 58px;
+  top: 31px;
+  color: var(--hmi-muted);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+
+.monitor-route .status-cluster {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  justify-self: stretch;
+  height: 48px;
+  border-left: 0;
+  overflow: hidden;
+}
+
+.monitor-route .status-cluster .el-tag {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border-right: 1px solid rgba(57, 242, 106, 0.14);
+  color: var(--hmi-muted) !important;
+  font-size: 10px;
+  letter-spacing: 0.055em;
+}
+
+.monitor-route .status-cluster .el-tag::before {
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+}
+
+.monitor-route .status-cluster .el-tag .el-tag__content {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-route .topbar-clock {
+  justify-content: center;
+  padding: 0 10px;
+  border-left: 1px solid rgba(57, 242, 106, 0.18);
+  border-right: 1px solid rgba(57, 242, 106, 0.18);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.monitor-route .runtime-clock {
+  color: var(--hmi-text);
+  font-size: 13px;
+  text-shadow: var(--hmi-data-shadow);
+}
+
+.monitor-route .legacy-estop {
+  width: 112px;
+  background:
+    linear-gradient(180deg, #ff5b52 0%, #d92e29 100%);
+  font-size: 14px;
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.28),
+    0 0 22px rgba(255, 78, 70, 0.22);
+}
+
+/* Side rail */
+.monitor-route .legacy-sidebar {
+  width: 104px;
+  border-right: 1px solid rgba(57, 242, 106, 0.26);
+  background:
+    linear-gradient(180deg, #14181a 0%, #0c1110 100%);
+}
+
+.legacy-nav-item {
+  min-height: 96px;
+  gap: 8px;
+  border-bottom-color: rgba(76, 105, 76, 0.35);
+  color: #bfd4ba;
+  font-size: 12px;
+}
+
+.legacy-nav-icon {
+  font-size: 26px;
+  color: #d8eed1;
+}
+
+.legacy-nav-item.active {
+  border-left: 3px solid var(--hmi-green);
+  background:
+    linear-gradient(90deg, rgba(57, 242, 106, 0.22), rgba(56, 167, 255, 0.09) 52%, rgba(30, 34, 39, 0.94)),
+    #1d2229;
+  color: var(--hmi-green);
+}
+
+.monitor-route .content {
+  margin-left: 104px;
+}
+
+.monitor-route .content.monitor-screen,
+.monitor-route .content.hmi-fixed {
+  height: calc(100vh - 48px);
+  padding: 8px 10px;
+}
+
+.monitor-route .content.monitor-screen {
+  position: relative;
+}
+
+.monitor-route .content.monitor-screen > .error-alert {
+  position: absolute;
+  z-index: 25;
+  left: 10px;
+  right: 10px;
+  top: 8px;
+  min-height: 34px;
+  margin: 0;
+  border-color: rgba(255, 180, 67, 0.55);
+  background: rgba(55, 38, 14, 0.92);
+  backdrop-filter: blur(2px);
+}
+
+.monitor-route .content.monitor-screen:has(> .error-alert) .dark-origin-monitor {
+  padding-top: 44px;
+}
+
+/* Monitor page composition */
+.monitor-screen .dark-origin-monitor {
+  grid-template-rows: 58px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.monitor-screen .telemetry-status-strip {
+  gap: 8px;
+}
+
+.monitor-screen .ts-cell {
+  position: relative;
+  border: 1px solid rgba(76, 105, 76, 0.62);
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, rgba(56, 167, 255, 0.08), transparent 48%),
+    linear-gradient(180deg, #1c2026 0%, #14181d 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.018),
+    0 0 18px rgba(57, 242, 106, 0.055);
+}
+
+.monitor-screen .ts-cell::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--hmi-green);
+}
+
+.monitor-screen .ts-cell.warn::before {
+  background: var(--hmi-amber);
+}
+
+.monitor-screen .ts-cell.bad::before {
+  background: var(--hmi-red);
+}
+
+.monitor-screen .ts-cell > span {
+  color: var(--hmi-dim);
+  font-family: var(--font-data);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.monitor-screen .ts-cell > strong {
+  color: var(--hmi-text);
+  font-size: 17px;
+  text-shadow: var(--hmi-data-shadow);
+}
+
+.monitor-screen .dark-monitor-grid {
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 10px;
+}
+
+.monitor-screen .dark-monitor-main {
+  grid-template-rows: minmax(0, 1fr) 236px;
+  gap: 10px;
+}
+
+.monitor-screen .enterprise-component-grid {
+  grid-template-columns: minmax(220px, 1.05fr) minmax(176px, 0.78fr) minmax(176px, 0.82fr);
+  gap: 10px;
+}
+
+.monitor-screen .process-line-panel,
+.monitor-screen .detector-panel,
+.monitor-screen .predictive-panel,
+.monitor-screen .operator-control-panel,
+.monitor-screen .ai-command-panel,
+.monitor-screen .current-batch-panel,
+.origin-panel {
+  border: 1px solid rgba(76, 105, 76, 0.72);
+  border-radius: 5px;
+  background:
+    linear-gradient(135deg, rgba(57, 242, 106, 0.055), transparent 45%),
+    linear-gradient(180deg, #1d2026 0%, #15181d 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.018),
+    0 0 22px rgba(0, 0, 0, 0.28);
+}
+
+.monitor-screen .component-head,
+.monitor-screen .origin-panel-head,
+.monitor-screen .current-batch-head,
+.monitor-screen .ai-command-head {
+  min-height: 40px;
+  border-bottom: 1px solid rgba(76, 105, 76, 0.5);
+  background:
+    linear-gradient(90deg, rgba(57, 242, 106, 0.1), transparent 58%),
+    #20242a;
+}
+
+.monitor-screen .component-head strong,
+.monitor-screen .origin-panel-head h2,
+.monitor-screen .ai-command-head h2,
+.monitor-screen .current-batch-head h2 {
+  color: #f7fff5;
+  font-family: var(--font-data);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.075em;
+  text-shadow: 0 0 10px rgba(57, 242, 106, 0.15);
+}
+
+.monitor-screen .component-head span,
+.monitor-screen .origin-panel-head span,
+.monitor-screen .ai-command-head span,
+.monitor-screen .current-batch-head span {
+  color: var(--hmi-muted);
+}
+
+.monitor-screen .reactor-vessel {
+  height: calc(100% - 40px);
+}
+
+.monitor-screen .vessel-body {
+  width: 88px;
+  height: 118px;
+  border-color: rgba(57, 242, 106, 0.46);
+  box-shadow:
+    0 0 0 6px rgba(57, 242, 106, 0.06),
+    0 0 22px rgba(56, 167, 255, 0.18);
+}
+
+.monitor-screen .vessel-body span {
+  background:
+    linear-gradient(180deg, rgba(56, 167, 255, 0.62), rgba(56, 167, 255, 0.26));
+}
+
+.monitor-screen .detector-list {
+  gap: 7px;
+  padding: 8px 10px;
+}
+
+.monitor-screen .detector-list article {
+  padding-bottom: 6px;
+}
+
+.monitor-screen .detector-title em {
+  border-color: rgba(57, 242, 106, 0.6);
+  background: rgba(57, 242, 106, 0.08);
+}
+
+.monitor-screen .detector-list strong {
+  color: #fff;
+  font-size: 20px;
+  text-shadow: var(--hmi-data-shadow);
+}
+
+.monitor-screen .detector-bar {
+  background: rgba(57, 242, 106, 0.08);
+}
+
+.monitor-screen .detector-bar i {
+  background: linear-gradient(90deg, var(--hmi-green), var(--hmi-cyan));
+}
+
+.monitor-screen .predictive-columns {
+  grid-template-columns: 1fr;
+  gap: 7px;
+  height: calc(100% - 40px);
+  padding: 8px 10px;
+}
+
+.monitor-screen .predictive-columns > div {
+  display: grid;
+  grid-template-rows: auto minmax(42px, 1fr) auto;
+  gap: 5px;
+  padding: 8px;
+}
+
+.monitor-screen .predictive-columns h3 {
+  min-height: 0;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.monitor-screen .mini-scope {
+  height: 54px;
+  min-height: 42px;
+}
+
+.monitor-screen .operator-control-panel {
+  grid-template-rows: 40px 72px minmax(0, 1fr);
+}
+
+.monitor-screen .operator-fields {
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.monitor-screen .operator-fields label {
+  border-color: rgba(76, 105, 76, 0.68);
+  border-radius: 4px;
+  background: #101419;
+}
+
+.monitor-screen .operator-fields strong {
+  color: #fff;
+  text-shadow: var(--hmi-data-shadow);
+}
+
+.monitor-screen .origin-chart.compact {
+  margin: 0 12px 10px;
+}
+
+.monitor-screen .dark-right-stack {
+  grid-template-rows: minmax(0, 1.08fr) minmax(208px, 0.72fr);
+  gap: 10px;
+}
+
+.monitor-screen .ai-command-head {
+  min-height: 48px;
+  padding: 0 16px;
+  background:
+    linear-gradient(90deg, rgba(56, 167, 255, 0.22), rgba(57, 242, 106, 0.08) 58%, transparent),
+    #20242a;
+}
+
+.monitor-screen .ai-command-head h2 {
+  font-size: 16px;
+}
+
+.monitor-screen .ai-command-body {
+  grid-template-rows: minmax(44px, 1fr) auto 58px;
+  gap: 10px;
+  height: calc(100% - 48px);
+  padding: 14px 16px 16px;
+}
+
+.monitor-screen .ai-command-note {
+  border-left: 3px solid var(--hmi-blue);
+  padding-left: 12px;
+}
+
+.monitor-screen .ai-target-box {
+  border-color: rgba(76, 105, 76, 0.7);
+  background: #101419;
+}
+
+.monitor-screen .ai-target-box strong {
+  color: var(--hmi-green);
+  text-shadow: var(--hmi-data-shadow);
+}
+
+.monitor-screen .apply-ai-button {
+  height: 58px;
+  border: 1px solid rgba(57, 242, 106, 0.75);
+  border-radius: 4px;
+  background:
+    linear-gradient(180deg, #46ff76 0%, #1edc57 100%);
+  color: #041006;
+  box-shadow: 0 0 24px rgba(57, 242, 106, 0.22);
+}
+
+.monitor-screen .current-batch-panel {
+  grid-template-rows: 40px 32px minmax(0, 1fr) 66px;
+}
+
+.monitor-screen .current-batch-panel dl {
+  grid-auto-rows: 21px;
+  padding: 6px 16px;
+}
+
+.monitor-screen .batch-actions {
+  gap: 8px;
+  padding: 8px 16px 12px;
+}
+
+.monitor-screen .batch-actions button {
+  min-height: 46px;
+  border-color: rgba(76, 105, 76, 0.7);
+  border-radius: 4px;
+  background: #101419;
+}
+
+/* Non-monitor pages: keep the same HMI material, but remove the noisy toy-card feel. */
+.monitor-route .content > .view-stack:not(.monitor-workbench) > .view-heading {
+  min-height: 68px;
+  padding: 0 14px 10px 0;
+}
+
+.monitor-route .content > .view-stack:not(.monitor-workbench) .view-heading h1 {
+  font-size: 24px;
+}
+
+.monitor-route .content > .view-stack:not(.monitor-workbench) .metric,
+.monitor-route .content > .view-stack:not(.monitor-workbench) .panel,
+.monitor-route .content > .view-stack:not(.monitor-workbench) .analysis-block {
+  border-color: rgba(76, 105, 76, 0.62);
+  background:
+    linear-gradient(135deg, rgba(56, 167, 255, 0.045), transparent 48%),
+    linear-gradient(180deg, #1d2229 0%, #15191f 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.018),
+    0 0 18px rgba(0, 0, 0, 0.24);
+}
+
+.monitor-route .content > .view-stack:not(.monitor-workbench) .panel-title {
+  min-height: 40px;
+  background:
+    linear-gradient(90deg, rgba(57, 242, 106, 0.095), transparent 64%),
+    #20242a;
+}
+
+.monitor-route .content > .view-stack:not(.monitor-workbench) .metric strong {
+  font-size: 26px;
+}
+
+.monitor-route .content.hmi-fixed {
+  overflow: auto;
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) {
+  min-height: 100%;
+  overflow: visible;
+}
+
+@media (max-width: 1180px) {
+  .monitor-route .topbar {
+    grid-template-columns: 250px minmax(0, 1fr) 112px;
+  }
+
+  .monitor-route .topbar-clock {
+    display: none;
+  }
+
+  .monitor-route .status-cluster {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .monitor-route .status-cluster .el-tag:nth-child(n + 5) {
+    display: none;
+  }
+
+  .monitor-screen .dark-monitor-grid {
+    grid-template-columns: minmax(0, 1fr) 330px;
+  }
+
+  .monitor-screen .enterprise-component-grid {
+    grid-template-columns: minmax(220px, 1fr) minmax(170px, 0.8fr);
+  }
+
+  .monitor-screen .predictive-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .monitor-route {
+    height: auto;
+    overflow: auto;
+  }
+
+  .monitor-route .topbar {
+    grid-template-columns: minmax(0, 1fr) 104px;
+  }
+
+  .monitor-route .brand-line {
+    border-right: 0;
+  }
+
+  .monitor-route .status-cluster,
+  .monitor-route .topbar-clock {
+    display: none;
+  }
+
+  .monitor-route .legacy-sidebar {
+    position: sticky;
+    top: 48px;
+    width: 100%;
+    height: 64px;
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid rgba(57, 242, 106, 0.26);
+    overflow-x: auto;
+  }
+
+  .legacy-nav-item {
+    min-width: 96px;
+    min-height: 64px;
+    border-right: 1px solid rgba(76, 105, 76, 0.35);
+    border-bottom: 0;
+  }
+
+  .legacy-nav-icon {
+    font-size: 20px;
+  }
+
+  .monitor-route .content,
+  .monitor-route .content.monitor-screen,
+  .monitor-route .content.hmi-fixed {
+    height: auto;
+    min-height: calc(100vh - 112px);
+    margin-left: 0;
+    overflow: visible;
+  }
+
+  .monitor-screen .dark-origin-monitor,
+  .monitor-screen .dark-monitor-grid,
+  .monitor-screen .dark-monitor-main,
+  .monitor-screen .enterprise-component-grid,
+  .monitor-screen .dark-right-stack {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .monitor-screen .process-line-panel,
+  .monitor-screen .detector-panel,
+  .monitor-screen .predictive-panel,
+  .monitor-screen .operator-control-panel,
+  .monitor-screen .ai-command-panel,
+  .monitor-screen .current-batch-panel {
+    min-height: 260px;
+  }
+}
