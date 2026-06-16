@@ -8531,6 +8531,8 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
         body["data"]["permissions"]["authentication"],
         "bearer_session_enforced"
     );
+    assert!(body["data"]["field_scenario"]["kind"].is_string());
+    assert!(body["data"]["production_line"]["kind"].is_string());
     assert_eq!(body["data"]["integrations"]["mqtt"], false);
     assert_eq!(
         body["data"]["integrations"]["mqtt_status"]["task_topic"],

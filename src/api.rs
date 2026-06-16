@@ -30,7 +30,10 @@ use crate::{
         ProcessDetail, ProcessStep, ProductResult, SensorSampleRecord,
     },
     device::{ComponentControlCommand, ComponentControlOutcome, SharedDevice},
-    field_scenario::{detect_field_scenario, FieldScenarioContext, FieldScenarioProfile},
+    field_scenario::{
+        detect_field_scenario, detect_production_line, FieldScenarioContext, FieldScenarioProfile,
+        ProductionLineProfile,
+    },
     local_ai::LocalAiStatus,
     memory::{AiMemory, AiMemorySummary, LimitLevel, SensorLimit},
     number::round2,
@@ -137,6 +140,7 @@ pub struct LiveResponse {
     pub alarms: Vec<Value>,
     pub ai_memory: AiMemorySummary,
     pub field_scenario: FieldScenarioProfile,
+    pub production_line: ProductionLineProfile,
 }
 
 #[derive(Debug, Serialize)]
@@ -758,6 +762,15 @@ async fn live(
         recent_batches: &recent_batches,
         recent_outcomes: &recent_outcomes,
     });
+    let production_line = detect_production_line(FieldScenarioContext {
+        device_mode: &state.device_mode,
+        runtime: Some(&runtime),
+        include_runtime_signals: true,
+        memory: state.ai_memory.as_ref(),
+        processes: &processes,
+        recent_batches: &recent_batches,
+        recent_outcomes: &recent_outcomes,
+    });
     Ok(Json(LiveResponse {
         runtime,
         device_status,
@@ -771,6 +784,7 @@ async fn live(
         alarms,
         ai_memory,
         field_scenario,
+        production_line,
     }))
 }
 
@@ -868,11 +882,16 @@ async fn config_summary(State(state): State<AppState>) -> Json<V1Envelope<Value>
         &state.device_mode,
         state.ai_memory.as_ref(),
     ));
+    let production_line = detect_production_line(FieldScenarioContext::config_only(
+        &state.device_mode,
+        state.ai_memory.as_ref(),
+    ));
     Json(success(json!({
         "device_mode": state.device_mode,
         "device": state.device_config.as_ref(),
         "safety": state.safety.as_ref(),
         "field_scenario": field_scenario,
+        "production_line": production_line,
         "ai_memory": AiMemorySummary::from(state.ai_memory.as_ref()),
         "ai_provider": local_provider_for(&state),
         "local_ai": LocalAiStatus::from_env(),

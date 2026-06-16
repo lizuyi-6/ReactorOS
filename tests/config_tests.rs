@@ -4,7 +4,10 @@ use reactor_edge_daemon::{
         DeviceConfig, DeviceMode, SafetyConfig,
     },
     db::Batch,
-    field_scenario::{detect_field_scenario, FieldScenarioContext, FieldScenarioKind},
+    field_scenario::{
+        detect_field_scenario, detect_production_line, FieldScenarioContext, FieldScenarioKind,
+        ProductionLineKind,
+    },
     memory::load_ai_memory,
 };
 
@@ -12,6 +15,7 @@ static FIELD_SCENARIO_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(())
 
 fn clear_field_scenario_env() {
     std::env::remove_var("XINGSHU_FIELD_SCENARIO");
+    std::env::remove_var("XINGSHU_PRODUCTION_LINE");
     std::env::remove_var("XINGSHU_FIELD_SITE_LABEL");
 }
 
@@ -140,7 +144,6 @@ fn field_scenario_defaults_to_offline_demo_for_empty_pipeline() {
     });
 
     assert_eq!(profile.kind, FieldScenarioKind::OfflineDemo);
-    assert!(!profile.petrochemical_handling_required);
     assert!(profile
         .signals
         .iter()
@@ -148,43 +151,97 @@ fn field_scenario_defaults_to_offline_demo_for_empty_pipeline() {
 }
 
 #[test]
-fn field_scenario_flags_petrochemical_materials_conservatively() {
+fn production_line_flags_petrochemical_materials_conservatively() {
     let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
     clear_field_scenario_env();
     let mut memory = load_ai_memory("config/ai_memory.toml").unwrap();
     memory.profile.material_family = "petrochemical refinery product".to_string();
 
-    let profile = detect_field_scenario(FieldScenarioContext::config_only(
+    let field_profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Esp32Serial,
+        &memory,
+    ));
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
         &DeviceMode::Esp32Serial,
         &memory,
     ));
 
-    assert_eq!(profile.kind, FieldScenarioKind::Petrochemical);
-    assert!(profile.petrochemical_handling_required);
-    assert!(profile
+    assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
+    assert_eq!(line_profile.kind, ProductionLineKind::PetrochemicalRefining);
+    assert!(line_profile.petrochemical_handling_required);
+    assert!(line_profile
         .actions
         .iter()
         .any(|action| action.contains("petroleum")));
 }
 
 #[test]
-fn field_scenario_env_override_wins_over_auto_detection() {
+fn production_line_flags_biopharmaceutical_materials_independently() {
     let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
     clear_field_scenario_env();
-    std::env::set_var("XINGSHU_FIELD_SCENARIO", "petrochemical");
+    let mut memory = load_ai_memory("config/ai_memory.toml").unwrap();
+    memory.profile.material_family = "biopharmaceutical fermentation".to_string();
+
+    let field_profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Esp32Serial,
+        &memory,
+    ));
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
+        &DeviceMode::Esp32Serial,
+        &memory,
+    ));
+
+    assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
+    assert_eq!(line_profile.kind, ProductionLineKind::Biopharmaceutical);
+    assert!(line_profile.special_handling_required);
+    assert!(!line_profile.petrochemical_handling_required);
+}
+
+#[test]
+fn production_line_env_override_wins_over_auto_detection() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    std::env::set_var("XINGSHU_PRODUCTION_LINE", "petrochemical_refining");
     std::env::set_var("XINGSHU_FIELD_SITE_LABEL", "refinery line A");
     let memory = load_ai_memory("config/ai_memory.toml").unwrap();
 
-    let profile = detect_field_scenario(FieldScenarioContext::config_only(
+    let field_profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Pipeline,
+        &memory,
+    ));
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
         &DeviceMode::Pipeline,
         &memory,
     ));
     clear_field_scenario_env();
 
-    assert_eq!(profile.kind, FieldScenarioKind::Petrochemical);
-    assert_eq!(profile.site_label.as_deref(), Some("refinery line A"));
-    assert_eq!(profile.confidence, 1.0);
-    assert!(profile.petrochemical_handling_required);
+    assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
+    assert_eq!(line_profile.kind, ProductionLineKind::PetrochemicalRefining);
+    assert_eq!(line_profile.site_label.as_deref(), Some("refinery line A"));
+    assert_eq!(line_profile.confidence, 1.0);
+    assert!(line_profile.petrochemical_handling_required);
+}
+
+#[test]
+fn legacy_petrochemical_scenario_env_maps_to_production_line_only() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    std::env::set_var("XINGSHU_FIELD_SCENARIO", "petrochemical");
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+
+    let field_profile = detect_field_scenario(FieldScenarioContext::config_only(
+        &DeviceMode::Pipeline,
+        &memory,
+    ));
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
+        &DeviceMode::Pipeline,
+        &memory,
+    ));
+    clear_field_scenario_env();
+
+    assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
+    assert_eq!(line_profile.kind, ProductionLineKind::PetrochemicalRefining);
+    assert!(line_profile.petrochemical_handling_required);
 }
 
 #[test]
