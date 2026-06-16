@@ -210,6 +210,8 @@ const fieldScenarioTagType = computed(() => {
   return "success";
 });
 const productionLineTagType = computed(() => {
+  if (textAt(productionLine.value, "requires_operator_inquiry", "false") === "true") return "danger";
+  if (textAt(productionLine.value, "production_adaptation_blocked", "false") === "true") return "danger";
   if (textAt(productionLine.value, "special_handling_required", "false") === "true") return "warning";
   return "success";
 });
@@ -217,6 +219,13 @@ const productionLineTagType = computed(() => {
 function fieldScenarioSourceLabel(source: string): string {
   if (source === "environment_override") return store.tr("环境覆盖", "Environment override");
   return store.tr("自动判断", "Auto detected");
+}
+
+function productionLineSourceLabel(source: string): string {
+  if (textAt(productionLine.value, "requires_operator_inquiry", "false") === "true") {
+    return store.tr("未确认，需现场问询", "Unconfirmed; site inquiry required");
+  }
+  return fieldScenarioSourceLabel(source);
 }
 
 function fieldScenarioListLabel(value: string): string {
@@ -232,7 +241,7 @@ function fieldScenarioListLabel(value: string): string {
 
 function productionLineListLabel(value: string): string {
   const labels: Record<string, { zh: string; en: string }> = {
-    general_chemistry: { zh: "通用化学", en: "General chemistry" },
+    requires_inquiry: { zh: "待问询确认", en: "Inquiry required" },
     petrochemical_refining: { zh: "石油炼化", en: "Petrochemical refining" },
     biopharmaceutical: { zh: "生物制药", en: "Biopharmaceutical" },
     fine_chemical: { zh: "精细化工", en: "Fine chemical" },
@@ -746,7 +755,7 @@ onMounted(() => {
           {{ fieldScenarioSourceLabel(textAt(fieldScenario, "source")) }}
         </el-descriptions-item>
         <el-descriptions-item :label="store.tr('产线来源', 'Line source')">
-          {{ fieldScenarioSourceLabel(textAt(productionLine, "source")) }}
+          {{ productionLineSourceLabel(textAt(productionLine, "source")) }}
         </el-descriptions-item>
         <el-descriptions-item :label="store.tr('设备模式', 'Device mode')">
           {{ textAt(fieldScenario, "device_mode") }}
@@ -760,9 +769,14 @@ onMounted(() => {
         <el-descriptions-item :label="store.tr('产线置信度', 'Line confidence')">
           {{ textAt(productionLine, "confidence") }}
         </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('产线问询', 'Line inquiry')">
+          <el-tag :type="textAt(productionLine, 'requires_operator_inquiry') === 'true' ? 'danger' : 'success'" size="small">
+            {{ textAt(productionLine, "requires_operator_inquiry") === "true" ? store.tr("必须问询确认", "Inquiry required") : store.tr("已确认", "Confirmed") }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item :label="store.tr('专项处理', 'Special handling')">
-          <el-tag :type="textAt(productionLine, 'special_handling_required') === 'true' ? 'warning' : 'success'" size="small">
-            {{ textAt(productionLine, "special_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
+          <el-tag :type="textAt(productionLine, 'requires_operator_inquiry') === 'true' ? 'danger' : textAt(productionLine, 'special_handling_required') === 'true' ? 'warning' : 'success'" size="small">
+            {{ textAt(productionLine, "requires_operator_inquiry") === "true" ? store.tr("问询前阻断", "Blocked pending inquiry") : textAt(productionLine, "special_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item :label="store.tr('石油炼化处理', 'Petrochemical handling')">

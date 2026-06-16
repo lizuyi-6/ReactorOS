@@ -77,7 +77,7 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
   const productionLineLabel = computed(() => {
     const kind = textAt(productionLine.value, "kind", "");
     const translations: Record<string, { zh: string; en: string }> = {
-      general_chemistry: { zh: "通用化学", en: "General" },
+      requires_inquiry: { zh: "待问询", en: "Inquiry required" },
       petrochemical_refining: { zh: "石油炼化", en: "Petrochem" },
       biopharmaceutical: { zh: "生物制药", en: "Biopharma" },
       fine_chemical: { zh: "精细化工", en: "Fine chem" },
@@ -93,6 +93,8 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
     return "success";
   });
   const productionLineStatusType = computed(() => {
+    if (textAt(productionLine.value, "requires_operator_inquiry", "false") === "true") return "danger";
+    if (textAt(productionLine.value, "production_adaptation_blocked", "false") === "true") return "danger";
     if (textAt(productionLine.value, "special_handling_required", "false") === "true") return "warning";
     return "success";
   });
