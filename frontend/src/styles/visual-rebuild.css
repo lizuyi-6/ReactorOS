@@ -616,3 +616,309 @@ body {
     min-height: 260px;
   }
 }
+
+/* Variable-size industrial panels: small IPC screens must scroll and reflow
+   instead of compressing fixed HMI grids until text overlaps controls. */
+@media (max-width: 1100px), (max-height: 700px) {
+  .monitor-route {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .monitor-route .content.hmi-fixed,
+  .monitor-route .content.monitor-screen {
+    height: auto;
+    min-height: calc(100vh - 48px);
+    overflow: visible;
+  }
+
+  .monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) {
+    height: auto;
+    min-height: 0;
+    grid-auto-rows: auto;
+    overflow: visible;
+  }
+
+  .monitor-route .content.route-control > .view-stack,
+  .monitor-route .content.route-settings > .view-stack,
+  .monitor-route .content.route-ai > .view-stack,
+  .monitor-route .content.route-audit > .view-stack,
+  .monitor-route .content.route-history > .view-stack,
+  .monitor-route .content.route-modbus > .view-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: auto !important;
+    grid-template-areas: none !important;
+  }
+
+  .monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading {
+    grid-area: auto !important;
+    grid-column: 1 / -1 !important;
+    height: auto;
+    min-height: 52px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding: 0 10px 10px 0;
+  }
+
+  .monitor-route .content.route-control > .view-stack > section,
+  .monitor-route .content.route-settings > .view-stack > section,
+  .monitor-route .content.route-ai > .view-stack > section,
+  .monitor-route .content.route-audit > .view-stack > section,
+  .monitor-route .content.route-history > .view-stack > section,
+  .monitor-route .content.route-modbus > .view-stack > section {
+    grid-area: auto !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
+    height: auto !important;
+    min-height: 0;
+    overflow: visible;
+    grid-template-rows: auto !important;
+  }
+
+  .monitor-route .content.hmi-fixed .panel,
+  .monitor-route .content.hmi-fixed .metric,
+  .monitor-route .content.hmi-fixed .analysis-block {
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .monitor-route .content.hmi-fixed .panel-title {
+    height: auto;
+    min-height: 40px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .monitor-route .content.hmi-fixed .panel-title > div,
+  .monitor-route .content.hmi-fixed .view-heading > div,
+  .monitor-route .content.hmi-fixed .heading-actions {
+    min-width: 0;
+  }
+
+  .monitor-route .content.hmi-fixed .heading-actions,
+  .monitor-route .content.hmi-fixed .panel-title .heading-actions,
+  .monitor-route .content.hmi-fixed .control-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) .view-heading span,
+  .monitor-route .content.hmi-fixed .panel-title p,
+  .monitor-route .content.hmi-fixed .panel p,
+  .monitor-route .content.hmi-fixed .analysis-block p,
+  .monitor-route .content.hmi-fixed .target-summary span,
+  .monitor-route .content.hmi-fixed .target-summary small,
+  .monitor-route .content.hmi-fixed .control-actions .muted {
+    display: block;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-line-clamp: initial;
+  }
+
+  .monitor-route .content.hmi-fixed .panel-title h2,
+  .monitor-route .content.hmi-fixed .panel h2,
+  .monitor-route .content.hmi-fixed .analysis-block h2,
+  .monitor-route .content.hmi-fixed .metric strong,
+  .monitor-route .content.hmi-fixed .target-summary strong {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .monitor-route .content.hmi-fixed .el-button,
+  .monitor-route .content.hmi-fixed .el-button--small {
+    min-width: 0;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.18;
+  }
+
+  .monitor-route .content.hmi-fixed .el-tag {
+    max-width: 100%;
+    height: auto;
+    min-height: 24px;
+    white-space: normal;
+  }
+
+  .monitor-route .content.hmi-fixed .el-tag__content,
+  .monitor-route .content.hmi-fixed .el-select__selected-item,
+  .monitor-route .content.hmi-fixed .el-input__inner {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .monitor-route .content.hmi-fixed .backend-surface-grid,
+  .monitor-route .content.hmi-fixed .control-panel,
+  .monitor-route .content.hmi-fixed .modbus-debug-panel,
+  .monitor-route .content.hmi-fixed .audit-toolbar,
+  .monitor-route .content.hmi-fixed .process-grid,
+  .monitor-route .content.hmi-fixed .process-detail-grid,
+  .monitor-route .content.hmi-fixed .two-col,
+  .monitor-route .content.hmi-fixed .result-grid,
+  .monitor-route .content.hmi-fixed .sop-list-grid,
+  .monitor-route .content.hmi-fixed .endpoint-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    height: auto;
+    overflow: visible;
+  }
+
+  .monitor-route .content.hmi-fixed .backend-surface-grid > *,
+  .monitor-route .content.hmi-fixed .control-panel > *,
+  .monitor-route .content.hmi-fixed .modbus-debug-panel > *,
+  .monitor-route .content.hmi-fixed .audit-toolbar > *,
+  .monitor-route .content.hmi-fixed .process-grid > *,
+  .monitor-route .content.hmi-fixed .process-detail-grid > *,
+  .monitor-route .content.hmi-fixed .two-col > *,
+  .monitor-route .content.hmi-fixed .result-grid > *,
+  .monitor-route .content.hmi-fixed .sop-list-grid > *,
+  .monitor-route .content.hmi-fixed .endpoint-grid > * {
+    min-width: 0;
+  }
+
+  .monitor-route .content.hmi-fixed .component-action-form,
+  .monitor-route .content.hmi-fixed .control-form,
+  .monitor-route .content.hmi-fixed .modbus-form,
+  .monitor-route .content.hmi-fixed .audit-filter-form,
+  .monitor-route .content.hmi-fixed .history-filter-form,
+  .monitor-route .content.hmi-fixed .product-result-form,
+  .monitor-route .content.hmi-fixed .process-form,
+  .monitor-route .content.hmi-fixed .switch-grid,
+  .monitor-route .content.hmi-fixed .target-summary,
+  .monitor-route .content.hmi-fixed .integration-grid,
+  .monitor-route .content.hmi-fixed .compact-targets {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .monitor-route .content.hmi-fixed .component-action-form .reason-field,
+  .monitor-route .content.hmi-fixed .component-action-form .control-actions,
+  .monitor-route .content.hmi-fixed .modbus-form .reason-field,
+  .monitor-route .content.hmi-fixed .history-filter-form .control-actions,
+  .monitor-route .content.hmi-fixed .product-result-form .notes-field,
+  .monitor-route .content.hmi-fixed .product-result-form .control-actions,
+  .monitor-route .content.hmi-fixed .process-form .control-actions,
+  .monitor-route .content.hmi-fixed .switch-grid .emergency-actions {
+    grid-column: 1 / -1 !important;
+  }
+
+  .monitor-route .content.hmi-fixed .data-table,
+  .monitor-route .content.hmi-fixed .data-table-wrap,
+  .monitor-route .content.hmi-fixed .component-table {
+    width: 100%;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .monitor-route .content.route-settings .component-table {
+    height: auto;
+    min-height: 118px;
+  }
+
+  .monitor-route .content.hmi-fixed .el-table {
+    min-width: 720px;
+  }
+
+  .monitor-route .content.hmi-fixed .el-table__body-wrapper {
+    overflow: auto !important;
+  }
+}
+
+@media (max-width: 920px) {
+  .monitor-route .topbar {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    min-width: 0;
+  }
+
+  .monitor-route .brand-line {
+    min-width: 0;
+    padding-right: 10px;
+  }
+
+  .monitor-route .brand-line strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 21px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .monitor-route .brand-line small {
+    display: none;
+  }
+
+  .monitor-route .legacy-estop {
+    width: 112px;
+    min-width: 112px;
+  }
+
+  .monitor-route .content.route-control > .view-stack,
+  .monitor-route .content.route-settings > .view-stack,
+  .monitor-route .content.route-ai > .view-stack,
+  .monitor-route .content.route-audit > .view-stack,
+  .monitor-route .content.route-history > .view-stack,
+  .monitor-route .content.route-modbus > .view-stack {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+@media (max-width: 680px) {
+  .monitor-route .brand-line {
+    gap: 8px;
+    padding-left: 12px;
+  }
+
+  .monitor-route .brand-line::before {
+    width: 24px;
+    height: 24px;
+  }
+
+  .monitor-route .brand-line strong {
+    font-size: 18px;
+  }
+
+  .legacy-nav-item {
+    min-width: 80px;
+    font-size: 11px;
+  }
+
+  .monitor-route .content.hmi-fixed,
+  .monitor-route .content.monitor-screen {
+    padding: 8px;
+  }
+
+  .monitor-route .content.hmi-fixed .component-action-form,
+  .monitor-route .content.hmi-fixed .control-form,
+  .monitor-route .content.hmi-fixed .modbus-form,
+  .monitor-route .content.hmi-fixed .audit-filter-form,
+  .monitor-route .content.hmi-fixed .history-filter-form,
+  .monitor-route .content.hmi-fixed .product-result-form,
+  .monitor-route .content.hmi-fixed .process-form,
+  .monitor-route .content.hmi-fixed .switch-grid,
+  .monitor-route .content.hmi-fixed .target-summary,
+  .monitor-route .content.hmi-fixed .integration-grid,
+  .monitor-route .content.hmi-fixed .compact-targets {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .monitor-route .content.hmi-fixed .el-button,
+  .monitor-route .content.hmi-fixed .el-button--small {
+    width: 100%;
+  }
+
+  .monitor-route .content.hmi-fixed .el-table {
+    min-width: 0;
+  }
+}
