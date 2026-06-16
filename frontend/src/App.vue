@@ -24,6 +24,8 @@ const {
   healthStatus,
   lastUpdatedText,
   liveStatusText,
+  productionLineStatusType,
+  productionLineText,
   safetyStatusType,
   safetySummaryText,
   scenarioStatusType,
@@ -78,6 +80,7 @@ onBeforeUnmount(() => {
       <div class="status-cluster">
         <el-tag :type="alarmStatusType">{{ alarmSummaryText }}</el-tag>
         <el-tag :type="scenarioStatusType">{{ scenarioText }}</el-tag>
+        <el-tag :type="productionLineStatusType">{{ productionLineText }}</el-tag>
         <el-tag :type="store.liveStatus === 'fresh' ? 'success' : 'danger'">{{ liveStatusText }}</el-tag>
         <el-tag :type="safetyStatusType">{{ safetySummaryText }}</el-tag>
         <el-tag :type="commandStatusType">{{ commandReceiptText }}</el-tag>

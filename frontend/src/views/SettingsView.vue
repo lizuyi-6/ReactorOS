@@ -30,6 +30,12 @@ const fieldScenario = computed(() => liveFieldScenario.value ?? configFieldScena
 const fieldScenarioSignals = computed(() => arrayAt<string>(fieldScenario.value, "signals"));
 const fieldScenarioActions = computed(() => arrayAt<string>(fieldScenario.value, "actions"));
 const fieldScenarioNotes = computed(() => arrayAt<string>(fieldScenario.value, "notes"));
+const configProductionLine = computed(() => objectAt(store.config, "production_line"));
+const liveProductionLine = computed(() => objectAt(store.live, "production_line"));
+const productionLine = computed(() => liveProductionLine.value ?? configProductionLine.value);
+const productionLineSignals = computed(() => arrayAt<string>(productionLine.value, "signals"));
+const productionLineActions = computed(() => arrayAt<string>(productionLine.value, "actions"));
+const productionLineNotes = computed(() => arrayAt<string>(productionLine.value, "notes"));
 const roles = computed(() => arrayAt(permissions.value, "roles"));
 const defaultUsers = computed(() => arrayAt<Record<string, unknown> | string>(permissions.value, "default_users"));
 const defaultUserLabels = computed(() => defaultUsers.value.map(defaultUserLabel));
@@ -200,8 +206,11 @@ const ainasOn = computed(() => boolFrom(integrations.value?.ainas_ready));
 const restOn = computed(() => boolFrom(integrations.value?.rest_api));
 const cliOn = computed(() => boolFrom(integrations.value?.cli));
 const fieldScenarioTagType = computed(() => {
-  if (textAt(fieldScenario.value, "petrochemical_handling_required", "false") === "true") return "warning";
   if (textAt(fieldScenario.value, "kind") === "offline_demo") return "info";
+  return "success";
+});
+const productionLineTagType = computed(() => {
+  if (textAt(productionLine.value, "special_handling_required", "false") === "true") return "warning";
   return "success";
 });
 
@@ -215,8 +224,19 @@ function fieldScenarioListLabel(value: string): string {
     lab_research: { zh: "实验室研发", en: "Lab research" },
     pilot_scale: { zh: "中试放大", en: "Pilot scale" },
     legacy_retrofit: { zh: "旧线改造", en: "Legacy retrofit" },
-    offline_demo: { zh: "离线演示", en: "Offline demo" },
-    petrochemical: { zh: "石油化场景", en: "Petrochemical" }
+    offline_demo: { zh: "离线演示", en: "Offline demo" }
+  };
+  const hit = labels[value];
+  return hit ? (store.isChinese ? hit.zh : hit.en) : value;
+}
+
+function productionLineListLabel(value: string): string {
+  const labels: Record<string, { zh: string; en: string }> = {
+    general_chemistry: { zh: "通用化学", en: "General chemistry" },
+    petrochemical_refining: { zh: "石油炼化", en: "Petrochemical refining" },
+    biopharmaceutical: { zh: "生物制药", en: "Biopharmaceutical" },
+    fine_chemical: { zh: "精细化工", en: "Fine chemical" },
+    material_synthesis: { zh: "材料合成", en: "Material synthesis" }
   };
   const hit = labels[value];
   return hit ? (store.isChinese ? hit.zh : hit.en) : value;
@@ -712,13 +732,21 @@ onMounted(() => {
 
     <section class="panel two-col">
       <el-descriptions :column="1" border>
-        <el-descriptions-item :label="store.tr('现场场景', 'Field scenario')">
+        <el-descriptions-item :label="store.tr('应用场景', 'Deployment scenario')">
           <el-tag :type="fieldScenarioTagType" size="small">
             {{ fieldScenarioListLabel(textAt(fieldScenario, "kind")) }}
           </el-tag>
         </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('适宜产线', 'Production line')">
+          <el-tag :type="productionLineTagType" size="small">
+            {{ productionLineListLabel(textAt(productionLine, "kind")) }}
+          </el-tag>
+        </el-descriptions-item>
         <el-descriptions-item :label="store.tr('判定来源', 'Detection source')">
           {{ fieldScenarioSourceLabel(textAt(fieldScenario, "source")) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('产线来源', 'Line source')">
+          {{ fieldScenarioSourceLabel(textAt(productionLine, "source")) }}
         </el-descriptions-item>
         <el-descriptions-item :label="store.tr('设备模式', 'Device mode')">
           {{ textAt(fieldScenario, "device_mode") }}
@@ -729,9 +757,17 @@ onMounted(() => {
         <el-descriptions-item :label="store.tr('置信度', 'Confidence')">
           {{ textAt(fieldScenario, "confidence") }}
         </el-descriptions-item>
-        <el-descriptions-item :label="store.tr('石油化处理', 'Petrochemical handling')">
-          <el-tag :type="textAt(fieldScenario, 'petrochemical_handling_required') === 'true' ? 'warning' : 'success'" size="small">
-            {{ textAt(fieldScenario, "petrochemical_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
+        <el-descriptions-item :label="store.tr('产线置信度', 'Line confidence')">
+          {{ textAt(productionLine, "confidence") }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('专项处理', 'Special handling')">
+          <el-tag :type="textAt(productionLine, 'special_handling_required') === 'true' ? 'warning' : 'success'" size="small">
+            {{ textAt(productionLine, "special_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item :label="store.tr('石油炼化处理', 'Petrochemical handling')">
+          <el-tag :type="textAt(productionLine, 'petrochemical_handling_required') === 'true' ? 'warning' : 'success'" size="small">
+            {{ textAt(productionLine, "petrochemical_handling_required") === "true" ? store.tr("需要复核", "Review required") : store.tr("常规", "Normal") }}
           </el-tag>
         </el-descriptions-item>
       </el-descriptions>
@@ -741,6 +777,11 @@ onMounted(() => {
         <h2>{{ store.tr("识别信号", "Detection Signals") }}</h2>
         <p class="muted">{{ fieldScenarioSignals.join(", ") || "--" }}</p>
         <p v-if="fieldScenarioNotes.length > 0" class="muted">{{ fieldScenarioNotes.join(" ") }}</p>
+        <h2>{{ store.tr("产线动作", "Production Line Actions") }}</h2>
+        <p class="muted">{{ productionLineActions.join("; ") || "--" }}</p>
+        <h2>{{ store.tr("产线信号", "Production Line Signals") }}</h2>
+        <p class="muted">{{ productionLineSignals.join(", ") || "--" }}</p>
+        <p v-if="productionLineNotes.length > 0" class="muted">{{ productionLineNotes.join(" ") }}</p>
       </div>
     </section>
 

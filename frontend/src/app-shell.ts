@@ -56,23 +56,44 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
     const fromConfig = store.config?.field_scenario;
     return fromConfig && typeof fromConfig === "object" ? (fromConfig as ApiRecord) : null;
   });
+  const productionLine = computed(() => {
+    const fromLive = store.live?.production_line;
+    if (fromLive && typeof fromLive === "object") return fromLive as ApiRecord;
+    const fromConfig = store.config?.production_line;
+    return fromConfig && typeof fromConfig === "object" ? (fromConfig as ApiRecord) : null;
+  });
   const scenarioLabel = computed(() => {
     const kind = textAt(fieldScenario.value, "kind", "");
     const translations: Record<string, { zh: string; en: string }> = {
       lab_research: { zh: "实验室", en: "Lab" },
       pilot_scale: { zh: "中试", en: "Pilot" },
       legacy_retrofit: { zh: "改造线", en: "Retrofit" },
-      offline_demo: { zh: "离线演示", en: "Demo" },
-      petrochemical: { zh: "石油化", en: "Petrochem" }
+      offline_demo: { zh: "离线演示", en: "Demo" }
     };
     const label = translations[kind];
     return label ? store.tr(label.zh, label.en) : textAt(fieldScenario.value, "label", "Scenario --");
   });
   const scenarioText = computed(() => `SCN ${scenarioLabel.value}`);
+  const productionLineLabel = computed(() => {
+    const kind = textAt(productionLine.value, "kind", "");
+    const translations: Record<string, { zh: string; en: string }> = {
+      general_chemistry: { zh: "通用化学", en: "General" },
+      petrochemical_refining: { zh: "石油炼化", en: "Petrochem" },
+      biopharmaceutical: { zh: "生物制药", en: "Biopharma" },
+      fine_chemical: { zh: "精细化工", en: "Fine chem" },
+      material_synthesis: { zh: "材料合成", en: "Materials" }
+    };
+    const label = translations[kind];
+    return label ? store.tr(label.zh, label.en) : textAt(productionLine.value, "label", "Line --");
+  });
+  const productionLineText = computed(() => `LINE ${productionLineLabel.value}`);
   const scenarioStatusType = computed(() => {
-    if (textAt(fieldScenario.value, "petrochemical_handling_required", "false") === "true") return "warning";
     const kind = textAt(fieldScenario.value, "kind", "");
     if (kind === "offline_demo") return "info";
+    return "success";
+  });
+  const productionLineStatusType = computed(() => {
+    if (textAt(productionLine.value, "special_handling_required", "false") === "true") return "warning";
     return "success";
   });
   const deviceRows = computed(() => arrayAt<ApiRecord>(store.deviceStatus, "devices"));
@@ -165,6 +186,8 @@ export function useAppShellState(store: AppShellStoreLike, activePath: Readonly<
     liveStatusText,
     safetyStatusType,
     safetySummaryText,
+    productionLineStatusType,
+    productionLineText,
     scenarioStatusType,
     scenarioText,
     sessionRoleLabel
