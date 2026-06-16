@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { routes } from "./router";
 import { hmiNavItems, useAppShellState } from "./app-shell";
@@ -13,6 +13,15 @@ const now = ref(new Date());
 
 const navItems = routes.filter((item) => item.path !== "/" && item.meta);
 const activePath = computed(() => route.path);
+const hmiScreenPage = ref(0);
+const hmiPageCounts: Record<string, number> = {
+  "/control": 4,
+  "/ai": 2,
+  "/history": 3,
+  "/audit": 2,
+  "/modbus": 4,
+  "/settings": 6
+};
 const {
   alarmStatusType,
   alarmSummaryText,
@@ -32,6 +41,16 @@ const {
   scenarioText,
   sessionRoleLabel
 } = useAppShellState(store, activePath, now);
+const hmiPageCount = computed(() => hmiPageCounts[activePath.value] ?? 1);
+const hmiPageButtons = computed(() => Array.from({ length: hmiPageCount.value }, (_, index) => index));
+const hmiContentClasses = computed(() => ({
+  ...contentClasses.value,
+  [`hmi-page-${hmiScreenPage.value}`]: hmiPageCount.value > 1
+}));
+
+function setHmiScreenPage(page: number): void {
+  hmiScreenPage.value = Math.min(Math.max(page, 0), hmiPageCount.value - 1);
+}
 
 function routeText(item: (typeof navItems)[number], zhKey: "zh" | "subZh", enKey: "en" | "subEn"): string {
   const meta = item.meta as Record<string, unknown> | undefined;
@@ -65,6 +84,14 @@ onBeforeUnmount(() => {
   if (refreshTimer !== null) window.clearInterval(refreshTimer);
   if (clockTimer !== null) window.clearInterval(clockTimer);
 });
+
+watch(activePath, () => {
+  hmiScreenPage.value = 0;
+});
+
+watch(hmiPageCount, (count) => {
+  if (hmiScreenPage.value >= count) hmiScreenPage.value = 0;
+});
 </script>
 
 <template>
@@ -84,6 +111,19 @@ onBeforeUnmount(() => {
         <el-tag :type="store.liveStatus === 'fresh' ? 'success' : 'danger'">{{ liveStatusText }}</el-tag>
         <el-tag :type="safetyStatusType">{{ safetySummaryText }}</el-tag>
         <el-tag :type="commandStatusType">{{ commandReceiptText }}</el-tag>
+      </div>
+
+      <div v-if="hmiPageCount > 1" class="hmi-screen-pager" aria-label="Fixed HMI screen pages">
+        <button
+          v-for="page in hmiPageButtons"
+          :key="page"
+          type="button"
+          class="hmi-page-button"
+          :class="{ active: hmiScreenPage === page }"
+          @click="setHmiScreenPage(page)"
+        >
+          P{{ page + 1 }}
+        </button>
       </div>
 
       <div class="topbar-clock">
@@ -151,7 +191,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <el-main class="content" :class="contentClasses">
+    <el-main class="content" :class="hmiContentClasses">
       <el-alert
         v-if="store.error"
         class="error-alert"
