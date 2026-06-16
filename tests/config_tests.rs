@@ -151,6 +151,29 @@ fn field_scenario_defaults_to_offline_demo_for_empty_pipeline() {
 }
 
 #[test]
+fn production_line_requires_inquiry_without_explicit_industrial_context() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
+        &DeviceMode::Esp32Serial,
+        &memory,
+    ));
+
+    assert_eq!(line_profile.kind, ProductionLineKind::RequiresInquiry);
+    assert_eq!(line_profile.confidence, 0.0);
+    assert!(line_profile.requires_operator_inquiry);
+    assert!(line_profile.production_adaptation_blocked);
+    assert!(line_profile.special_handling_required);
+    assert!(!line_profile.petrochemical_handling_required);
+    assert!(line_profile
+        .actions
+        .iter()
+        .any(|action| action.contains("confirm the actual production line")));
+}
+
+#[test]
 fn production_line_flags_petrochemical_materials_conservatively() {
     let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
     clear_field_scenario_env();
@@ -168,6 +191,8 @@ fn production_line_flags_petrochemical_materials_conservatively() {
 
     assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
     assert_eq!(line_profile.kind, ProductionLineKind::PetrochemicalRefining);
+    assert!(!line_profile.requires_operator_inquiry);
+    assert!(!line_profile.production_adaptation_blocked);
     assert!(line_profile.petrochemical_handling_required);
     assert!(line_profile
         .actions
@@ -193,6 +218,8 @@ fn production_line_flags_biopharmaceutical_materials_independently() {
 
     assert_eq!(field_profile.kind, FieldScenarioKind::LabResearch);
     assert_eq!(line_profile.kind, ProductionLineKind::Biopharmaceutical);
+    assert!(!line_profile.requires_operator_inquiry);
+    assert!(!line_profile.production_adaptation_blocked);
     assert!(line_profile.special_handling_required);
     assert!(!line_profile.petrochemical_handling_required);
 }
@@ -219,7 +246,31 @@ fn production_line_env_override_wins_over_auto_detection() {
     assert_eq!(line_profile.kind, ProductionLineKind::PetrochemicalRefining);
     assert_eq!(line_profile.site_label.as_deref(), Some("refinery line A"));
     assert_eq!(line_profile.confidence, 1.0);
+    assert!(!line_profile.requires_operator_inquiry);
+    assert!(!line_profile.production_adaptation_blocked);
     assert!(line_profile.petrochemical_handling_required);
+}
+
+#[test]
+fn broad_general_chemistry_env_still_requires_inquiry() {
+    let _env_guard = FIELD_SCENARIO_ENV_LOCK.lock().unwrap();
+    clear_field_scenario_env();
+    std::env::set_var("XINGSHU_PRODUCTION_LINE", "general_chemistry");
+    let memory = load_ai_memory("config/ai_memory.toml").unwrap();
+
+    let line_profile = detect_production_line(FieldScenarioContext::config_only(
+        &DeviceMode::Pipeline,
+        &memory,
+    ));
+    clear_field_scenario_env();
+
+    assert_eq!(line_profile.kind, ProductionLineKind::RequiresInquiry);
+    assert!(line_profile.requires_operator_inquiry);
+    assert!(line_profile.production_adaptation_blocked);
+    assert!(line_profile
+        .signals
+        .iter()
+        .any(|signal| signal == "XINGSHU_PRODUCTION_LINE override selected requires_inquiry"));
 }
 
 #[test]
