@@ -7,6 +7,11 @@ require_device_status_for_control = true
 write_retry_backoff_ms = 5000
 safety_guard_timeout_ms = 1000
 ai_stop_product_concentration_percent = 95.0
+# Command-level handshake (see docs/command_ack_handshake.md). require_command_ack
+# defaults to false for legacy compatibility; production must set it true —
+# `xingshu ops preflight --production` fails when it is unset here.
+require_command_ack = false
+command_ack_timeout_ms = 2000
 
 [temperature]
 min_c = 20.0

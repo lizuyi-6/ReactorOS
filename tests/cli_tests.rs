@@ -1573,6 +1573,16 @@ max_pdu_bytes = 253
     )
     .unwrap();
 
+    // Production preflight requires require_command_ack=true (command-level
+    // handshake). The repo config/safety.toml keeps it false for legacy
+    // compatibility, so simulate a production-hardened safety file here.
+    let safety_path = temp_dir.path().join("safety.toml");
+    let safety_text = std::fs::read_to_string("config/safety.toml")
+        .expect("repo safety.toml must exist for this test");
+    let safety_text =
+        safety_text.replace("require_command_ack = false", "require_command_ack = true");
+    std::fs::write(&safety_path, safety_text).unwrap();
+
     let output = xingshu()
         .args([
             "ops",
@@ -1582,7 +1592,7 @@ max_pdu_bytes = 253
             "--config",
             device_path.to_str().unwrap(),
             "--safety",
-            "config/safety.toml",
+            safety_path.to_str().unwrap(),
             "--integration",
             integration_path.to_str().unwrap(),
             "--backup-service",

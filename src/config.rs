@@ -250,6 +250,13 @@ pub struct ControlConfig {
     pub safety_guard_timeout_ms: u64,
     #[serde(default = "default_ai_stop_product_concentration_percent")]
     pub ai_stop_product_concentration_percent: f64,
+    /// Require a command-level handshake (downstream ACK) before a write is
+    /// treated as complete. Default false preserves the legacy
+    /// fire-and-forget behaviour; production preflight should require true.
+    #[serde(default = "default_require_command_ack")]
+    pub require_command_ack: bool,
+    #[serde(default = "default_command_ack_timeout_ms")]
+    pub command_ack_timeout_ms: u64,
 }
 
 fn default_require_device_status_for_control() -> bool {
@@ -266,6 +273,19 @@ fn default_safety_guard_timeout_ms() -> u64 {
 
 fn default_ai_stop_product_concentration_percent() -> f64 {
     95.0
+}
+
+fn default_require_command_ack() -> bool {
+    // Legacy-compatible default. Production deployments should set this true
+    // via safety.toml; xingshu ops preflight --production fails closed when it
+    // is unset. See docs/command_ack_handshake.md.
+    false
+}
+
+fn default_command_ack_timeout_ms() -> u64 {
+    // Same order of magnitude as safety_guard_timeout_ms (1000), slightly
+    // wider to tolerate a downstream ACK round-trip over a slow serial link.
+    2_000
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -391,6 +411,10 @@ pub fn validate_safety_config(config: &SafetyConfig) -> Result<()> {
         config.control.ai_stop_product_concentration_percent,
         0.0,
         100.0,
+    )?;
+    ensure_positive_u64(
+        "control.command_ack_timeout_ms",
+        config.control.command_ack_timeout_ms,
     )?;
     ensure_ordered_f64(
         "temperature.min_c",

@@ -37,6 +37,48 @@ use crate::{
     },
 };
 
+/// Command-level handshake outcome. The upper computer treats a downstream
+/// write as complete only when the device echoes the same `request_id` with a
+/// positive ACK. This closes the fire-and-forget blind spot of `write_targets`
+/// (which returns Ok as soon as bytes are flushed / a file is written) and the
+/// stale-ACK mismatch risk of the next-round `last_command_ok` poll. See
+/// `docs/command_ack_handshake.md`.
+#[derive(Debug, Clone)]
+pub struct CommandAck {
+    /// `request_id` echoed by the downstream; must equal the id generated for
+    /// this command, else the ACK is stale and must be ignored.
+    pub request_id: String,
+    pub status: AckStatus,
+    /// Targets the downstream reports it actually accepted/applied (after its
+    /// own clamping). `None` when the protocol does not echo applied values.
+    /// Used to detect a silent clamp or an applied-value mismatch (CLAUDE 3.2).
+    pub accepted_targets: Option<ControlTargets>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AckStatus {
+    /// Downstream echoed the request_id and confirmed execution.
+    Confirmed,
+    /// Downstream received the command but refused (out-of-range, busy, fault).
+    Rejected(String),
+    /// No matching ACK within the handshake timeout — delivery unconfirmed;
+    /// the control loop treats this as a fail-closed condition.
+    Timeout,
+    /// Device mode has no real handshake and fell back to `write_targets`.
+    /// Treated as a configuration error when `require_command_ack` is on.
+    Unverified,
+}
+
+impl CommandAck {
+    pub fn unverified(request_id: impl Into<String>) -> Self {
+        Self {
+            request_id: request_id.into(),
+            status: AckStatus::Unverified,
+            accepted_targets: None,
+        }
+    }
+}
+
 #[async_trait::async_trait]
 pub trait ReactorDevice: Send + Sync {
     async fn read_sample(&self) -> Result<SensorSnapshot>;
@@ -48,6 +90,22 @@ pub trait ReactorDevice: Send + Sync {
         Ok((sample, status))
     }
     async fn write_targets(&self, command: &SafeCommand) -> Result<()>;
+    /// Command-level handshake: write the command and wait for a matching ACK.
+    ///
+    /// Default implementation falls back to the fire-and-forget `write_targets`
+    /// and reports `Unverified`; real device modes override to perform an
+    /// explicit ACK exchange. When `require_command_ack` is enabled the control
+    /// loop treats `Unverified` as a configuration error and fails closed.
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let _ = timeout;
+        self.write_targets(command).await?;
+        Ok(CommandAck::unverified(request_id))
+    }
     async fn read_device_status(&self) -> Result<Option<DeviceStatusSnapshot>> {
         Ok(None)
     }
@@ -124,6 +182,22 @@ impl ReactorDevice for PipelineDevice {
 
     async fn write_targets(&self, _command: &SafeCommand) -> Result<()> {
         Ok(())
+    }
+
+    async fn write_targets_acknowledged(
+        &self,
+        _command: &SafeCommand,
+        request_id: &str,
+        _timeout: Duration,
+    ) -> Result<CommandAck> {
+        // Pipeline mode never emits commands (an external controller owns
+        // actuation), so there is nothing to confirm; report Confirmed with no
+        // applied-targets echo.
+        Ok(CommandAck {
+            request_id: request_id.to_string(),
+            status: AckStatus::Confirmed,
+            accepted_targets: None,
+        })
     }
 }
 
@@ -243,6 +317,89 @@ impl ReactorDevice for ModbusRtuDevice {
         Ok(())
     }
 
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        _timeout: Duration,
+    ) -> Result<CommandAck> {
+        // Modbus FC06 is already a request-response: each write_single_register
+        // Ok means the slave echoed the write back (transport ACK). The
+        // handshake adds a read-back verification — re-reading the target
+        // registers and confirming the slave now HOLDS exactly the raw we wrote.
+        // A mismatch means the slave rejected/clamped/overwrote the value: fail
+        // closed (Rejected). request_id has no Modbus wire representation (the
+        // transaction id is owned by tokio-modbus), so it is only carried in the
+        // CommandAck for audit correlation. Read-back is instantaneous, hence
+        // timeout is unused.
+        let config = self.config.clone();
+        let mut client = self.client.lock().await;
+        let expected_temp_raw = encode_write_register(
+            command.target_temperature_c,
+            &config.modbus.registers.target_temperature_c,
+        )?;
+        let expected_stir_raw = encode_write_register(
+            command.target_stirrer_rpm,
+            &config.modbus.registers.target_stirrer_rpm,
+        )?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+            expected_temp_raw,
+        )
+        .await?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+            expected_stir_raw,
+        )
+        .await?;
+        let held_temp_raw = read_holding_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+        )
+        .await?;
+        let held_stir_raw = read_holding_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+        )
+        .await?;
+        if held_temp_raw != expected_temp_raw || held_stir_raw != expected_stir_raw {
+            let held_temp =
+                decode_write_register(held_temp_raw, &config.modbus.registers.target_temperature_c);
+            let held_stir =
+                decode_write_register(held_stir_raw, &config.modbus.registers.target_stirrer_rpm);
+            return Ok(CommandAck {
+                request_id: request_id.to_string(),
+                status: AckStatus::Rejected(format!(
+                    "modbus read-back mismatch: target_temperature_c held {held_temp} sent {}, target_stirrer_rpm held {held_stir} sent {}",
+                    command.target_temperature_c, command.target_stirrer_rpm
+                )),
+                accepted_targets: None,
+            });
+        }
+        let accepted = ControlTargets {
+            temperature_c: decode_write_register(
+                held_temp_raw,
+                &config.modbus.registers.target_temperature_c,
+            ),
+            heat_time_s: command.heat_time_s,
+            hold_time_s: command.hold_time_s,
+            cool_time_s: command.cool_time_s,
+            stirrer_rpm: decode_write_register(
+                held_stir_raw,
+                &config.modbus.registers.target_stirrer_rpm,
+            ),
+            shake_speed_cpm: command.target_shake_speed_cpm,
+            target_pressure_mpa: command.target_pressure_mpa,
+        };
+        Ok(CommandAck {
+            request_id: request_id.to_string(),
+            status: AckStatus::Confirmed,
+            accepted_targets: Some(accepted),
+        })
+    }
+
     fn control_capabilities(&self) -> Vec<DeviceComponentCapability> {
         vec![
             component_capability(
@@ -328,6 +485,80 @@ impl ReactorDevice for Esp32SerialDevice {
             port.write_all(frame.as_bytes())?;
             port.flush()?;
             Ok(())
+        })
+        .await?
+    }
+
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let config = self.config.clone();
+        let port = Arc::clone(&self.port);
+        let command = command.clone();
+        let request_id = request_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut port = port
+                .lock()
+                .map_err(|_| anyhow!("serial port lock poisoned"))?;
+            // Send the command carrying our rid so the downstream can echo it.
+            let frame = build_esp32_command_with_rid(
+                &config.esp32.command_prefix,
+                &command,
+                &request_id,
+                config.esp32.checksum,
+            );
+            port.write_all(frame.as_bytes())?;
+            port.flush()?;
+            // Read on an independent cloned reader whose timeout is set short
+            // (100 ms) so the sample-path reader is unaffected and we never
+            // block forever on a silent line. Loop until an ACK frame echoing
+            // our rid arrives, or the handshake window expires. Sample frames
+            // and unparsable lines are skipped.
+            let mut reader_port = port.try_clone()?;
+            reader_port.set_timeout(Duration::from_millis(100))?;
+            let mut reader = BufReader::new(reader_port);
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(CommandAck {
+                        request_id,
+                        status: AckStatus::Timeout,
+                        accepted_targets: None,
+                    });
+                }
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Ok(_) => {}
+                }
+                if let Ok(ack) =
+                    parse_esp32_ack_frame(&line, &config.esp32.frame_prefix, config.esp32.checksum)
+                {
+                    if ack.request_id == request_id {
+                        let status = if ack.ok {
+                            AckStatus::Confirmed
+                        } else {
+                            AckStatus::Rejected(
+                                ack.error
+                                    .unwrap_or_else(|| "downstream rejected command".to_string()),
+                            )
+                        };
+                        return Ok(CommandAck {
+                            request_id,
+                            status,
+                            accepted_targets: None,
+                        });
+                    }
+                    // ACK for a different (stale) rid: keep waiting for ours.
+                }
+                // Otherwise a sample frame or malformed line: skip, keep waiting.
+            }
         })
         .await?
     }
@@ -431,6 +662,93 @@ impl ReactorDevice for JsonBridgeDevice {
                 )?;
             }
             Ok(())
+        })
+        .await?
+    }
+
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let config = self.config.clone();
+        let command = command.clone();
+        let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
+        let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
+        let request_id = request_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            // Reuse the SafeCommand -> atomic-control conversion, but override
+            // the request_id so the downstream echoes back the id the upper
+            // computer generated for this handshake (not the bridge's internal
+            // sequence). Then poll state.json until the downstream reports it
+            // processed this exact request_id.
+            let current = read_json_bridge_state(&config.state_path)?;
+            let pending = next_json_bridge_control(
+                &config,
+                &current,
+                &command,
+                &last_commanded_shake_speed_cpm,
+                &last_stirrer_command,
+            )?;
+            let Some(pending) = pending else {
+                // No atomic command to send (all targets within deadband): the
+                // downstream has nothing to apply, so the handshake is trivially
+                // confirmed.
+                return Ok(CommandAck {
+                    request_id,
+                    status: AckStatus::Confirmed,
+                    accepted_targets: None,
+                });
+            };
+            let mut control = pending.control;
+            control.request_id = request_id.clone();
+            write_json_bridge_control(&config.control_path, &control)?;
+            apply_json_bridge_cache_update(
+                &pending.cache_update,
+                &last_commanded_shake_speed_cpm,
+                &last_stirrer_command,
+            )?;
+
+            // Poll state.json: Confirmed when the downstream echoes our rid with
+            // ok=true, Rejected when ok=false, Timeout when no matching echo
+            // arrives within the handshake window.
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(CommandAck {
+                        request_id,
+                        status: AckStatus::Timeout,
+                        accepted_targets: None,
+                    });
+                }
+                if let Ok(state) = read_json_bridge_state(&config.state_path) {
+                    if state.last_command_request_id.as_deref() == Some(request_id.as_str()) {
+                        match state.last_command_ok {
+                            Some(true) => {
+                                return Ok(CommandAck {
+                                    request_id,
+                                    status: AckStatus::Confirmed,
+                                    accepted_targets: None,
+                                });
+                            }
+                            Some(false) => {
+                                let detail = state.last_command_error.unwrap_or_else(|| {
+                                    "downstream rejected command without an error detail"
+                                        .to_string()
+                                });
+                                return Ok(CommandAck {
+                                    request_id,
+                                    status: AckStatus::Rejected(detail),
+                                    accepted_targets: None,
+                                });
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         })
         .await?
     }
@@ -1539,6 +1857,120 @@ pub fn build_esp32_command(prefix: &str, command: &SafeCommand, checksum_enabled
     }
 }
 
+/// Command frame carrying a request_id, so the downstream can echo it back in
+/// its ACK. Used by the command-level handshake; the legacy fire-and-forget
+/// `build_esp32_command` omits the rid.
+pub fn build_esp32_command_with_rid(
+    prefix: &str,
+    command: &SafeCommand,
+    request_id: &str,
+    checksum_enabled: bool,
+) -> String {
+    let body = format!(
+        "{prefix}|v=1|rid={request_id}|heat_time={:.2}|hold_time={:.2}|cool_time={:.2}|target_temp={:.2}|stir_speed={:.2}|shake_speed={:.2}|target_pressure={:.2}",
+        command.heat_time_s,
+        command.hold_time_s,
+        command.cool_time_s,
+        command.target_temperature_c,
+        command.target_stirrer_rpm,
+        command.target_shake_speed_cpm,
+        command.target_pressure_mpa
+    );
+    if checksum_enabled {
+        format!("{body}|chk={}\n", checksum_hex(body.as_bytes()))
+    } else {
+        format!("{body}\n")
+    }
+}
+
+/// Downstream ACK parsed from an ESP32 ack frame. See docs/command_ack_handshake.md.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Esp32Ack {
+    pub request_id: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+/// Build an ESP32 ACK frame (downstream -> upper computer). Mirrors the command
+/// frame grammar: `{prefix}|v=1|type=ack|rid=<id>|ok=<0|1>[|err=<text>]|chk=<hex>`.
+pub fn build_esp32_ack_frame(
+    prefix: &str,
+    request_id: &str,
+    ok: bool,
+    error: Option<&str>,
+    checksum_enabled: bool,
+) -> String {
+    let ok_field = if ok { "1" } else { "0" };
+    let mut body = format!("{prefix}|v=1|type=ack|rid={request_id}|ok={ok_field}");
+    if let Some(err) = error {
+        body.push_str(&format!("|err={err}"));
+    }
+    if checksum_enabled {
+        format!("{body}|chk={}\n", checksum_hex(body.as_bytes()))
+    } else {
+        format!("{body}\n")
+    }
+}
+
+/// Parse an ESP32 ACK frame. Returns Ok only when the line is a valid ack frame
+/// (prefix matches, checksum verifies, type=ack). Sample frames and malformed
+/// lines return Err so the handshake loop can skip them and keep waiting.
+pub fn parse_esp32_ack_frame(
+    line: &str,
+    expected_prefix: &str,
+    checksum_enabled: bool,
+) -> Result<Esp32Ack> {
+    let line = line.trim();
+    let parts: Vec<&str> = line.split('|').collect();
+    if parts.first().copied() != Some(expected_prefix) {
+        return Err(anyhow!("unexpected esp32 ack frame prefix"));
+    }
+    let mut fields: HashMap<&str, &str> = HashMap::new();
+    let mut checksum_field = None;
+    let mut checksum_index = None;
+    for (index, part) in parts.iter().enumerate().skip(1) {
+        let Some((key, value)) = part.split_once('=') else {
+            return Err(anyhow!("invalid esp32 ack frame field {part}"));
+        };
+        if key == "chk" {
+            checksum_field = Some(value);
+            checksum_index = Some(index);
+        } else {
+            fields.insert(key, value);
+        }
+    }
+    if checksum_enabled {
+        let chk = checksum_field.ok_or_else(|| anyhow!("esp32 ack frame missing checksum"))?;
+        let index =
+            checksum_index.ok_or_else(|| anyhow!("esp32 ack frame missing checksum position"))?;
+        let body = parts[..index].join("|");
+        let expected = checksum_hex(body.as_bytes());
+        if !chk.eq_ignore_ascii_case(&expected) {
+            return Err(anyhow!(
+                "esp32 ack checksum mismatch expected {expected} got {chk}"
+            ));
+        }
+    }
+    if required_field(&fields, "v")? != "1" {
+        return Err(anyhow!("unsupported esp32 ack frame version"));
+    }
+    if required_field(&fields, "type")? != "ack" {
+        return Err(anyhow!("esp32 frame is not an ack"));
+    }
+    let request_id = required_field(&fields, "rid")?.to_string();
+    let ok = match required_field(&fields, "ok")? {
+        "1" | "true" => true,
+        "0" | "false" => false,
+        other => return Err(anyhow!("invalid esp32 ack ok field {other}")),
+    };
+    let error = fields.get("err").map(|s| s.to_string());
+    Ok(Esp32Ack {
+        request_id,
+        ok,
+        error,
+    })
+}
+
 pub fn build_esp32_sample_frame(
     prefix: &str,
     sample: &SensorSnapshot,
@@ -1658,6 +2090,14 @@ fn encode_write_register(value: f64, register: &WriteRegister) -> Result<u16> {
     Ok(raw as u16)
 }
 
+/// Inverse of `encode_write_register` for read-back verification: reconstruct
+/// the engineering value the slave holds from the raw word read back from a
+/// target (write) register. Mirrors `decode_read_register` but operates on a
+/// `WriteRegister` (the target registers are write registers, not read ones).
+fn decode_write_register(raw: u16, register: &WriteRegister) -> f64 {
+    round2(raw as f64 * register.scale + register.offset)
+}
+
 async fn read_holding_register(
     client: &mut tokio_modbus::client::Context,
     address: u16,
@@ -1688,6 +2128,91 @@ async fn write_single_register(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_ack_unverified_marks_status_without_applied_targets() {
+        let ack = CommandAck::unverified("req-unverified");
+        assert_eq!(ack.request_id, "req-unverified");
+        assert!(matches!(ack.status, AckStatus::Unverified));
+        assert!(
+            ack.accepted_targets.is_none(),
+            "unverified fallback must not fabricate applied targets"
+        );
+    }
+
+    #[tokio::test]
+    async fn default_write_targets_acknowledged_falls_back_to_unverified() {
+        // A device that only implements write_targets (no handshake override)
+        // must fall back to the default: write Ok -> Unverified, preserving the
+        // legacy fire-and-forget path until a real ACK exchange is implemented.
+        struct LegacyDevice;
+        #[async_trait::async_trait]
+        impl ReactorDevice for LegacyDevice {
+            async fn read_sample(&self) -> Result<SensorSnapshot> {
+                Err(anyhow!("not used in this test"))
+            }
+            async fn write_targets(&self, _command: &SafeCommand) -> Result<()> {
+                Ok(())
+            }
+        }
+        let dev = LegacyDevice;
+        let command = SafeCommand {
+            target_temperature_c: 50.0,
+            heat_time_s: 300.0,
+            hold_time_s: 600.0,
+            cool_time_s: 180.0,
+            target_stirrer_rpm: 300.0,
+            target_shake_speed_cpm: 30.0,
+            target_pressure_mpa: 0.5,
+            reason: "test".to_string(),
+        };
+        let ack = dev
+            .write_targets_acknowledged(&command, "req-legacy", Duration::from_millis(50))
+            .await
+            .unwrap();
+        assert_eq!(ack.request_id, "req-legacy");
+        assert!(matches!(ack.status, AckStatus::Unverified));
+        assert!(ack.accepted_targets.is_none());
+    }
+
+    #[test]
+    fn decode_write_register_inverts_encode_formula() {
+        // decode_write_register must reconstruct the engineering value from the
+        // raw word using the SAME scale/offset as encode (the inverse formula),
+        // because the handshake compares the raw read back against the encoded
+        // raw and reports the held engineering value via this decode.
+        let register = WriteRegister {
+            address: 200,
+            scale: 2.0,
+            offset: 10.0,
+        };
+        assert_eq!(decode_write_register(5, &register), 20.0); // 5 * 2.0 + 10.0
+        assert_eq!(decode_write_register(0, &register), 10.0); // offset only
+    }
+
+    #[test]
+    fn encode_decode_write_register_round_trips_to_same_raw() {
+        // Read-back raw comparison is sound only if encode is idempotent through
+        // decode_write_register: encode -> decode -> encode must yield the same
+        // raw, so a faithful slave (stores exactly what we wrote) always matches
+        // and a clamp/overwrite is always detected.
+        let register = WriteRegister {
+            address: 100,
+            scale: 0.1,
+            offset: 0.0,
+        };
+        for value in [0.0, 50.0, 64.25, 99.9, 150.0] {
+            let raw = encode_write_register(value, &register)
+                .unwrap_or_else(|err| panic!("encode({value}) failed: {err}"));
+            let decoded = decode_write_register(raw, &register);
+            let raw_again = encode_write_register(decoded, &register)
+                .unwrap_or_else(|err| panic!("re-encode({decoded}) failed: {err}"));
+            assert_eq!(
+                raw, raw_again,
+                "value {value}: encode->decode->encode changed raw ({raw} != {raw_again})"
+            );
+        }
+    }
 
     #[test]
     fn tokio_modbus_serial_config_maps_standard_rtu_settings() {

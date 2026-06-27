@@ -5,11 +5,12 @@ use reactor_edge_daemon::{
     device::{
         build_device, build_json_bridge_control, json_bridge_sample_from_state,
         json_bridge_status_from_state, parse_json_bridge_state, write_json_bridge_control,
-        ComponentControlCommand,
+        AckStatus, ComponentControlCommand,
     },
     state::ControlTargets,
 };
 use serde_json::json;
+use std::time::Duration;
 use tempfile::tempdir;
 
 fn bridge_config() -> JsonBridgeConfig {
@@ -48,6 +49,134 @@ fn valid_state_json() -> String {
         "baudrate": 115200
     })
     .to_string()
+}
+
+fn state_json_with_ack(request_id: &str, ok: Option<bool>, error: Option<&str>) -> String {
+    json!({
+        "connected": true,
+        "last_seen_ms": Utc::now().timestamp_millis(),
+        "last_frame_hex": "AA BB 00 11 00 00 00 00",
+        "last_frame_ok": true,
+        "adc": 2048,
+        "status": 0b0000_0111,
+        "relay": 1,
+        "motor": 1,
+        "tilt": 1,
+        "speed_delay_us": 10000,
+        "temperature_c": 64.25,
+        "pressure_mpa": 0.50,
+        "stirrer_rpm": 125.18,
+        "shake_speed_cpm": 30.0,
+        "flow_rate_l_min": 1.2,
+        "ph": 6.15,
+        "last_command_request_id": request_id,
+        "last_command_ok": ok,
+        "last_command_error": error,
+        "port": "/dev/ttyUSB0",
+        "baudrate": 115200
+    })
+    .to_string()
+}
+
+fn handshake_command() -> SafeCommand {
+    // target_shake_speed_cpm=35 vs state shake_speed_cpm=30 exceeds the 1.0
+    // deadband, so next_json_bridge_control emits a "speed up" atomic command
+    // (ensuring the handshake path actually writes a control rather than no-op).
+    SafeCommand {
+        target_temperature_c: 64.25,
+        heat_time_s: 300.0,
+        hold_time_s: 600.0,
+        cool_time_s: 180.0,
+        target_stirrer_rpm: 125.0,
+        target_shake_speed_cpm: 35.0,
+        target_pressure_mpa: 0.5,
+        reason: "handshake test".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_confirmed_when_downstream_echoes_matching_rid() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("rid-confirmed", Some(true), None),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "rid-confirmed",
+            Duration::from_millis(500),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ack.request_id, "rid-confirmed");
+    assert!(
+        matches!(ack.status, AckStatus::Confirmed),
+        "got {:?}",
+        ack.status
+    );
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_rejected_when_downstream_reports_failure() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("rid-rejected", Some(false), Some("target out of range")),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "rid-rejected",
+            Duration::from_millis(500),
+        )
+        .await
+        .unwrap();
+    match ack.status {
+        AckStatus::Rejected(detail) => assert!(
+            detail.contains("target out of range"),
+            "unexpected reject detail: {detail}"
+        ),
+        other => panic!("expected Rejected, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_times_out_when_rid_never_echoed() {
+    // The downstream echoes a DIFFERENT rid (or a stale ok from an earlier
+    // command). The handshake must keep waiting for THIS command's rid and not
+    // misattribute the foreign/stale ok — ultimately timing out.
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("stale-rid", Some(true), None),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "current-rid",
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ack.request_id, "current-rid");
+    assert!(
+        matches!(ack.status, AckStatus::Timeout),
+        "stale/different rid must not be misattributed; got {:?}",
+        ack.status
+    );
 }
 
 fn assert_json_bridge_tmp_files_clean(path: &std::path::Path) {
@@ -130,6 +259,8 @@ fn component_safety() -> reactor_edge_daemon::config::SafetyConfig {
             write_retry_backoff_ms: 5000,
             safety_guard_timeout_ms: 1000,
             ai_stop_product_concentration_percent: 95.0,
+            require_command_ack: false,
+            command_ack_timeout_ms: 2000,
         },
         temperature: reactor_edge_daemon::config::TemperatureSafety {
             min_c: 20.0,
@@ -589,6 +720,8 @@ offset = 0.0
                     write_retry_backoff_ms: 5000,
                     safety_guard_timeout_ms: 1000,
                     ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
@@ -720,6 +853,8 @@ offset = 0.0
                     write_retry_backoff_ms: 5000,
                     safety_guard_timeout_ms: 1000,
                     ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
@@ -849,6 +984,8 @@ offset = 0.0
                     write_retry_backoff_ms: 5000,
                     safety_guard_timeout_ms: 1000,
                     ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
