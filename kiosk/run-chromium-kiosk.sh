@@ -5,6 +5,7 @@ URL="${REACTOR_OS_URL:-http://127.0.0.1:8000/}"
 HEALTH_URL="${REACTOR_OS_HEALTH_URL:-http://127.0.0.1:8000/health}"
 WAIT_SECONDS="${REACTOR_OS_WAIT_SECONDS:-60}"
 USER_DATA_DIR="${REACTOR_OS_CHROMIUM_USER_DATA_DIR:-${XDG_RUNTIME_DIR:-/tmp}/reactor-os-chromium}"
+CACHE_DIR="${REACTOR_OS_CHROMIUM_CACHE_DIR:-${XDG_RUNTIME_DIR:-/tmp}/reactor-os-chromium-cache}"
 LOW_LOAD="${REACTOR_OS_LOW_LOAD:-1}"
 
 export DISPLAY="${DISPLAY:-:0}"
@@ -60,6 +61,7 @@ chromium_bin="$(find_chromium)" || {
 }
 
 mkdir -p "$USER_DATA_DIR"
+mkdir -p "$CACHE_DIR"
 
 if ! wait_for_backend; then
   echo "ReactorOS backend did not become healthy at $HEALTH_URL within ${WAIT_SECONDS}s." >&2
@@ -84,11 +86,17 @@ flags=(
   --overscroll-history-navigation=0
   --autoplay-policy=no-user-gesture-required
   --disable-dev-shm-usage
+  --disk-cache-dir="$CACHE_DIR"
   --user-data-dir="$USER_DATA_DIR"
 )
 
 if [[ "$LOW_LOAD" != "0" ]]; then
   flags+=(
+    --enable-low-end-device-mode
+    --renderer-process-limit=2
+    --process-per-site
+    --disk-cache-size=16777216
+    --media-cache-size=1048576
     --disable-background-networking
     --disable-sync
     --disable-component-update
@@ -96,6 +104,7 @@ if [[ "$LOW_LOAD" != "0" ]]; then
     --disable-extensions
     --disable-breakpad
     --disable-hang-monitor
+    --disable-notifications
     --disable-print-preview
     --disable-speech-api
     --metrics-recording-only

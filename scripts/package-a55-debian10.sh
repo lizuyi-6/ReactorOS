@@ -227,6 +227,17 @@ Low-load board health check:
 sudo /opt/reactor-edge/health-check.sh
 \`\`\`
 
+The packaged Vue HMI is built for RK3568 low load by default: 1 Hz WebSocket
+realtime snapshots update current readouts, the aggregate fallback refresh runs
+every 15 seconds, and the live trend keeps 24 samples. Override only for lab
+profiling by setting \`XINGSHU_VITE_REFRESH_MS\` or
+\`XINGSHU_VITE_LIVE_SAMPLE_LIMIT\` before \`npm run frontend:build\`.
+
+The Chromium kiosk profile/cache default to the runtime directory and low-load
+mode caps renderer processes and disk/media cache. If the board has very small
+tmpfs, set \`REACTOR_OS_CHROMIUM_USER_DATA_DIR\` and
+\`REACTOR_OS_CHROMIUM_CACHE_DIR\` in a systemd override.
+
 ## Demo Context For Customer Presentation
 
 Demo mode can seed process definitions, process steps, historical batch outcomes,

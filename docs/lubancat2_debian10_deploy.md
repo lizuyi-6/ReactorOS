@@ -19,6 +19,11 @@ Recommended runtime posture:
 - Keep one foreground app: Chromium kiosk loading `http://127.0.0.1:8000/`.
 - Use the bundled low-load kiosk defaults. Disable them only for debugging with
   `REACTOR_OS_LOW_LOAD=0`.
+- Keep the default low-load HMI refresh settings for RK3568: the Vue HMI uses
+  1 Hz WebSocket realtime snapshots when available, a 15 s aggregate fallback
+  refresh, and a 24-sample live trend window. Override only for lab profiling
+  with `XINGSHU_VITE_REFRESH_MS` and `XINGSHU_VITE_LIVE_SAMPLE_LIMIT` before
+  running `npm run frontend:build`.
 - Keep sensor history windows short on the HMI. Production live values still
   come only from `state.json`/pipeline; lower history depth only reduces browser
   memory and canvas work.
@@ -29,6 +34,12 @@ Recommended runtime posture:
   systemd path uses less disk and RAM.
 - Keep Chromium GPU enabled by default. If a vendor image has broken GPU
   acceleration, set `REACTOR_OS_DISABLE_GPU=1` in the kiosk service override.
+
+The kiosk launcher also keeps the Chromium user profile and cache under the
+runtime directory by default and caps the low-load disk/media cache. To move
+those files off tmpfs on a small-memory image, set
+`REACTOR_OS_CHROMIUM_USER_DATA_DIR` and `REACTOR_OS_CHROMIUM_CACHE_DIR` in a
+systemd override.
 
 ## Build On The PC
 

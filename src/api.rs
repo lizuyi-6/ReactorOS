@@ -7,7 +7,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path, Query, State,
     },
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::{any, get, post, put},
     Json, Router,
@@ -430,6 +430,11 @@ pub struct V1HistoryQuery {
     pub interval: Option<String>,
     pub page: Option<usize>,
     pub page_size: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RealtimeWsQuery {
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3199,12 +3204,26 @@ async fn v1_realtime(
 async fn v1_realtime_ws(
     State(state): State<AppState>,
     Path(device_id): Path<String>,
+    Query(query): Query<RealtimeWsQuery>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, AppError> {
     ensure_reactor_device_id(&device_id)?;
-    require_permission(&headers, Permission::ViewMonitor)?;
+    if let Some(token) = query.token.as_deref() {
+        let token_headers = bearer_headers_from_query_token(token)?;
+        require_permission(&token_headers, Permission::ViewMonitor)?;
+    } else {
+        require_permission(&headers, Permission::ViewMonitor)?;
+    }
     Ok(ws.on_upgrade(move |socket| v1_realtime_socket(socket, state, device_id)))
+}
+
+fn bearer_headers_from_query_token(token: &str) -> Result<HeaderMap, AppError> {
+    let mut headers = HeaderMap::new();
+    let value = HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|_| AppError::unauthorized("invalid bearer session token"))?;
+    headers.insert("authorization", value);
+    Ok(headers)
 }
 
 async fn v1_realtime_socket(mut socket: WebSocket, state: AppState, device_id: String) {
@@ -3263,6 +3282,8 @@ async fn v1_realtime_payload(
             "tilt_angle": sample.tilt_angle_deg,
             "tilt_angle_source": "software_fit_from_binary_sensor",
             "flow_rate": sample.flow_rate_l_min,
+            "product_concentration_percent": sample.product_concentration_percent,
+            "ph": sample.ph,
             "phase": phase_for(&runtime, device.online),
             "progress": progress_for(Some(sample))
         },
