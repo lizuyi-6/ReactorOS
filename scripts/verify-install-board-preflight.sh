@@ -41,6 +41,8 @@ make_package() {
   printf 'REACTOR_EDGE_BIND=127.0.0.1:8000\n' >"${dir}/config/reactor-edge.env"
   printf '[device]\nmode = "pipeline"\n' >"${dir}/config/device.toml"
   printf '[limits]\n' >"${dir}/config/safety.toml"
+  printf '[optimizer]\n' >"${dir}/config/ai_memory.toml"
+  printf '[mqtt]\nenabled = false\n[modbus_tcp]\nenabled = false\n' >"${dir}/config/integration.toml"
   printf '<!doctype html>\n' >"${dir}/frontend/dist/index.html"
   printf '<!doctype html>\n' >"${dir}/static/index.html"
   for unit in reactor-edge-ota-boot-check.service reactor-edge-backup.service reactor-edge-backup.timer reactor-os-chromium.service; do

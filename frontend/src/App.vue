@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { routes } from "./router";
 import { hmiNavItems, useAppShellState } from "./app-shell";
-import { usePlantStore } from "./stores/plant";
+import { HMI_REFRESH_INTERVAL_MS, usePlantStore } from "./stores/plant";
 
 const store = usePlantStore();
 const route = useRoute();
@@ -73,7 +73,7 @@ onMounted(() => {
   store.connectRealtimeSocket("reactor_001");
   refreshTimer = window.setInterval(() => {
     void store.refreshAll();
-  }, 5000);
+  }, HMI_REFRESH_INTERVAL_MS);
   clockTimer = window.setInterval(() => {
     now.value = new Date();
   }, 1000);
@@ -96,7 +96,7 @@ watch(hmiPageCount, (count) => {
 
 <template>
   <el-container class="app-shell monitor-route">
-    <el-header class="topbar" height="48px">
+    <el-header class="topbar" :class="{ 'has-hmi-pager': hmiPageCount > 1 }" height="48px">
       <div class="brand-line">
         <strong>ReactorOS</strong>
         <span class="top-divider"></span>

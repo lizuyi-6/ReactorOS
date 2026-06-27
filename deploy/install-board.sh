@@ -136,6 +136,8 @@ validate_package_before_stopping_services() {
   require_file "${ROOT}/config/reactor-edge.env"
   require_file "${ROOT}/config/device.toml"
   require_file "${ROOT}/config/safety.toml"
+  require_file "${ROOT}/config/ai_memory.toml"
+  require_file "${ROOT}/config/integration.toml"
 
   if [[ ! -f "${ROOT}/frontend/dist/index.html" && ! -f "${ROOT}/static/index.html" ]]; then
     echo "Missing HMI assets: expected frontend/dist/index.html or static/index.html" >&2

@@ -131,6 +131,21 @@ const TOKEN_KEY = "reactoros.vue.auth.token";
 const USER_KEY = "reactoros.vue.auth.user";
 const LANGUAGE_KEY = "reactoros.vue.language";
 
+function readPositiveInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+export const HMI_REFRESH_INTERVAL_MS = readPositiveInt(
+  import.meta.env.XINGSHU_VITE_REFRESH_MS,
+  15_000,
+  5_000,
+  60_000
+);
+
+const LIVE_SAMPLE_LIMIT = readPositiveInt(import.meta.env.XINGSHU_VITE_LIVE_SAMPLE_LIMIT, 24, 1, 120);
+
 const rolePasswords: Record<string, string> = {
   operator: "operator123",
   engineer: "engineer123",
@@ -226,6 +241,75 @@ export const usePlantStore = defineStore("plant", () => {
     return runtime && typeof runtime === "object" ? (runtime as ApiRecord) : null;
   }
 
+  function trimRecentSamples(rows: ApiRecord[]): ApiRecord[] {
+    return rows.slice(Math.max(0, rows.length - LIVE_SAMPLE_LIMIT));
+  }
+
+  function realtimeSampleFromPayload(payload: ApiRecord, previousSample: ApiRecord | null): ApiRecord | null {
+    const data = payload.data;
+    if (!data || typeof data !== "object") return null;
+    const row = data as ApiRecord;
+    const timestamp = typeof payload.timestamp === "string" ? payload.timestamp : new Date().toISOString();
+    return {
+      ...(previousSample ?? {}),
+      created_at: timestamp,
+      captured_at: timestamp,
+      temperature_c: row.current_temp,
+      pressure_mpa: row.current_pressure,
+      stirrer_rpm: row.stir_speed,
+      shake_speed_cpm: row.shake_speed,
+      tilt_state: row.tilt_state,
+      tilt_angle_deg: row.tilt_angle,
+      flow_rate_l_min: row.flow_rate,
+      product_concentration_percent: row.product_concentration_percent ?? previousSample?.product_concentration_percent,
+      ph: row.ph ?? previousSample?.ph
+    };
+  }
+
+  function applyRealtimePayload(payload: ApiRecord): void {
+    const previousLive = live.value ?? {};
+    const previousRuntime = runtimeFromLive(previousLive);
+    const previousSample = previousRuntime?.latest_sample;
+    const sample = realtimeSampleFromPayload(
+      payload,
+      previousSample && typeof previousSample === "object" ? (previousSample as ApiRecord) : null
+    );
+    if (!sample) {
+      liveStatus.value = "unavailable";
+      return;
+    }
+
+    const previousSamples = Array.isArray(previousLive.recent_samples)
+      ? (previousLive.recent_samples as ApiRecord[])
+      : [];
+    const device = payload.device_status && typeof payload.device_status === "object" ? (payload.device_status as ApiRecord) : null;
+    const nextDeviceStatus: ApiRecord | null = device
+      ? {
+          total_count: 1,
+          online_count: payload.device_online === false ? 0 : 1,
+          devices: [device],
+          sensors: Array.isArray(device.sensors) ? device.sensors : [],
+          components: Array.isArray(device.components) ? device.components : []
+        }
+      : null;
+
+    if (nextDeviceStatus) deviceStatus.value = nextDeviceStatus;
+    const nextRuntime: ApiRecord = {
+      ...(previousRuntime ?? {}),
+      latest_sample: sample
+    };
+    runtimeFallback.value = nextRuntime;
+    live.value = {
+      ...previousLive,
+      runtime: nextRuntime,
+      device_status: nextDeviceStatus ?? previousLive.device_status,
+      alarms: Array.isArray(payload.alarms) ? payload.alarms : previousLive.alarms,
+      recent_samples: trimRecentSamples([...previousSamples, sample])
+    };
+    liveStatus.value = "fresh";
+    liveLastUpdated.value = new Date().toLocaleTimeString();
+  }
+
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const headers = new Headers();
     headers.set("Accept", "application/json");
@@ -306,9 +390,11 @@ export const usePlantStore = defineStore("plant", () => {
     localStorage.setItem(TOKEN_KEY, payload.token);
     localStorage.setItem(USER_KEY, JSON.stringify(payload.user));
     await refreshProtected();
+    connectRealtimeSocket("reactor_001");
   }
 
   function logout(): void {
+    disconnectRealtimeSocket();
     token.value = null;
     user.value = null;
     config.value = null;
@@ -338,7 +424,7 @@ export const usePlantStore = defineStore("plant", () => {
   async function refreshLive(): Promise<void> {
     let nextLive: ApiRecord | null = null;
     try {
-      nextLive = await request<ApiRecord>("/api/live?sample_limit=36&include_processes=true&include_batches=true&include_events=false", {
+      nextLive = await request<ApiRecord>(`/api/live?sample_limit=${LIVE_SAMPLE_LIMIT}&include_processes=true&include_batches=true&include_events=false`, {
         auth: false,
         allowFailure: true
       });
@@ -711,10 +797,10 @@ export const usePlantStore = defineStore("plant", () => {
   }
 
   // WebSocket realtime push (/ws/v1/reactor/:id/realtime, ~1 Hz from backend).
-  // The WS payload is a single-device realtime snapshot, NOT the full /api/live
-  // aggregate — so on each push we trigger a lightweight refreshLive() rather
-  // than replace `live` (which would drop batches/processes/recommendation).
-  // Net effect: latency drops from the 5 s poll to "push → refresh".
+  // The payload is a single-device realtime snapshot; merge it into the live
+  // store locally so the RK3568 kiosk does not turn every push into a full
+  // /api/live SQLite aggregation. The low-frequency refreshAll loop still
+  // refreshes process/history/config surfaces.
   function connectRealtimeSocket(deviceId: string): void {
     if (typeof WebSocket === "undefined" || !token.value) {
       realtimeConnected.value = false;
@@ -722,7 +808,7 @@ export const usePlantStore = defineStore("plant", () => {
     }
     disconnectRealtimeSocket();
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${proto}//${window.location.host}/ws/v1/reactor/${encodeURIComponent(deviceId)}/realtime`;
+    const url = `${proto}//${window.location.host}/ws/v1/reactor/${encodeURIComponent(deviceId)}/realtime?token=${encodeURIComponent(token.value)}`;
     try {
       realtimeSocket = new WebSocket(url);
     } catch {
@@ -744,11 +830,13 @@ export const usePlantStore = defineStore("plant", () => {
         /* ignore */
       }
     };
-    realtimeSocket.onmessage = () => {
-      // Any push means the pipeline is alive — refresh the aggregate. We do not
-      // parse the payload into live directly (shape mismatch with /api/live);
-      // a refresh keeps batches/processes/recommendation consistent.
-      void refreshLive();
+    realtimeSocket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as ApiRecord;
+        applyRealtimePayload(payload);
+      } catch {
+        liveStatus.value = "unavailable";
+      }
     };
   }
 

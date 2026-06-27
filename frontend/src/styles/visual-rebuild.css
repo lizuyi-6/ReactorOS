@@ -1487,3 +1487,1009 @@ body {
     grid-template-rows: 46px minmax(0, 1fr) !important;
   }
 }
+
+/* ---- Color recovery pass: bring back the richer static-HMI palette without
+   changing fixed-screen geometry or runtime behavior. ---- */
+:root {
+  --hmi-bg: #080b12;
+  --hmi-bg-grid: rgba(64, 174, 255, 0.08);
+  --hmi-panel: #171b23;
+  --hmi-panel-2: #202631;
+  --hmi-panel-3: #111821;
+  --hmi-line: #35546b;
+  --hmi-line-soft: rgba(57, 138, 196, 0.42);
+  --hmi-green: #42ff68;
+  --hmi-blue: #2f9cff;
+  --hmi-cyan: #36e6d7;
+  --hmi-amber: #ffae2f;
+  --hmi-red: #ff4b42;
+  --hmi-violet: #8b7dff;
+  --hmi-text: #f5fbff;
+  --hmi-muted: #c5d8e0;
+  --hmi-dim: #91a9b5;
+  --hmi-data-shadow: 0 0 14px rgba(54, 230, 215, 0.16);
+}
+
+body,
+.monitor-route {
+  background:
+    linear-gradient(90deg, rgba(47, 156, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(66, 255, 104, 0.055) 1px, transparent 1px),
+    linear-gradient(135deg, rgba(255, 174, 47, 0.045), transparent 32%),
+    linear-gradient(180deg, #0b1018 0%, #070a10 100%);
+  background-size: 40px 40px, 40px 40px, 100% 100%, 100% 100%;
+}
+
+.monitor-route .topbar {
+  border-bottom-color: rgba(47, 156, 255, 0.42);
+  background:
+    linear-gradient(90deg, rgba(47, 156, 255, 0.12), transparent 36%),
+    linear-gradient(180deg, #18202a 0%, #0f141d 100%);
+}
+
+.monitor-route .brand-line,
+.monitor-route .topbar-clock,
+.monitor-route .legacy-sidebar {
+  border-color: rgba(47, 156, 255, 0.28);
+}
+
+.monitor-route .brand-line::before {
+  border-color: rgba(54, 230, 215, 0.82);
+  background:
+    radial-gradient(circle at 50% 58%, rgba(66, 255, 104, 0.18), transparent 52%),
+    #091017;
+  box-shadow:
+    0 0 0 1px rgba(47, 156, 255, 0.24),
+    0 0 20px rgba(54, 230, 215, 0.24);
+}
+
+.monitor-route .brand-line strong {
+  color: #f8ffff;
+  text-shadow:
+    1px 1px 0 rgba(47, 156, 255, 0.35),
+    0 0 16px rgba(66, 255, 104, 0.16);
+}
+
+.monitor-route .brand-line small {
+  color: #9fe9dd;
+}
+
+.monitor-route .status-cluster .el-tag {
+  border-right-color: rgba(47, 156, 255, 0.18);
+  background:
+    linear-gradient(90deg, rgba(47, 156, 255, 0.08), transparent 62%),
+    rgba(8, 13, 18, 0.35);
+}
+
+.monitor-route .status-cluster .el-tag--success {
+  color: #d8ffdf !important;
+}
+
+.monitor-route .status-cluster .el-tag--warning {
+  color: #ffe3ae !important;
+}
+
+.monitor-route .status-cluster .el-tag--danger {
+  color: #ffd5d2 !important;
+}
+
+.monitor-route .status-cluster .el-tag--info,
+.monitor-route .status-cluster .el-tag--primary {
+  color: #ccecff !important;
+}
+
+.monitor-route .status-cluster .el-tag--success::before {
+  background: var(--hmi-green);
+  box-shadow: 0 0 12px rgba(66, 255, 104, 0.46);
+}
+
+.monitor-route .status-cluster .el-tag--warning::before {
+  background: var(--hmi-amber);
+  box-shadow: 0 0 12px rgba(255, 174, 47, 0.46);
+}
+
+.monitor-route .status-cluster .el-tag--danger::before {
+  background: var(--hmi-red);
+  box-shadow: 0 0 12px rgba(255, 75, 66, 0.52);
+}
+
+.monitor-route .status-cluster .el-tag--info::before,
+.monitor-route .status-cluster .el-tag--primary::before {
+  background: var(--hmi-blue);
+  box-shadow: 0 0 12px rgba(47, 156, 255, 0.46);
+}
+
+.monitor-route .legacy-sidebar {
+  background:
+    linear-gradient(180deg, rgba(47, 156, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #141b20 0%, #0b1012 100%);
+}
+
+.legacy-nav-item {
+  border-bottom-color: rgba(47, 156, 255, 0.18);
+  color: #c5d9d0;
+}
+
+.legacy-nav-icon {
+  color: #ddf3e1;
+}
+
+.legacy-nav-item.active {
+  border-left-color: var(--hmi-cyan);
+  background:
+    linear-gradient(90deg, rgba(54, 230, 215, 0.24), rgba(47, 156, 255, 0.16) 48%, rgba(255, 174, 47, 0.08)),
+    #222a31;
+  color: #f2fff9;
+  box-shadow:
+    inset 0 0 0 1px rgba(54, 230, 215, 0.12),
+    0 0 18px rgba(47, 156, 255, 0.13);
+}
+
+.monitor-screen .ts-cell,
+.monitor-screen .process-line-panel,
+.monitor-screen .detector-panel,
+.monitor-screen .predictive-panel,
+.monitor-screen .operator-control-panel,
+.monitor-screen .ai-command-panel,
+.monitor-screen .current-batch-panel,
+.origin-panel,
+.monitor-route .content.hmi-fixed .panel,
+.monitor-route .content.hmi-fixed .metric,
+.monitor-route .content.hmi-fixed .analysis-block {
+  --hmi-card-accent: var(--hmi-blue);
+  border-color: rgba(47, 156, 255, 0.46);
+  border-color: color-mix(in srgb, var(--hmi-card-accent) 46%, #263743);
+  background:
+    linear-gradient(135deg, rgba(47, 156, 255, 0.1), transparent 42%),
+    linear-gradient(180deg, #202631 0%, #151b24 100%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--hmi-card-accent) 10%, transparent), transparent 42%),
+    linear-gradient(180deg, #202631 0%, #151b24 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.022),
+    0 0 20px rgba(47, 156, 255, 0.15),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.022),
+    0 0 20px color-mix(in srgb, var(--hmi-card-accent) 15%, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.monitor-screen .process-line-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 1),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 1) {
+  --hmi-card-accent: var(--hmi-blue);
+}
+
+.monitor-screen .detector-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 2),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 2) {
+  --hmi-card-accent: var(--hmi-green);
+}
+
+.monitor-screen .predictive-panel,
+.monitor-screen .ai-command-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 3),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 3) {
+  --hmi-card-accent: var(--hmi-amber);
+}
+
+.monitor-screen .operator-control-panel,
+.monitor-screen .current-batch-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 4),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 4) {
+  --hmi-card-accent: var(--hmi-cyan);
+}
+
+.monitor-screen .component-head,
+.monitor-screen .origin-panel-head,
+.monitor-screen .current-batch-head,
+.monitor-screen .ai-command-head,
+.monitor-route .content.hmi-fixed .panel-title {
+  border-bottom-color: rgba(47, 156, 255, 0.42);
+  border-bottom-color: color-mix(in srgb, var(--hmi-card-accent, var(--hmi-blue)) 42%, #263743);
+  background:
+    linear-gradient(90deg, rgba(47, 156, 255, 0.18), transparent 62%),
+    #252c37;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--hmi-card-accent, var(--hmi-blue)) 18%, transparent), transparent 62%),
+    #252c37;
+}
+
+.monitor-screen .component-head strong,
+.monitor-screen .origin-panel-head h2,
+.monitor-screen .ai-command-head h2,
+.monitor-screen .current-batch-head h2,
+.monitor-route .content.hmi-fixed .panel-title h2,
+.monitor-route .content.hmi-fixed .panel h2,
+.monitor-route .content.hmi-fixed .analysis-block h2,
+.monitor-route .content.hmi-fixed .view-heading h1 {
+  color: #ffffff;
+  text-shadow:
+    1px 1px 0 rgba(47, 156, 255, 0.42),
+    0 0 12px rgba(54, 230, 215, 0.09);
+  text-shadow:
+    1px 1px 0 color-mix(in srgb, var(--hmi-card-accent, var(--hmi-blue)) 42%, transparent),
+    0 0 12px rgba(54, 230, 215, 0.09);
+}
+
+.monitor-screen .ts-cell.good,
+.monitor-screen .ts-cell:nth-child(1) {
+  --hmi-card-accent: var(--hmi-green);
+}
+
+.monitor-screen .ts-cell:nth-child(2) {
+  --hmi-card-accent: var(--hmi-blue);
+}
+
+.monitor-screen .ts-cell:nth-child(3) {
+  --hmi-card-accent: var(--hmi-amber);
+}
+
+.monitor-screen .ts-cell:nth-child(4) {
+  --hmi-card-accent: var(--hmi-cyan);
+}
+
+.monitor-screen .ts-cell::before {
+  background: var(--hmi-card-accent);
+  box-shadow: 0 0 12px rgba(54, 230, 215, 0.55);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--hmi-card-accent) 55%, transparent);
+}
+
+.monitor-screen .ts-cell > strong,
+.monitor-route .content.hmi-fixed .metric strong,
+.monitor-route .content.hmi-fixed .target-summary strong {
+  color: #ffffff;
+  text-shadow:
+    0 0 12px rgba(54, 230, 215, 0.35),
+    1px 1px 0 rgba(47, 156, 255, 0.28);
+  text-shadow:
+    0 0 12px color-mix(in srgb, var(--hmi-card-accent, var(--hmi-cyan)) 35%, transparent),
+    1px 1px 0 rgba(47, 156, 255, 0.28);
+}
+
+.monitor-screen .detector-title em,
+.monitor-route .content.hmi-fixed .metric span::before {
+  border-color: rgba(54, 230, 215, 0.62);
+  border-color: color-mix(in srgb, var(--hmi-card-accent, var(--hmi-green)) 62%, #263743);
+  background: rgba(54, 230, 215, 0.16);
+  background: color-mix(in srgb, var(--hmi-card-accent, var(--hmi-green)) 16%, transparent);
+  box-shadow: 0 0 12px rgba(54, 230, 215, 0.42);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--hmi-card-accent, var(--hmi-green)) 42%, transparent);
+}
+
+.monitor-screen .detector-bar i,
+.monitor-screen .apply-ai-button,
+.monitor-route .content.hmi-fixed .el-button--primary,
+.monitor-route .hmi-page-button.active {
+  background: linear-gradient(90deg, var(--hmi-green), var(--hmi-cyan), var(--hmi-blue));
+  color: #031112;
+}
+
+.monitor-screen .ai-command-note {
+  border-left-color: var(--hmi-amber);
+}
+
+.monitor-screen .ai-target-box,
+.monitor-screen .operator-fields label,
+.monitor-screen .batch-actions button,
+.monitor-route .content.hmi-fixed .target-summary,
+.monitor-route .content.hmi-fixed .component-action-form,
+.monitor-route .content.hmi-fixed .control-form,
+.monitor-route .content.hmi-fixed .modbus-form,
+.monitor-route .content.hmi-fixed .audit-filter-form,
+.monitor-route .content.hmi-fixed .history-filter-form,
+.monitor-route .content.hmi-fixed .product-result-form,
+.monitor-route .content.hmi-fixed .process-form,
+.monitor-route .content.hmi-fixed .switch-grid,
+.monitor-route .content.hmi-fixed .integration-grid,
+.monitor-route .content.hmi-fixed .compact-targets,
+.monitor-route .content.hmi-fixed .data-table,
+.monitor-route .content.hmi-fixed .data-table-wrap,
+.monitor-route .content.hmi-fixed .component-table,
+.monitor-route .content.hmi-fixed .raw-json,
+.monitor-route .content.hmi-fixed details {
+  border-color: rgba(47, 156, 255, 0.32);
+  background:
+    linear-gradient(135deg, rgba(54, 230, 215, 0.055), transparent 48%),
+    #101720;
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading {
+  border-bottom-color: rgba(47, 156, 255, 0.34);
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading::after {
+  background: linear-gradient(90deg, var(--hmi-green), var(--hmi-cyan), var(--hmi-blue), var(--hmi-amber), transparent 84%);
+  box-shadow: 0 0 14px rgba(54, 230, 215, 0.24);
+}
+
+.monitor-route .content.route-control {
+  --hmi-card-accent: var(--hmi-green);
+}
+
+.monitor-route .content.route-ai {
+  --hmi-card-accent: var(--hmi-blue);
+}
+
+.monitor-route .content.route-history {
+  --hmi-card-accent: var(--hmi-amber);
+}
+
+.monitor-route .content.route-audit {
+  --hmi-card-accent: var(--hmi-violet);
+}
+
+.monitor-route .content.route-modbus {
+  --hmi-card-accent: var(--hmi-cyan);
+}
+
+.monitor-route .content.route-settings {
+  --hmi-card-accent: var(--hmi-blue);
+}
+
+/* ---- IPC HMI pass: matte equipment-panel styling for field operators.
+   Keep layout fixed; make the surface read like an industrial touchscreen,
+   not a presentation dashboard. ---- */
+:root {
+  --ipc-bg: #111315;
+  --ipc-bg-grid: rgba(184, 195, 202, 0.045);
+  --ipc-shell: #181b1e;
+  --ipc-panel: #22272b;
+  --ipc-panel-2: #2b3136;
+  --ipc-panel-3: #161a1d;
+  --ipc-border: #56626a;
+  --ipc-border-soft: #3a434a;
+  --ipc-text: #f1f4f6;
+  --ipc-muted: #c6ced5;
+  --ipc-dim: #8d98a1;
+  --ipc-green: #00c853;
+  --ipc-blue: #2196f3;
+  --ipc-cyan: #00acc1;
+  --ipc-yellow: #ffd54f;
+  --ipc-amber: #ff9800;
+  --ipc-red: #f44336;
+  --ipc-button: #30363b;
+  --ipc-button-dark: #202428;
+
+  --hmi-bg: var(--ipc-bg);
+  --hmi-panel: var(--ipc-panel);
+  --hmi-panel-2: var(--ipc-panel-2);
+  --hmi-panel-3: var(--ipc-panel-3);
+  --hmi-line: var(--ipc-border);
+  --hmi-line-soft: var(--ipc-border-soft);
+  --hmi-green: var(--ipc-green);
+  --hmi-blue: var(--ipc-blue);
+  --hmi-cyan: var(--ipc-cyan);
+  --hmi-amber: var(--ipc-amber);
+  --hmi-red: var(--ipc-red);
+  --hmi-text: var(--ipc-text);
+  --hmi-muted: var(--ipc-muted);
+  --hmi-dim: var(--ipc-dim);
+  --hmi-data-shadow: none;
+}
+
+body,
+.monitor-route,
+.app-shell {
+  background:
+    linear-gradient(90deg, var(--ipc-bg-grid) 1px, transparent 1px),
+    linear-gradient(180deg, var(--ipc-bg-grid) 1px, transparent 1px),
+    #111315;
+  background-size: 32px 32px;
+  color: var(--ipc-text);
+}
+
+.monitor-route .topbar {
+  border-bottom: 2px solid #3f4a52;
+  background: #171b1f;
+  box-shadow: none;
+}
+
+.monitor-route .brand-line {
+  border-right: 2px solid #313941;
+  background: #101315;
+}
+
+.monitor-route .brand-line::before {
+  border: 2px solid var(--ipc-cyan);
+  background: #101315;
+  box-shadow: none;
+}
+
+.monitor-route .brand-line strong {
+  color: #ffffff;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+
+.monitor-route .brand-line small {
+  color: var(--ipc-muted);
+  letter-spacing: 0.08em;
+}
+
+.monitor-route .status-cluster {
+  background: #15191d;
+}
+
+.monitor-route .status-cluster .el-tag {
+  border: 0;
+  border-right: 1px solid #313941;
+  border-radius: 0;
+  background: #171c20 !important;
+  color: var(--ipc-muted) !important;
+  box-shadow: inset 0 -2px 0 #101315;
+}
+
+.monitor-route .status-cluster .el-tag::before {
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  box-shadow: none !important;
+}
+
+.monitor-route .status-cluster .el-tag--success::before {
+  background: var(--ipc-green);
+}
+
+.monitor-route .status-cluster .el-tag--warning::before {
+  background: var(--ipc-yellow);
+}
+
+.monitor-route .status-cluster .el-tag--danger::before {
+  background: var(--ipc-red);
+}
+
+.monitor-route .status-cluster .el-tag--info::before,
+.monitor-route .status-cluster .el-tag--primary::before {
+  background: var(--ipc-blue);
+}
+
+.monitor-route .topbar-clock {
+  border-left: 1px solid #313941;
+  border-right: 1px solid #313941;
+  background: #111518;
+}
+
+.monitor-route .runtime-clock {
+  color: #ffffff;
+  text-shadow: none;
+}
+
+.monitor-route .legacy-estop {
+  border-left: 2px solid #6d1b16;
+  background: var(--ipc-red);
+  color: #ffffff;
+  text-shadow: none;
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.monitor-route .legacy-sidebar {
+  border-right: 2px solid #313941;
+  background: #15191b;
+  box-shadow: none;
+}
+
+.legacy-nav-item {
+  border-bottom: 1px solid #313941;
+  background: #171b1e;
+  color: #d7dde2;
+}
+
+.legacy-nav-icon {
+  color: #e8ecef;
+}
+
+.legacy-nav-item.active {
+  border-left: 5px solid var(--ipc-cyan);
+  background: #2c343a;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px #44505a;
+}
+
+.monitor-route .hmi-screen-pager {
+  background: #121619;
+}
+
+.monitor-route .hmi-page-button {
+  border: 1px solid #58636b;
+  border-radius: 2px;
+  background: #242a2f;
+  color: #d7dde2;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.26);
+}
+
+.monitor-route .hmi-page-button.active {
+  border-color: #d1a900;
+  background: var(--ipc-yellow);
+  color: #171300;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.monitor-screen .ts-cell,
+.monitor-screen .process-line-panel,
+.monitor-screen .detector-panel,
+.monitor-screen .predictive-panel,
+.monitor-screen .operator-control-panel,
+.monitor-screen .ai-command-panel,
+.monitor-screen .current-batch-panel,
+.origin-panel,
+.monitor-route .content.hmi-fixed .panel,
+.monitor-route .content.hmi-fixed .metric,
+.monitor-route .content.hmi-fixed .analysis-block {
+  border: 2px solid var(--ipc-border-soft);
+  border-radius: 3px;
+  background: var(--ipc-panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+}
+
+.monitor-screen .process-line-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 1),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 1) {
+  border-color: #3f7194;
+}
+
+.monitor-screen .detector-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 2),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 2) {
+  border-color: #3f7b54;
+}
+
+.monitor-screen .predictive-panel,
+.monitor-screen .ai-command-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 3),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 3) {
+  border-color: #80682a;
+}
+
+.monitor-screen .operator-control-panel,
+.monitor-screen .current-batch-panel,
+.monitor-route .content.hmi-fixed .panel:nth-of-type(4n + 4),
+.monitor-route .content.hmi-fixed .metric:nth-child(4n + 4) {
+  border-color: #32737b;
+}
+
+.monitor-screen .component-head,
+.monitor-screen .origin-panel-head,
+.monitor-screen .current-batch-head,
+.monitor-screen .ai-command-head,
+.monitor-route .content.hmi-fixed .panel-title {
+  border-bottom: 1px solid #3e4850;
+  background: #30363b;
+}
+
+.monitor-screen .component-head strong,
+.monitor-screen .origin-panel-head h2,
+.monitor-screen .ai-command-head h2,
+.monitor-screen .current-batch-head h2,
+.monitor-route .content.hmi-fixed .panel-title h2,
+.monitor-route .content.hmi-fixed .panel h2,
+.monitor-route .content.hmi-fixed .analysis-block h2,
+.monitor-route .content.hmi-fixed .view-heading h1 {
+  color: #ffffff;
+  letter-spacing: 0.025em;
+  text-shadow: none;
+}
+
+.monitor-screen .component-head span,
+.monitor-screen .origin-panel-head span,
+.monitor-screen .ai-command-head span,
+.monitor-screen .current-batch-head span,
+.monitor-route .content.hmi-fixed .panel-title p,
+.monitor-route .content.hmi-fixed .panel p,
+.monitor-route .content.hmi-fixed .analysis-block p,
+.monitor-route .content.hmi-fixed .target-summary span,
+.monitor-route .content.hmi-fixed .target-summary small,
+.monitor-route .content.hmi-fixed .control-actions .muted {
+  color: var(--ipc-muted);
+}
+
+.monitor-screen .ts-cell::before {
+  width: 5px;
+  background: var(--ipc-green);
+  box-shadow: none;
+}
+
+.monitor-screen .ts-cell:nth-child(2)::before {
+  background: var(--ipc-blue);
+}
+
+.monitor-screen .ts-cell:nth-child(3)::before {
+  background: var(--ipc-yellow);
+}
+
+.monitor-screen .ts-cell:nth-child(4)::before {
+  background: var(--ipc-cyan);
+}
+
+.monitor-screen .ts-cell.warn::before {
+  background: var(--ipc-yellow);
+}
+
+.monitor-screen .ts-cell.bad::before {
+  background: var(--ipc-red);
+}
+
+.monitor-screen .ts-cell > span,
+.monitor-screen .detector-title,
+.monitor-route .content.hmi-fixed .metric span {
+  color: var(--ipc-muted);
+}
+
+.monitor-screen .ts-cell > strong,
+.monitor-screen .detector-list strong,
+.monitor-screen .operator-fields strong,
+.monitor-screen .ai-target-box strong,
+.monitor-route .content.hmi-fixed .metric strong,
+.monitor-route .content.hmi-fixed .target-summary strong {
+  color: #ffffff;
+  text-shadow: none;
+}
+
+.monitor-screen .vessel-body {
+  border-color: #4a6f83;
+  background: #20262b;
+  box-shadow: inset 0 0 0 2px #2e3b44;
+}
+
+.monitor-screen .vessel-body span {
+  background: #2f83c7;
+}
+
+.monitor-screen .detector-title em {
+  border-color: #4c5a63;
+  background: #111518;
+  box-shadow: none;
+}
+
+.monitor-screen .detector-bar {
+  background: #303840;
+}
+
+.monitor-screen .detector-bar i {
+  background: var(--ipc-blue);
+}
+
+.monitor-screen .ai-command-note {
+  border-left: 5px solid var(--ipc-yellow);
+}
+
+.monitor-screen .ai-target-box,
+.monitor-screen .operator-fields label,
+.monitor-screen .batch-actions button,
+.monitor-route .content.hmi-fixed .target-summary,
+.monitor-route .content.hmi-fixed .component-action-form,
+.monitor-route .content.hmi-fixed .control-form,
+.monitor-route .content.hmi-fixed .modbus-form,
+.monitor-route .content.hmi-fixed .audit-filter-form,
+.monitor-route .content.hmi-fixed .history-filter-form,
+.monitor-route .content.hmi-fixed .product-result-form,
+.monitor-route .content.hmi-fixed .process-form,
+.monitor-route .content.hmi-fixed .switch-grid,
+.monitor-route .content.hmi-fixed .integration-grid,
+.monitor-route .content.hmi-fixed .compact-targets,
+.monitor-route .content.hmi-fixed .data-table,
+.monitor-route .content.hmi-fixed .data-table-wrap,
+.monitor-route .content.hmi-fixed .component-table,
+.monitor-route .content.hmi-fixed .raw-json,
+.monitor-route .content.hmi-fixed details {
+  border: 1px solid #3d4850;
+  border-radius: 2px;
+  background: #171c20;
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading {
+  border-bottom: 2px solid #46515a;
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading::after {
+  height: 3px;
+  background: linear-gradient(90deg, var(--ipc-green), var(--ipc-blue), var(--ipc-yellow), var(--ipc-red), transparent 86%);
+  box-shadow: none;
+}
+
+.el-button,
+.monitor-route .content.hmi-fixed .el-button,
+.monitor-route .content.hmi-fixed .el-button--small,
+.monitor-screen .batch-actions button {
+  border: 1px solid #59646c !important;
+  border-radius: 2px !important;
+  background: var(--ipc-button) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28) !important;
+}
+
+.el-button:hover,
+.monitor-route .content.hmi-fixed .el-button:hover,
+.monitor-screen .batch-actions button:hover {
+  background: #3a4248 !important;
+  border-color: #7b8790 !important;
+}
+
+.el-button--primary,
+.monitor-route .content.hmi-fixed .el-button--primary,
+.monitor-screen .apply-ai-button {
+  border-color: #00833b !important;
+  background: var(--ipc-green) !important;
+  color: #041107 !important;
+}
+
+.el-button--danger,
+.monitor-route .content.hmi-fixed .el-button--danger,
+.monitor-screen .legacy-estop {
+  border-color: #9c231d !important;
+  background: var(--ipc-red) !important;
+  color: #ffffff !important;
+}
+
+.monitor-screen .apply-ai-button {
+  letter-spacing: 0.12em;
+  text-shadow: none;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.monitor-route .content.hmi-fixed .el-input__wrapper,
+.monitor-route .content.hmi-fixed .el-select__wrapper,
+.monitor-route .content.hmi-fixed .el-textarea__inner {
+  border-radius: 2px !important;
+  background: #101315 !important;
+  box-shadow: 0 0 0 1px #4d5962 inset !important;
+}
+
+.el-input__inner,
+.el-select__selected-item,
+.monitor-route .content.hmi-fixed .el-input__inner,
+.monitor-route .content.hmi-fixed .el-select__selected-item {
+  color: #ffffff !important;
+}
+
+.el-table,
+.monitor-route .content.hmi-fixed .el-table {
+  --el-table-bg-color: #15191d;
+  --el-table-tr-bg-color: #15191d;
+  --el-table-header-bg-color: #2d343a;
+  --el-table-border-color: #3c464e;
+  --el-table-text-color: #f1f4f6;
+  --el-table-header-text-color: #ffffff;
+  border: 1px solid #3c464e;
+}
+
+.el-tag {
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+/* ---- IPC fixed-page refinement: make non-monitor routes behave like
+   deterministic touchscreen pages instead of dense web dashboards. ---- */
+.monitor-route .topbar.has-hmi-pager,
+.monitor-route .topbar:has(.hmi-screen-pager) {
+  grid-template-columns: minmax(236px, 280px) minmax(0, 1fr) auto minmax(112px, 132px) 112px;
+}
+
+.monitor-route .hmi-screen-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  height: 48px;
+  padding: 0 6px;
+  border-left: 1px solid #313941;
+  border-right: 1px solid #313941;
+  background: #111518;
+}
+
+.monitor-route .hmi-page-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  border: 1px solid #7a8790;
+  border-radius: 2px;
+  background: #303840;
+  color: #ffffff;
+  font-family: var(--font-data);
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.28);
+}
+
+.monitor-route .hmi-page-button.active {
+  border-color: #00833b;
+  background: var(--ipc-green);
+  color: #041107;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] {
+  overflow: hidden;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] > .view-stack:not(.monitor-workbench) {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  grid-template-rows: 52px minmax(0, 1fr) !important;
+  grid-template-areas: none !important;
+  gap: 10px;
+  padding-top: 0;
+  overflow: hidden;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] > .view-stack:not(.monitor-workbench) > .view-heading {
+  grid-area: auto !important;
+  grid-column: 1 / -1 !important;
+  height: 52px;
+  min-height: 0;
+  align-items: center;
+  overflow: hidden;
+  padding: 0;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] > .view-stack:not(.monitor-workbench) > .view-heading .eyebrow,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] > .view-stack:not(.monitor-workbench) > .view-heading span {
+  display: none;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] > .view-stack:not(.monitor-workbench) > section {
+  display: none !important;
+  grid-area: auto !important;
+  grid-column: auto !important;
+  grid-row: auto !important;
+  min-width: 0;
+  min-height: 0;
+  height: auto !important;
+  overflow: hidden;
+}
+
+.monitor-route .content.hmi-fixed.hmi-page-0.route-settings > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-settings > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-settings > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-settings > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-settings > .view-stack > section:nth-of-type(5),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-settings > .view-stack > section:nth-of-type(6),
+.monitor-route .content.hmi-fixed.hmi-page-4.route-settings > .view-stack > section:nth-of-type(7),
+.monitor-route .content.hmi-fixed.hmi-page-4.route-settings > .view-stack > section:nth-of-type(8),
+.monitor-route .content.hmi-fixed.hmi-page-5.route-settings > .view-stack > section:nth-of-type(9),
+.monitor-route .content.hmi-fixed.hmi-page-5.route-settings > .view-stack > section:nth-of-type(10),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-control > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-control > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-control > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-control > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-control > .view-stack > section:nth-of-type(5),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-control > .view-stack > section:nth-of-type(6),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-control > .view-stack > section:nth-of-type(7),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-ai > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-ai > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-ai > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-ai > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-audit > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-audit > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-audit > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-history > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-history > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-history > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-history > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-history > .view-stack > section:nth-of-type(5),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-history > .view-stack > section:nth-of-type(6),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-modbus > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-0.route-modbus > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-modbus > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-modbus > .view-stack > section:nth-of-type(7),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-modbus > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-modbus > .view-stack > section:nth-of-type(5),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-modbus > .view-stack > section:nth-of-type(6) {
+  display: grid !important;
+}
+
+.monitor-route .content.hmi-fixed.hmi-page-0.route-settings > .view-stack > section:nth-of-type(1),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-settings > .view-stack > section:nth-of-type(2),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-settings > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-2.route-settings > .view-stack > section:nth-of-type(4),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-control > .view-stack > section:nth-of-type(7),
+.monitor-route .content.hmi-fixed.hmi-page-1.route-audit > .view-stack > section:nth-of-type(3),
+.monitor-route .content.hmi-fixed.hmi-page-3.route-modbus > .view-stack > section:nth-of-type(6) {
+  grid-column: 1 / -1 !important;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .panel,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .metric,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .analysis-block {
+  padding: 10px;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .panel-title {
+  height: 40px;
+  min-height: 40px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .panel-title p,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .panel > p,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .analysis-block p {
+  line-height: 1.35;
+}
+
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .data-table,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .data-table-wrap,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .component-table,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] .raw-json,
+.monitor-route .content.hmi-fixed[class*="hmi-page-"] details {
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.monitor-route .content.route-settings.hmi-page-0 > .view-stack > section:nth-of-type(1) {
+  grid-template-rows: auto 76px minmax(0, 1fr) 126px;
+}
+
+.monitor-route .content.route-settings.hmi-page-0 .backend-surface-grid,
+.monitor-route .content.route-settings.hmi-page-1 .backend-surface-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+.monitor-route .content.route-settings.hmi-page-2 .two-col {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+}
+
+.monitor-route .content.route-settings.hmi-page-2 > .view-stack:not(.monitor-workbench) {
+  grid-template-rows: 52px minmax(0, 1fr) minmax(0, 1fr) !important;
+}
+
+.monitor-route .content.route-settings.hmi-page-2 .analysis-block {
+  align-content: start;
+  gap: 6px;
+}
+
+.monitor-route .content.route-settings.hmi-page-2 .analysis-block h2 {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-left: 5px solid var(--ipc-yellow);
+  background: #101315;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px), (max-height: 700px) {
+  .monitor-route .topbar.has-hmi-pager,
+  .monitor-route .topbar:has(.hmi-screen-pager) {
+    grid-template-columns: minmax(168px, 236px) minmax(0, 1fr) 116px;
+    height: 56px !important;
+  }
+
+  .monitor-route .topbar.has-hmi-pager .status-cluster,
+  .monitor-route .topbar.has-hmi-pager .topbar-clock,
+  .monitor-route .topbar:has(.hmi-screen-pager) .status-cluster,
+  .monitor-route .topbar:has(.hmi-screen-pager) .topbar-clock {
+    display: none;
+  }
+
+  .monitor-route .hmi-screen-pager {
+    height: 56px;
+    gap: 6px;
+  }
+
+  .monitor-route .hmi-page-button {
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    font-size: 13px;
+  }
+
+  .monitor-route .content.route-settings .data-table,
+  .monitor-route .content.route-settings .component-table {
+    display: block;
+  }
+
+  .monitor-route .content.route-settings .backend-surface-grid,
+  .monitor-route .content.route-settings .component-action-form {
+    display: grid;
+  }
+}
