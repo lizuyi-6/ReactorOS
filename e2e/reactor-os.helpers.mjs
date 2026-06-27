@@ -47,26 +47,43 @@ export const pipelineSample = {
   ph: 6.15
 };
 
-export async function injectPipelineSample(request, sample = pipelineSample) {
-  const response = await request.post("/api/v1/reactor/reactor_001/samples", { data: sample });
+export async function loginEngineer(request) {
+  const response = await request.post("/api/auth/login", {
+    data: { username: "engineer", password: "engineer123" }
+  });
+  expect(response.status()).toBe(200);
+  const payload = await response.json();
+  return payload.data?.token ?? payload.token;
+}
+
+export async function injectPipelineSample(request, sample = pipelineSample, token = null) {
+  const bearer = token ?? await loginEngineer(request);
+  const response = await request.post("/api/v1/reactor/reactor_001/samples", {
+    headers: { Authorization: `Bearer ${bearer}` },
+    data: sample
+  });
   expect(response.status()).toBe(200);
   const payload = await response.json();
   expect(payload.code).toBe(0);
   return payload.data.sample;
 }
 
-export async function keepPipelineFlowing(request) {
-  await injectPipelineSample(request);
+export async function keepPipelineFlowing(request, token = null) {
+  const bearer = token ?? await loginEngineer(request);
+  await injectPipelineSample(request, pipelineSample, bearer);
   return setInterval(() => {
-    injectPipelineSample(request).catch(() => {});
+    injectPipelineSample(request, pipelineSample, bearer).catch(() => {});
   }, 2000);
 }
 
 export async function preparePage(page, request) {
-  await request.post("/api/test/reset");
+  const token = await loginEngineer(request);
+  await request.post("/api/test/reset", {
+    headers: { "X-Xingshu-Test-Confirm": "local-e2e" }
+  });
   const unavailable = await request.get("/api/live");
   expect(unavailable.status()).toBe(503);
-  const pipelineInterval = await keepPipelineFlowing(request);
+  const pipelineInterval = await keepPipelineFlowing(request, token);
   await expect
     .poll(async () => {
       const response = await request.get("/api/live");

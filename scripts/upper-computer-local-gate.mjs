@@ -58,18 +58,27 @@ await runCheck("health endpoint", async () => {
 
 await runCheck("web hmi shell and i18n controls", async () => {
   const html = await httpText("/");
-  for (const marker of [
+  const vueMarkers = ['id="app"', "ReactorOS HMI", "reactoros.vue.language", "Vue 3"];
+  const vueReadinessMarkers = ["Integration Surface", "Base inference", "PRD LoRA/RK"];
+  const legacyMarkers = [
     'id="langToggleBtn"',
     'data-tab="monitor"',
     'data-tab="modbus"',
     "reactoros.lang",
     "function uiText",
-  ]) {
-    assert(html.includes(marker), `missing HMI marker ${marker}`);
+  ];
+  const isVueShell = vueMarkers.every((marker) => html.includes(marker));
+  const isLegacyShell = legacyMarkers.every((marker) => html.includes(marker));
+  assert(isVueShell || isLegacyShell, "missing Vue release or legacy HMI shell markers");
+  if (isVueShell) {
+    for (const marker of vueReadinessMarkers) {
+      assert(html.includes(marker), `missing Vue readiness marker: ${marker}`);
+    }
   }
   return {
     bytes: html.length,
-    markers: ["langToggleBtn", "monitor", "modbus", "reactoros.lang", "uiText"],
+    shell: isVueShell ? "vue-release" : "legacy-static",
+    markers: isVueShell ? [...vueMarkers, ...vueReadinessMarkers] : legacyMarkers,
   };
 });
 
@@ -115,7 +124,14 @@ await runCheck("config summary delivery surface", async () => {
   assert(data?.integrations?.rest_api === true, "REST API readiness missing");
   assert(data?.integrations?.cli === true, "CLI readiness missing");
   assert(data?.integrations?.ainas_task_api === true, "AINAS task readiness missing");
-  assert(data?.local_ai && typeof data.local_ai.ready_for_inference === "boolean", "local AI boundary missing");
+  assert(data?.local_ai && typeof data.local_ai.ready_for_base_inference === "boolean", "local AI base inference boundary missing");
+  assert(typeof data.local_ai.ready_for_lora_inference === "boolean", "local AI LoRA inference boundary missing");
+  assert(
+    data.local_ai.ready_for_inference === data.local_ai.ready_for_lora_inference,
+    "local_ai.ready_for_inference must remain the compatibility alias for LoRA inference readiness",
+  );
+  assert(typeof data.local_ai.ready_for_training === "boolean", "local AI training boundary missing");
+  assert(typeof data.local_ai.ready_for_prd_lora === "boolean", "local AI PRD LoRA/RK boundary missing");
   return {
     device_mode: data.device_mode,
     storage_encryption: data.data_security.storage_encryption,

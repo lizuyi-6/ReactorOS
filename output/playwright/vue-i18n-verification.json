@@ -1,0 +1,146 @@
+{
+  "checkedAt": "2026-06-05T22:43:02.909Z",
+  "base": "http://127.0.0.1:5174/#",
+  "results": [
+    {
+      "language": "zh",
+      "path": "/monitor",
+      "expected": [
+        "实时监控",
+        "传感器与曲线",
+        "实时趋势"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/control",
+      "expected": [
+        "参数配置",
+        "安全限幅",
+        "安全边界"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/ai",
+      "expected": [
+        "AI 决策",
+        "推荐与复核",
+        "最新推荐来源"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/history",
+      "expected": [
+        "历史数据",
+        "批次与结果",
+        "批次"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/audit",
+      "expected": [
+        "审计日志",
+        "哈希链",
+        "事件"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/modbus",
+      "expected": [
+        "Modbus 调试",
+        "寄存器映射",
+        "线圈"
+      ],
+      "misses": []
+    },
+    {
+      "language": "zh",
+      "path": "/settings",
+      "expected": [
+        "系统配置",
+        "设备与安全",
+        "PRD 技术栈切换"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/monitor",
+      "expected": [
+        "Realtime Monitor",
+        "Sensors and trends",
+        "Live Trend"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/control",
+      "expected": [
+        "Process Control",
+        "Safety limits",
+        "Safety Envelope"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/ai",
+      "expected": [
+        "AI Decision",
+        "Advice and review",
+        "Latest Recommendation Provider"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/history",
+      "expected": [
+        "History Data",
+        "Batches and results",
+        "Batch"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/audit",
+      "expected": [
+        "Audit Log",
+        "Hash chain",
+        "Event"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/modbus",
+      "expected": [
+        "Modbus Debug",
+        "Register map",
+        "Coils"
+      ],
+      "misses": []
+    },
+    {
+      "language": "en",
+      "path": "/settings",
+      "expected": [
+        "System Settings",
+        "Device and security",
+        "PRD Stack Cutover"
+      ],
+      "misses": []
+    }
+  ]
+}

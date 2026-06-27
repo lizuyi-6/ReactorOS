@@ -22,7 +22,7 @@ Usage:
 Options:
   --package PATH       Package directory or .tar.gz. Defaults to dist/latest-lubancat2-debian10-package.txt
   --bind ADDR:PORT     Backend bind address. Default: 127.0.0.1:8000
-  --assets PATH        Static HMI assets. Default: package static/
+  --assets PATH        HMI assets. Default: package frontend/dist when present, otherwise package static/
   --sysroot PATH       ARM64 sysroot containing /lib/ld-linux-aarch64.so.1
   --qemu PATH          qemu-aarch64 or qemu-aarch64-static path
   --no-simulator       Do not start the local JSON bridge simulator
@@ -168,7 +168,11 @@ resolve_package() {
     exit 1
   }
   if [[ -z "${ASSETS_PATH}" ]]; then
-    ASSETS_PATH="${PACKAGE_PATH}/static"
+    if [[ -f "${PACKAGE_PATH}/frontend/dist/index.html" ]]; then
+      ASSETS_PATH="${PACKAGE_PATH}/frontend/dist"
+    else
+      ASSETS_PATH="${PACKAGE_PATH}/static"
+    fi
   elif [[ "${ASSETS_PATH}" != /* ]]; then
     ASSETS_PATH="${ROOT}/${ASSETS_PATH}"
   fi

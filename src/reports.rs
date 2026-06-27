@@ -332,7 +332,7 @@ fn worksheet_xml(rows: &[Vec<XlsxCell>]) -> String {
             match cell {
                 XlsxCell::Text(value) => xml.push_str(&format!(
                     r#"<c r="{reference}" t="inlineStr"><is><t>{}</t></is></c>"#,
-                    xml_escape(value)
+                    xml_escape(&spreadsheet_text_escape(value))
                 )),
                 XlsxCell::Number(value) if value.is_finite() => {
                     xml.push_str(&format!(r#"<c r="{reference}"><v>{value}</v></c>"#));
@@ -518,13 +518,77 @@ fn stat_value(value: Option<f64>) -> String {
 }
 
 fn markdown_escape(value: &str) -> String {
-    value.replace('\n', " ").replace('\r', " ")
+    let mut escaped = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for ch in value.chars() {
+        if is_invisible_format_char(ch) {
+            continue;
+        }
+        if ch.is_control() || ch.is_whitespace() {
+            pending_space = !escaped.is_empty();
+            continue;
+        }
+        if pending_space {
+            escaped.push(' ');
+            pending_space = false;
+        }
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            '\\' => escaped.push_str("\\\\"),
+            '`' => escaped.push_str("\\`"),
+            '*' => escaped.push_str("\\*"),
+            '_' => escaped.push_str("\\_"),
+            '[' => escaped.push_str("\\["),
+            ']' => escaped.push_str("\\]"),
+            '(' => escaped.push_str("\\("),
+            ')' => escaped.push_str("\\)"),
+            '#' => escaped.push_str("\\#"),
+            '!' => escaped.push_str("\\!"),
+            '|' => escaped.push_str("\\|"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn is_invisible_format_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+    )
 }
 
 fn csv_escape(value: &str) -> String {
-    if value.contains([',', '"', '\n', '\r']) {
-        format!("\"{}\"", value.replace('"', "\"\""))
+    let escaped = spreadsheet_text_escape(value);
+    if escaped.contains([',', '"', '\n', '\r']) || spreadsheet_text_needs_formula_escape(value) {
+        format!("\"{}\"", escaped.replace('"', "\"\""))
+    } else {
+        escaped
+    }
+}
+
+fn spreadsheet_text_escape(value: &str) -> String {
+    if spreadsheet_text_needs_formula_escape(value) {
+        format!("'{}", value)
     } else {
         value.to_string()
     }
+}
+
+fn spreadsheet_text_needs_formula_escape(value: &str) -> bool {
+    matches!(
+        value.trim_start().chars().next(),
+        Some('=' | '+' | '-' | '@')
+    )
 }

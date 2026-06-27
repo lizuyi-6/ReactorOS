@@ -44,7 +44,7 @@ engineering_value = raw * scale + offset
 raw = round((engineering_value - offset) / scale)
 ```
 
-上位机会拒绝无法编码到 `u16` 的值。写寄存器还会经过 RBAC、目标范围、步长、安全禁区、急停、人工锁、传感器新鲜度和审计链路。
+上位机会拒绝无法编码到 `u16` 的值。写目标寄存器还会经过 RBAC、目标范围、步长、安全禁区、急停、人工锁、传感器新鲜度、上一次控制写入故障和审计链路；无法证明现场状态安全时默认拒绝写入，而不是缓存目标等待后续自动执行。
 
 ## 3. Holding Registers 读点位
 
@@ -84,11 +84,20 @@ raw = round((engineering_value - offset) / scale)
 
 | 名称 | 地址 | 访问 | 说明 |
 | --- | ---: | --- | --- |
-| `device_connected` | 0 | read | 设备连接状态 |
+| `device_connected` | 0 | read | 设备健康在线状态；生产默认 `require_device_status_for_control=true` 时必须有下位机状态，且 connected、last_frame_ok、last_seen 均健康，并且 `last_command_ok` 未报告失败；实验/非严格模式下仅允许用 `sensor_timeout_ms` 内的新鲜样本兜底，过期样本仍按离线处理 |
 | `sensor_fresh` | 1 | read | 传感器数据是否在 `sensor_timeout_ms` 内 |
-| `alarm_active` | 2 | read | 急停、传感器错误或控制错误是否存在 |
+| `alarm_active` | 2 | read | 统一报警是否存在；与 `/api/live`/MQTT `alarms` 使用同一逻辑，覆盖急停、样本缺失/过期、严格模式下位机状态缺失/异常、下位机命令失败、锁存控制故障和 hard limit 报警 |
 | `tilt_state` | 3 | read | 倾角状态是否触发 |
 | `active_batch` | 4 | read | 是否存在活动批次 |
+
+设备控制写入失败后，daemon 会锁存 `last_control_error`、关闭自动控制，并让
+`alarm_active` 保持为 true。`alarm_active` 不只是急停/控制故障摘要；只要统一
+报警数组非空，PLC 侧都应按报警处理。传感器恢复、急停复位或人工锁切换不会自动清除
+锁存控制故障；现场确认执行器链路恢复后，通过 `POST /api/control/fault/reset`
+或 `xingshu control fault-reset` 显式复归。
+传感器样本缺失/过期或下位机状态断连、帧校验失败、状态过期时，daemon 会关闭
+`auto_enabled` 并记录现场输入故障；新样本恢复后不会自动重新开启自动控制。
+如果下位机仍报告 `last_command_ok=false`，控制故障复归会被拒绝，`device_connected` 也保持 false，PLC/第三方系统必须按设备不健康处理。
 
 ## 7. 支持的 Modbus TCP 功能码
 
@@ -100,6 +109,8 @@ raw = round((engineering_value - offset) / scale)
 | `06` | Write Single Holding Register | 支持 |
 
 暂未声明支持 `04`、`05`、`15`、`16` 等功能码。需要第三方系统使用这些功能码时，应先扩展实现和测试。
+
+Modbus TCP 会校验 MBAP 头中的 Unit ID，必须与 `config/integration.toml` 中的 `modbus_tcp.unit_id` 一致；Unit ID 不匹配时返回异常响应，不执行读写寄存器，避免多设备或网关场景下把其他站号的写入误落到本机运行态。
 
 ## 8. 上位机调试入口
 
@@ -119,7 +130,7 @@ xingshu modbus read temperature_c
 xingshu modbus write target_temperature_c 65 --reason "acceptance test"
 ```
 
-写入示例中 `target_temperature_c=65` 会被编码为 raw `650`，并且必须通过安全链路。HTTP REST 调试写入口仅允许 admin bearer session，且请求体必须提供非空 `reason`，避免 engineer 经调试路径绕过常规 `set_targets` 审计上下文。
+写入示例中 `target_temperature_c=65` 会被编码为 raw `650`，并且必须通过安全链路。HTTP REST 调试写入口仅允许 admin bearer session，且请求体必须提供非空 `reason`，避免 engineer 经调试路径绕过常规 `set_targets` 审计上下文。若急停、人工锁、传感器超时或上一次控制写入失败未清除，Modbus 目标写入会返回拒绝，现场需先进入维护排障或恢复新鲜样本。
 
 ## 9. 正式联调待确认项
 

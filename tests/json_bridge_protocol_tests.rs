@@ -5,11 +5,12 @@ use reactor_edge_daemon::{
     device::{
         build_device, build_json_bridge_control, json_bridge_sample_from_state,
         json_bridge_status_from_state, parse_json_bridge_state, write_json_bridge_control,
-        ComponentControlCommand,
+        AckStatus, ComponentControlCommand,
     },
     state::ControlTargets,
 };
 use serde_json::json;
+use std::time::Duration;
 use tempfile::tempdir;
 
 fn bridge_config() -> JsonBridgeConfig {
@@ -48,6 +49,243 @@ fn valid_state_json() -> String {
         "baudrate": 115200
     })
     .to_string()
+}
+
+fn state_json_with_ack(request_id: &str, ok: Option<bool>, error: Option<&str>) -> String {
+    json!({
+        "connected": true,
+        "last_seen_ms": Utc::now().timestamp_millis(),
+        "last_frame_hex": "AA BB 00 11 00 00 00 00",
+        "last_frame_ok": true,
+        "adc": 2048,
+        "status": 0b0000_0111,
+        "relay": 1,
+        "motor": 1,
+        "tilt": 1,
+        "speed_delay_us": 10000,
+        "temperature_c": 64.25,
+        "pressure_mpa": 0.50,
+        "stirrer_rpm": 125.18,
+        "shake_speed_cpm": 30.0,
+        "flow_rate_l_min": 1.2,
+        "ph": 6.15,
+        "last_command_request_id": request_id,
+        "last_command_ok": ok,
+        "last_command_error": error,
+        "port": "/dev/ttyUSB0",
+        "baudrate": 115200
+    })
+    .to_string()
+}
+
+fn handshake_command() -> SafeCommand {
+    // target_shake_speed_cpm=35 vs state shake_speed_cpm=30 exceeds the 1.0
+    // deadband, so next_json_bridge_control emits a "speed up" atomic command
+    // (ensuring the handshake path actually writes a control rather than no-op).
+    SafeCommand {
+        target_temperature_c: 64.25,
+        heat_time_s: 300.0,
+        hold_time_s: 600.0,
+        cool_time_s: 180.0,
+        target_stirrer_rpm: 125.0,
+        target_shake_speed_cpm: 35.0,
+        target_pressure_mpa: 0.5,
+        reason: "handshake test".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_confirmed_when_downstream_echoes_matching_rid() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("rid-confirmed", Some(true), None),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "rid-confirmed",
+            Duration::from_millis(500),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ack.request_id, "rid-confirmed");
+    assert!(
+        matches!(ack.status, AckStatus::Confirmed),
+        "got {:?}",
+        ack.status
+    );
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_rejected_when_downstream_reports_failure() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("rid-rejected", Some(false), Some("target out of range")),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "rid-rejected",
+            Duration::from_millis(500),
+        )
+        .await
+        .unwrap();
+    match ack.status {
+        AckStatus::Rejected(detail) => assert!(
+            detail.contains("target out of range"),
+            "unexpected reject detail: {detail}"
+        ),
+        other => panic!("expected Rejected, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn json_bridge_handshake_times_out_when_rid_never_echoed() {
+    // The downstream echoes a DIFFERENT rid (or a stale ok from an earlier
+    // command). The handshake must keep waiting for THIS command's rid and not
+    // misattribute the foreign/stale ok — ultimately timing out.
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        state_json_with_ack("stale-rid", Some(true), None),
+    )
+    .unwrap();
+    let device = build_device(&json_bridge_config_for_paths(&state_path, &control_path)).unwrap();
+    let ack = device
+        .write_targets_acknowledged(
+            &handshake_command(),
+            "current-rid",
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
+    assert_eq!(ack.request_id, "current-rid");
+    assert!(
+        matches!(ack.status, AckStatus::Timeout),
+        "stale/different rid must not be misattributed; got {:?}",
+        ack.status
+    );
+}
+
+fn assert_json_bridge_tmp_files_clean(path: &std::path::Path) {
+    for entry in std::fs::read_dir(path).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.is_dir() {
+            assert_json_bridge_tmp_files_clean(&path);
+        } else {
+            assert_ne!(path.extension().and_then(|ext| ext.to_str()), Some("tmp"));
+        }
+    }
+}
+
+fn json_bridge_config_for_paths(
+    state_path: &std::path::Path,
+    control_path: &std::path::Path,
+) -> reactor_edge_daemon::config::DeviceConfig {
+    let raw_config = format!(
+        r#"
+mode = "json_bridge"
+[serial]
+port = "/dev/ttyUSB0"
+baudrate = 115200
+parity = "N"
+stopbits = 1
+bytesize = 8
+timeout_ms = 1000
+[json_bridge]
+state_path = "{}"
+control_path = "{}"
+max_state_age_ms = 10000
+request_id_prefix = "reactor-os-test"
+speed_steps_per_cycle = 200.0
+speed_deadband_cpm = 1.0
+temperature_deadband_c = 1.0
+relay_temperature_control = false
+[modbus]
+slave_id = 1
+[esp32]
+frame_prefix = "RX"
+command_prefix = "TX"
+checksum = true
+max_line_bytes = 256
+[modbus.registers.temperature_c]
+address = 0
+scale = 0.1
+offset = 0.0
+min_valid = 0.0
+max_valid = 500.0
+[modbus.registers.stirrer_rpm]
+address = 1
+scale = 1.0
+offset = 0.0
+min_valid = 0.0
+max_valid = 2000.0
+[modbus.registers.target_temperature_c]
+address = 10
+scale = 0.1
+offset = 0.0
+[modbus.registers.target_stirrer_rpm]
+address = 11
+scale = 1.0
+offset = 0.0
+"#,
+        state_path.to_string_lossy().replace('\\', "\\\\"),
+        control_path.to_string_lossy().replace('\\', "\\\\")
+    );
+    toml::from_str(&raw_config).unwrap()
+}
+
+fn component_safety() -> reactor_edge_daemon::config::SafetyConfig {
+    reactor_edge_daemon::config::SafetyConfig {
+        control: reactor_edge_daemon::config::ControlConfig {
+            auto_enabled_default: false,
+            manual_lock_default: false,
+            control_interval_ms: 2000,
+            sensor_timeout_ms: 6000,
+            require_device_status_for_control: false,
+            write_retry_backoff_ms: 5000,
+            safety_guard_timeout_ms: 1000,
+            ai_stop_product_concentration_percent: 95.0,
+            require_command_ack: false,
+            command_ack_timeout_ms: 2000,
+        },
+        temperature: reactor_edge_daemon::config::TemperatureSafety {
+            min_c: 20.0,
+            max_c: 160.0,
+            max_step_c: 2.0,
+            default_target_c: 60.0,
+        },
+        stirrer: reactor_edge_daemon::config::StirrerSafety {
+            min_rpm: 0.0,
+            max_rpm: 1200.0,
+            max_step_rpm: 50.0,
+            default_target_rpm: 300.0,
+        },
+        optimizer: reactor_edge_daemon::config::OptimizerBounds {
+            min_temperature_c: 35.0,
+            max_temperature_c: 140.0,
+            min_stirrer_rpm: 100.0,
+            max_stirrer_rpm: 1000.0,
+            min_heating_minutes: 15.0,
+            max_heating_minutes: 240.0,
+            min_stirring_minutes: 15.0,
+            max_stirring_minutes: 240.0,
+        },
+        forbidden_control_zones: Vec::new(),
+    }
 }
 
 #[test]
@@ -121,6 +359,29 @@ fn rejects_stale_or_bad_json_bridge_state() {
         .to_string();
     assert!(err.contains("state stale"));
 
+    let future = parse_json_bridge_state(
+        &json!({
+            "connected": true,
+            "last_seen_ms": Utc::now().timestamp_millis() + 60_000,
+            "last_frame_ok": true,
+            "status": 0b0000_0100,
+            "temperature_c": 64.25,
+            "pressure_mpa": 0.50,
+            "stirrer_rpm": 125.18,
+            "shake_speed_cpm": 30.0,
+            "flow_rate_l_min": 1.2,
+            "product_concentration_percent": 50.0,
+            "ph": 6.15
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let err = json_bridge_sample_from_state(&config, &future)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("timestamp is"));
+    assert!(err.contains("in the future"));
+
     let disconnected = parse_json_bridge_state(
         &json!({
             "connected": false,
@@ -168,7 +429,44 @@ fn writes_control_json_atomically_with_unique_request_id_shape() {
         .starts_with("reactor-os-"));
     assert_eq!(saved["command"], "motor");
     assert_eq!(saved["value"], 1);
-    assert!(!dir.path().join("control.json.tmp").exists());
+    assert_json_bridge_tmp_files_clean(dir.path());
+}
+
+#[test]
+fn writes_control_json_creates_and_syncs_parent_directory() {
+    let dir = tempdir().unwrap();
+    let path = dir
+        .path()
+        .join("bridge")
+        .join("nested")
+        .join("control.json");
+    let control = build_json_bridge_control("reactor-os", "relay", Some(json!(0)), None);
+
+    write_json_bridge_control(&path, &control).unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(saved["command"], "relay");
+    assert_eq!(saved["value"], 0);
+    assert_json_bridge_tmp_files_clean(dir.path());
+}
+
+#[test]
+fn repeated_control_json_writes_use_unique_temp_files_without_residue() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("control.json");
+    let first = build_json_bridge_control("reactor-os", "motor", Some(json!(1)), None);
+    let second = build_json_bridge_control("reactor-os", "motor", Some(json!(0)), None);
+
+    write_json_bridge_control(&path, &first).unwrap();
+    write_json_bridge_control(&path, &second).unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(saved["request_id"], second.request_id);
+    assert_eq!(saved["command"], "motor");
+    assert_eq!(saved["value"], 0);
+    assert_json_bridge_tmp_files_clean(dir.path());
 }
 
 #[tokio::test]
@@ -269,6 +567,200 @@ offset = 0.0
 }
 
 #[tokio::test]
+async fn json_bridge_write_failure_does_not_cache_command_as_delivered() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control-as-directory");
+    std::fs::write(
+        &state_path,
+        json!({
+            "connected": true,
+            "last_seen_ms": Utc::now().timestamp_millis(),
+            "last_frame_ok": true,
+            "status": 0b0000_0111,
+            "temperature_c": 64.25,
+            "pressure_mpa": 0.50,
+            "stirrer_rpm": 125.18,
+            "flow_rate_l_min": 1.2,
+            "product_concentration_percent": 50.0,
+            "ph": 6.15
+        })
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::create_dir_all(&control_path).unwrap();
+    let config = json_bridge_config_for_paths(&state_path, &control_path);
+    let device = build_device(&config).unwrap();
+    let command = SafeCommand {
+        target_temperature_c: 65.0,
+        heat_time_s: 300.0,
+        hold_time_s: 600.0,
+        cool_time_s: 180.0,
+        target_stirrer_rpm: 125.18,
+        target_shake_speed_cpm: 35.0,
+        target_pressure_mpa: 0.5,
+        reason: "test".to_string(),
+    };
+
+    let err = device
+        .write_targets(&command)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("failed to atomically replace"));
+    std::fs::remove_dir_all(&control_path).unwrap();
+
+    device.write_targets(&command).await.unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&control_path).unwrap()).unwrap();
+    assert_eq!(saved["command"], "speed");
+    assert_eq!(saved["value"], "up");
+}
+
+#[tokio::test]
+async fn json_bridge_allows_stop_command_even_when_state_is_stale() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(
+        &state_path,
+        json!({
+            "connected": true,
+            "last_seen_ms": Utc::now().timestamp_millis() - 60_000,
+            "last_frame_ok": true,
+            "status": 0b0000_0111,
+            "temperature_c": 64.25,
+            "pressure_mpa": 0.50,
+            "stirrer_rpm": 125.18,
+            "shake_speed_cpm": 30.0,
+            "flow_rate_l_min": 1.2,
+            "product_concentration_percent": 50.0,
+            "ph": 6.15
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let raw_config = format!(
+        r#"
+mode = "json_bridge"
+[serial]
+port = "/dev/ttyUSB0"
+baudrate = 115200
+parity = "N"
+stopbits = 1
+bytesize = 8
+timeout_ms = 1000
+[modbus]
+slave_id = 1
+[esp32]
+frame_prefix = "RX"
+command_prefix = "TX"
+checksum = true
+max_line_bytes = 256
+[json_bridge]
+state_path = "{}"
+control_path = "{}"
+max_state_age_ms = 6000
+request_id_prefix = "reactor-os-test"
+speed_steps_per_cycle = 200.0
+speed_deadband_cpm = 1.0
+temperature_deadband_c = 1.0
+relay_temperature_control = false
+[modbus.registers.temperature_c]
+address = 0
+scale = 0.1
+offset = 0.0
+min_valid = 0.0
+max_valid = 500.0
+[modbus.registers.stirrer_rpm]
+address = 1
+scale = 1.0
+offset = 0.0
+min_valid = 0.0
+max_valid = 2000.0
+[modbus.registers.target_temperature_c]
+address = 10
+scale = 0.1
+offset = 0.0
+[modbus.registers.target_stirrer_rpm]
+address = 11
+scale = 1.0
+offset = 0.0
+"#,
+        state_path.to_string_lossy().replace('\\', "\\\\"),
+        control_path.to_string_lossy().replace('\\', "\\\\")
+    );
+    let config = toml::from_str(&raw_config).unwrap();
+    let device = build_device(&config).unwrap();
+
+    let outcome = device
+        .write_component(
+            &ComponentControlCommand {
+                component_id: "shake_stepper".to_string(),
+                action: "stop".to_string(),
+                value: None,
+            },
+            &ControlTargets {
+                temperature_c: 64.0,
+                heat_time_s: 300.0,
+                hold_time_s: 600.0,
+                cool_time_s: 180.0,
+                stirrer_rpm: 125.0,
+                shake_speed_cpm: 30.0,
+                target_pressure_mpa: 0.5,
+            },
+            &reactor_edge_daemon::config::SafetyConfig {
+                control: reactor_edge_daemon::config::ControlConfig {
+                    auto_enabled_default: false,
+                    manual_lock_default: false,
+                    control_interval_ms: 2000,
+                    sensor_timeout_ms: 6000,
+                    require_device_status_for_control: false,
+                    write_retry_backoff_ms: 5000,
+                    safety_guard_timeout_ms: 1000,
+                    ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
+                },
+                temperature: reactor_edge_daemon::config::TemperatureSafety {
+                    min_c: 20.0,
+                    max_c: 160.0,
+                    max_step_c: 2.0,
+                    default_target_c: 60.0,
+                },
+                stirrer: reactor_edge_daemon::config::StirrerSafety {
+                    min_rpm: 0.0,
+                    max_rpm: 1200.0,
+                    max_step_rpm: 50.0,
+                    default_target_rpm: 300.0,
+                },
+                optimizer: reactor_edge_daemon::config::OptimizerBounds {
+                    min_temperature_c: 35.0,
+                    max_temperature_c: 140.0,
+                    min_stirrer_rpm: 100.0,
+                    max_stirrer_rpm: 1000.0,
+                    min_heating_minutes: 15.0,
+                    max_heating_minutes: 240.0,
+                    min_stirring_minutes: 15.0,
+                    max_stirring_minutes: 240.0,
+                },
+                forbidden_control_zones: Vec::new(),
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(outcome.component_id, "shake_stepper");
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&control_path).unwrap()).unwrap();
+    assert_eq!(saved["command"], "motor");
+    assert_eq!(saved["value"], 0);
+    assert_eq!(saved["name"], "shake_stepper");
+}
+
+#[tokio::test]
 async fn json_bridge_component_control_discovers_and_writes_single_component_commands() {
     let dir = tempdir().unwrap();
     let state_path = dir.path().join("state.json");
@@ -357,9 +849,12 @@ offset = 0.0
                     manual_lock_default: false,
                     control_interval_ms: 2000,
                     sensor_timeout_ms: 6000,
+                    require_device_status_for_control: false,
                     write_retry_backoff_ms: 5000,
                     safety_guard_timeout_ms: 1000,
                     ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
@@ -485,9 +980,12 @@ offset = 0.0
                     manual_lock_default: false,
                     control_interval_ms: 2000,
                     sensor_timeout_ms: 6000,
+                    require_device_status_for_control: false,
                     write_retry_backoff_ms: 5000,
                     safety_guard_timeout_ms: 1000,
                     ai_stop_product_concentration_percent: 95.0,
+                    require_command_ack: false,
+                    command_ack_timeout_ms: 2000,
                 },
                 temperature: reactor_edge_daemon::config::TemperatureSafety {
                     min_c: 20.0,
@@ -524,4 +1022,39 @@ offset = 0.0
     assert_eq!(saved["command"], "stir_speed");
     assert_eq!(saved["value"], 480.25);
     assert_eq!(saved["name"], "stirrer_motor");
+}
+
+#[tokio::test]
+async fn json_bridge_component_control_rejects_out_of_range_value_without_writing_control() {
+    let dir = tempdir().unwrap();
+    let state_path = dir.path().join("state.json");
+    let control_path = dir.path().join("control.json");
+    std::fs::write(&state_path, valid_state_json()).unwrap();
+    let config = json_bridge_config_for_paths(&state_path, &control_path);
+    let device = build_device(&config).unwrap();
+
+    let err = device
+        .write_component(
+            &ComponentControlCommand {
+                component_id: "stirrer_motor".to_string(),
+                action: "set_rpm".to_string(),
+                value: Some(json!(5000.0)),
+            },
+            &ControlTargets {
+                temperature_c: 64.0,
+                heat_time_s: 300.0,
+                hold_time_s: 600.0,
+                cool_time_s: 180.0,
+                stirrer_rpm: 125.0,
+                shake_speed_cpm: 30.0,
+                target_pressure_mpa: 0.5,
+            },
+            &component_safety(),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("component control value must be between 0 and 1200"));
+    assert!(!control_path.exists());
 }

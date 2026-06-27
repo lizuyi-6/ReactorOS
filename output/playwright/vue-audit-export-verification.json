@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:5173/#/audit",
+  "csvBytes": 1154805,
+  "csvHeader": "id,batch_id,event_type,target_temperature_c,target_stirrer_rpm,target_shake_speed_cpm,reason,created_at,previous_hash,event_hash",
+  "englishChecks": [
+    "Audit Log",
+    "Tamper-evident Chain",
+    "Event type",
+    "Export CSV",
+    "Hashed events",
+    "Event List",
+    "All events"
+  ],
+  "chineseChecks": [
+    "审计日志",
+    "防篡改链",
+    "事件类型",
+    "全部事件",
+    "导出 CSV",
+    "哈希事件总数",
+    "事件列表"
+  ],
+  "horizontalOverflow": false,
+  "screenshots": [
+    "output/playwright/vue-audit-export-en.png",
+    "output/playwright/vue-audit-export-zh.png"
+  ],
+  "csv": "output/playwright/vue-audit-export.csv",
+  "zhCsv": "output/playwright/vue-audit-export-zh.csv",
+  "consoleMessages": [],
+  "pageErrors": []
+}

@@ -84,13 +84,17 @@ sudo ./install.sh --install-deps
 
 ```bash
 systemctl status reactor-edge
+systemctl status reactor-edge-backup.timer
+systemctl list-timers reactor-edge-backup.timer
 systemctl status reactor-os-chromium
 journalctl -u reactor-edge --no-pager -n 100
+journalctl -u reactor-edge-backup.service --no-pager -n 50
 ```
 
 验收通过条件：
 
 - `reactor-edge` 为 active。
+- `reactor-edge-backup.timer` 为 active，并能在 `systemctl list-timers` 中看到下一次触发时间。
 - HMI 可访问 `http://127.0.0.1:8000/`。
 - 日志无启动级 panic、端口占用或配置解析错误。
 
@@ -119,7 +123,7 @@ curl http://127.0.0.1:8000/api/devices/status
 | 集成接口 | `/etc/reactor-edge/integration.toml` | MQTT、Modbus TCP、证书路径、topic 或端口正确 |
 | 数据库加密 | `XINGSHU_DB_ENCRYPTION_KEY` | 生产密钥由托管流程注入，不写入源码 |
 | 登录和权限 | `XINGSHU_AUTH_SECRET`、角色密码变量 | 默认密码已替换，登录审计可追踪 |
-| 本地 AI | `XINGSHU_LOCAL_AI_*` | 没有真实模型时保持 `ready_for_inference=false`，不得宣称 LoRA 完成 |
+| 本地 AI | `XINGSHU_LOCAL_AI_*` | 没有真实模型时保持 `ready_for_lora_inference=false` 和 `ready_for_prd_lora=false`，不得宣称 LoRA 完成 |
 
 ## 7. 外部接口验收
 
@@ -159,9 +163,28 @@ curl http://127.0.0.1:8000/health
 - Web 响应 < 1s。
 - 长时运行无崩溃、无数据丢失。
 
+## 8.1 自动备份验收
+
+release package 已包含 `/opt/reactor-edge/current/bin/xingshu`、`/opt/reactor-edge/current/backup.sh`、`reactor-edge-backup.service` 和 `reactor-edge-backup.timer`。安装后 `/opt/reactor-edge/bin` 和 `/opt/reactor-edge/backup.sh` 作为兼容链接指向当前 slot。RK 上需执行：
+
+```bash
+systemctl status reactor-edge-backup.timer
+systemctl list-timers reactor-edge-backup.timer
+sudo systemctl start reactor-edge-backup.service
+ls -lh /var/lib/reactor-edge/backups
+sha256sum -c /var/lib/reactor-edge/backups/latest.snapshot.sha256
+```
+
+通过标准：
+
+- 手动启动 `reactor-edge-backup.service` 后生成 `reactor.sqlite3.<时间>.snapshot`。
+- 同目录存在 `.sha256` sidecar 和 `latest.snapshot` 链接。
+- `sha256sum -c` 校验通过。
+- 恢复演练必须先停止 `reactor-edge`，替换数据库后再启动服务；现场恢复、保留策略和异地归档仍需单独验收记录。
+
 ## 9. 本地 Qwen3.5-2B + LoRA 验收
 
-当前上位机只提供 readiness boundary，不声明本地 LoRA 已完成。若要在 RK 上验收本地 AI，必须提供：
+当前上位机提供 readiness、推理入口、训练数据集导出、训练入口编排、manifest 和显式候选 adapter 晋级/备份边界，但不声明真实本地 LoRA 已完成。若要在 RK 上验收本地 AI，必须提供：
 
 - Qwen3.5-2B 量化模型或 GGUF 文件。
 - LoRA adapter。
@@ -169,20 +192,24 @@ curl http://127.0.0.1:8000/health
 - PEFT/LoRA 训练脚本。
 - GGUF 转换脚本。
 - RK3568/RK3588 推理延迟报告。
-- 训练后评估和回滚报告。
+- 训练后 manifest、评估、晋级和回滚报告。
 
 验收时检查：
 
 ```bash
 curl http://127.0.0.1:8000/api/config/summary
 xingshu ai model
-xingshu ai train
+xingshu ai train --export-only --dataset output/local-ai/rk-lora-dataset.jsonl
+xingshu ai train --dataset output/local-ai/rk-lora-dataset.jsonl --manifest output/local-ai/rk-train.manifest.json --dry-run
+xingshu ai train --dataset output/local-ai/rk-lora-dataset.jsonl --manifest output/local-ai/rk-train.manifest.json --promote --min-eval-score 0.8
 ```
 
 通过标准：
 
-- `ready_for_inference=true` 且真实推理延迟 < 3s。
-- `ready_for_training=true` 且训练、评估、替换、回滚链路可执行。
+- `ready_for_base_inference=true` 只证明基础模型入口存在，不能单独作为 LoRA 完成证据。
+- `ready_for_lora_inference=true` 且真实推理延迟 < 3s。
+- `ready_for_training=true` 且训练、manifest、评估、显式替换、备份回滚链路可执行。
+- `ready_for_prd_lora=true`，并附 RK 延迟报告。
 - 不能用占位文件或只读 SOP 草案替代真实 LoRA 推理/训练。
 
 ## 10. 验收归档

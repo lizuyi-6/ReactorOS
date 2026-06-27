@@ -1,0 +1,18 @@
+﻿{
+    "status":  "ok",
+    "action":  "backup-restore-drill",
+    "source_db":  "X:\\tianhks\\output\\acceptance\\restore-drill\\source.sqlite3",
+    "backup":  "X:\\tianhks\\output\\acceptance\\restore-drill\\reactor.sqlite3.snapshot",
+    "restored_db":  "X:\\tianhks\\output\\acceptance\\restore-drill\\restored.sqlite3",
+    "batch_id":  1,
+    "health_ok":  true,
+    "health_service":  "reactor-edge-daemon",
+    "audit_total_before":  3,
+    "audit_total_after":  3,
+    "audit_chain_window_valid":  true,
+    "audit_chain_valid":  true,
+    "backup_sha256":  "94ae1529e0a60551f0704505b5d674ce1c7629481bf7e51e481860a9c0388aeb",
+    "restored_yield_percent":  88.4,
+    "restored_product_ratio":  0.93,
+    "logs":  "X:\\tianhks\\output\\acceptance\\restore-drill\\logs"
+}

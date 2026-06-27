@@ -40,8 +40,16 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
 fi
 
 systemctl disable --now reactor-os-chromium >/dev/null 2>&1 || true
+systemctl disable --now reactor-edge-backup.timer >/dev/null 2>&1 || true
+systemctl disable --now reactor-edge-backup.service >/dev/null 2>&1 || true
 systemctl disable --now reactor-edge >/dev/null 2>&1 || true
-rm -f /etc/systemd/system/reactor-os-chromium.service /etc/systemd/system/reactor-edge.service
+systemctl disable --now reactor-edge-ota-boot-check >/dev/null 2>&1 || true
+rm -f \
+  /etc/systemd/system/reactor-os-chromium.service \
+  /etc/systemd/system/reactor-edge-ota-boot-check.service \
+  /etc/systemd/system/reactor-edge-backup.service \
+  /etc/systemd/system/reactor-edge-backup.timer \
+  /etc/systemd/system/reactor-edge.service
 rm -rf /etc/systemd/system/reactor-edge.service.d
 systemctl daemon-reload
 rm -rf /opt/reactor-edge /etc/reactor-edge

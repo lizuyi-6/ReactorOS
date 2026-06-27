@@ -2,13 +2,14 @@
 
 测试对象：李祖祎负责的上位机软件。
 
-测试日期：2026-06-04；最近一次全量 Rust 回归：2026-06-06。
+测试日期：2026-06-04；最近一次全量 Rust 回归：2026-06-06；最近一次本地 LoRA/readiness 聚焦复核：2026-06-07。
 
 测试环境：
 
 - 工作区：`X:/tianhks`
 - 本地服务：`http://127.0.0.1:8000/`
-- 最近验证目标目录：`C:\tmp\xingshu-target-bugfix`
+- 最近全量 Rust 验证目标目录：`C:\tmp\xingshu-target-bugfix`
+- 最近 LoRA/readiness 聚焦验证目标目录：`C:\tmp\xingshu-target-local-ai`
 - 数据库：`data/reactor.sqlite3`
 - 静态资源：`static`
 - 集成配置：`config/integration.toml`
@@ -33,11 +34,11 @@ PRD 第八章测试计划与团队分工测试职责的逐项追踪见 `docs/upp
 | Modbus TCP PDU/MBAP/TLS | 已覆盖 `01/02/03/06` PDU 处理、本地真实 TCP/MBAP 客户端读请求、本地 TLS 握手 + MBAP 读请求；外部 Modbus Poll/Slave 未验收 |
 | HTTP/HTTPS 入口 | 已覆盖 CLI 参数和本地自签证书启动；`https://127.0.0.1:18443/health` 返回健康状态 |
 | 本地性能冒烟 | 已覆盖本机只读 API 往返和安全计算延迟；真实硬件链路、LoRA、7x24 不在本次证明范围 |
-| 本地 LoRA | 未实现，测试不通过项记录为产品缺口 |
+| 本地 LoRA | 已覆盖 readiness、训练数据导出、训练编排 manifest 和候选 adapter 晋级/备份边界；真实 Qwen/GGUF/LoRA 资产、生产训练脚本和 RK 延迟验收仍未完成 |
 
 ## 2. 自动化测试结果
 
-最近一次相关测试命令：
+最近一次全量 Rust 回归命令：
 
 ```powershell
 $env:CARGO_TARGET_DIR='C:\tmp\xingshu-target-bugfix'
@@ -60,7 +61,7 @@ cargo test --all-targets -- --nocapture --test-threads=1
 | `json_bridge_protocol_tests` | 8 passed |
 | `optimizer_tests` | 4 passed |
 
-本轮使用 `C:\tmp\xingshu-target-bugfix` 作为 `CARGO_TARGET_DIR`，避免在 X 盘继续膨胀 target 目录。全量 Rust 测试结果为通过。
+该全量回归使用 `C:\tmp\xingshu-target-bugfix` 作为 `CARGO_TARGET_DIR`，避免在 X 盘继续膨胀 target 目录。全量 Rust 测试结果为通过。
 
 本轮新增针对性测试：
 
@@ -81,7 +82,18 @@ cargo test --all-targets -- --nocapture --test-threads=1
 | `cargo test --test api_tests ainas_task_api -- --nocapture` | 通过，2 passed；验证 `src/api_integrations.rs` 拆分后 AINAS set_targets/start_process/stop_process 路径保持稳定 |
 | `cargo test --test api_tests mqtt_task_payload_executes_targets_and_persists_receipt -- --nocapture` | 通过；验证 MQTT payload 继续复用第三方任务执行路径并持久化 receipt |
 | `cargo test --test cli_tests safety_guard_external_process_timeout_returns_before_slow_guard_finishes -- --nocapture --test-threads=1` | 通过；验证外部 safety guard 超时时会返回错误并 kill 子进程，不等待慢脚本自然结束 |
-| `npm run acceptance:local-gate` | 通过，7 passed；检查 `/health`、HMI shell/i18n 标记、三角色登录/RBAC、配置摘要、Modbus map、视觉 i18n 审计 JSON 和交付文档，报告 `output/upper-computer-local-gate-20260606.json` |
+| `npm run acceptance:local-gate` | 通过，7 passed；检查 `/health`、HMI shell/i18n 标记、三角色登录/RBAC、配置摘要、Modbus map、视觉 i18n 审计 JSON 和交付文档，历史报告 `output/upper-computer-local-gate-20260606.json` |
+
+2026-06-07 本地 LoRA/readiness 聚焦复核：
+
+| 测试 | 结果 |
+| --- | --- |
+| `cargo fmt --check` | 通过 |
+| `node --check scripts/upper-computer-local-gate.mjs` | 通过 |
+| `npm run frontend:build` | 通过 |
+| `cargo test local_ai --lib -- --nocapture` (`CARGO_TARGET_DIR=C:\tmp\xingshu-target-local-ai`) | 通过，7 passed；覆盖基础模型入口、LoRA 推理、训练入口、PRD LoRA/RK、HTTP endpoint 和非法 endpoint readiness 语义 |
+| `cargo test --test api_tests upper_computer_supports_audit_config_and_modbus_debug_pages -- --nocapture` (`CARGO_TARGET_DIR=C:\tmp\xingshu-target-local-ai`) | 通过 |
+| `node scripts/upper-computer-local-gate.mjs --url http://127.0.0.1:18098 --out-dir output/local-run` | 通过，7 passed；Vue release shell 检查包含 `Integration Surface`、`Base inference`、`PRD LoRA/RK`，配置摘要检查 `ready_for_base_inference`、`ready_for_lora_inference`、`ready_for_training` 和 `ready_for_prd_lora`，报告 `output/local-run/upper-computer-local-gate-20260607.json` |
 
 ## 3. 本地性能冒烟
 
@@ -175,17 +187,17 @@ cargo test --all-targets -- --nocapture --test-threads=1
 | `xingshu status` | 可获取服务、设备、联锁和 AI 状态 |
 | `xingshu config --local --json` | 可读取本地 device/safety/integration 摘要 |
 | `xingshu data export` / `export-xlsx` / `report` | 支持数据导出 |
-| `xingshu data sample --duration-s 180 --interval-ms 500` | 可通过正式 v1 样本入口驱动无硬件实时监控演示 |
+| `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` | 可通过正式 v1 样本入口驱动无硬件实时监控演示；token 需具备 `ingest_sensor_sample` 权限 |
 | `xingshu data delete --yes` | 支持清理本地 SQLite 运行数据，需显式确认 |
 | `xingshu ai plan` | 支持查看安全门控实验 SOP 草案 |
 | `xingshu perf smoke` | 支持生成本地 API 和安全计算性能冒烟报告 |
 | `xingshu audit list` / `export` | 支持审计查询和导出 |
 | `xingshu modbus map/read/write` | 支持寄存器映射、读写调试 |
-| `xingshu ai train` | 按预期报告 LoRA 训练接口未开放 |
+| `xingshu ai train` | 支持 `--export-only` 数据集导出、训练入口编排、manifest 归档和显式候选 adapter 晋级；真实生产训练脚本和模型资产未提供时会按预期失败 |
 
 无硬件实时监控演示验证：
 
-- `xingshu data sample --duration-s 180 --interval-ms 500` 启动后，`GET /api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false` 返回 200。
+- `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` 启动后，`GET /api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false` 返回 200。
 - 浏览器显示 `SYSTEM HEALTH: NORMAL`、`DEVICES 1/1 IDLE`、实时温度 `35.9degC`、压力 `0.47MPa`，控制台 0 error。
 - 截图归档：`output/upper-computer-hmi-live-sample-final.png`。
 - 停止样本流后，超过 `sensor_timeout_ms=6000` 再返回 503 属于安全新鲜度检查预期行为。

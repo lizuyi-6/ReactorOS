@@ -1,0 +1,111 @@
+{
+    "status":  "ok",
+    "base_url":  "http://127.0.0.1:18300",
+    "vue_url":  "http://127.0.0.1:15173/",
+    "steps_pass":  20,
+    "steps_fail":  0,
+    "total":  20,
+    "commit":  "f7ac7d175e6e060fe7b11d09b6dc87c94c2eaedf",
+    "steps":  [
+                  {
+                      "step":  "verify-vue-release-assets",
+                      "status":  "ok",
+                      "info":  "release package and systemd paths prefer Vue dist with legacy fallback"
+                  },
+                  {
+                      "step":  "verify-production-safety-guard",
+                      "status":  "ok",
+                      "info":  "release package and systemd launch the isolated safety guard"
+                  },
+                  {
+                      "step":  "verify-production-backup-schedule",
+                      "status":  "ok",
+                      "info":  "systemd timer schedules online SQLite backup snapshots"
+                  },
+                  {
+                      "step":  "verify-production-backup-script",
+                      "status":  "ok",
+                      "info":  "backup script writes timestamped SQLite snapshots and latest link"
+                  },
+                  {
+                      "step":  "verify-backup-restore-drill",
+                      "status":  "ok",
+                      "info":  "restored snapshot boots a fresh daemon with batch, product result, and audit chain intact"
+                  },
+                  {
+                      "step":  "verify-training-deliverables",
+                      "status":  "ok",
+                      "info":  "training deck, PPTX package, image assets, UAT script, and preview manifest passed"
+                  },
+                  {
+                      "step":  "xingshu-ops-preflight",
+                      "status":  "ok",
+                      "info":  "production secrets, TLS paths, and backup timer files checked"
+                  },
+                  {
+                      "step":  "vite-dev",
+                      "status":  "ok",
+                      "info":  "vite dev on 15173 proxied to 18300"
+                  },
+                  {
+                      "step":  "verify-load-and-rbac",
+                      "status":  "ok",
+                      "info":  "RBAC matrix all-pass; see X:\\tianhks\\output\\acceptance\\logs\\load-and-rbac.log"
+                  },
+                  {
+                      "step":  "verify-vue-parity",
+                      "status":  "ok",
+                      "info":  "Vue 7 routes and bilingual checks passed"
+                  },
+                  {
+                      "step":  "verify-vue-history-xlsx",
+                      "status":  "ok",
+                      "info":  "History CSV/XLSX downloads and bilingual buttons passed"
+                  },
+                  {
+                      "step":  "verify-vue-process-lifecycle",
+                      "status":  "ok",
+                      "info":  "process lifecycle and bilingual checks passed"
+                  },
+                  {
+                      "step":  "verify-vue-mobile",
+                      "status":  "ok",
+                      "info":  "phone and tablet viewport bilingual navigation checks passed"
+                  },
+                  {
+                      "step":  "verify-vue-browser-matrix",
+                      "status":  "ok",
+                      "info":  "passed browsers: chromium, chrome, msedge, firefox, webkit; skipped: ; page checks: 70; console errors: 0"
+                  },
+                  {
+                      "step":  "probe-cli-ops",
+                      "status":  "ok",
+                      "info":  "real SQLite backup/restore/wipe/key generate/key rekey"
+                  },
+                  {
+                      "step":  "verify-ainas-mqtt",
+                      "status":  "ok",
+                      "info":  "AINAS API and integration config summary passed"
+                  },
+                  {
+                      "step":  "verify-mosquitto-broker",
+                      "status":  "ok",
+                      "info":  "real broker status/task/receipt round-trip passed"
+                  },
+                  {
+                      "step":  "mock-entrypoints-parse",
+                      "status":  "ok",
+                      "info":  "AINAS/STM32 mock entrypoints parse"
+                  },
+                  {
+                      "step":  "ainas-mock-health",
+                      "status":  "ok",
+                      "info":  "AINAS mock /health returned 200 on 127.0.0.1:5599"
+                  },
+                  {
+                      "step":  "stm32-modbus-mock-fc03",
+                      "status":  "ok",
+                      "info":  "STM32 mock answered Modbus TCP FC03 on 127.0.0.1:15502"
+                  }
+              ]
+}

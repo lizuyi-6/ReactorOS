@@ -58,9 +58,9 @@ xingshu perf smoke
 
 - CLI 通过同一 REST API 写入，不绕过安全链路。
 - 受保护命令需要 bearer token。
-- `xingshu data sample --duration-s ...` 通过正式 `/api/v1/reactor/:device_id/samples` 样本入口注入演示数据，不写控制目标。
+- `xingshu --token <engineer-token> data sample --duration-s ...` 通过正式 `/api/v1/reactor/:device_id/samples` 样本入口注入演示数据，不写控制目标；该入口会更新控制安全门使用的现场状态证明，需 bearer token 且具备 `ingest_sensor_sample` 权限。
 - `xingshu perf smoke` 可输出本机只读 API 往返和安全计算性能冒烟报告。
-- `xingshu ai train` 当前明确报告 LoRA 训练 API 缺失，符合真实状态。
+- `xingshu ai train --export-only` 可从本地 SQLite 导出 LoRA 训练 JSONL；配置 `XINGSHU_LOCAL_AI_TRAIN_SCRIPT` 或 `XINGSHU_LOCAL_AI_TRAIN_URL` 后可编排训练、写入 manifest，并在显式 `--promote` 时晋级候选 adapter。真实生产训练脚本、Qwen/GGUF/LoRA 资产和 RK 验收仍未完成。
 
 ## 3. REST API 验收
 
@@ -72,7 +72,7 @@ xingshu perf smoke
 GET  /api/config/summary
 GET  /api/live
 GET  /api/v1/devices/status
-POST /api/v1/reactor/:device_id/samples
+POST /api/v1/reactor/:device_id/samples  # Authorization: Bearer <token>, permission: ingest_sensor_sample
 GET  /api/v1/reactor/:device_id/realtime
 GET  /api/v1/reactor/:device_id/history
 POST /api/v1/reactor/:device_id/control
@@ -161,7 +161,7 @@ GET /api/integrations/ainas/tasks/:id
 - 默认 TLS/8883 模板，支持 `ca_cert`、`client_cert`、`client_key`；TLS 模式必须配置非空 `ca_cert`，否则拒绝连接而不是隐式信任系统根证书。
 - bridge 启动时会同步刷新 `mqtt_status`，配置摘要不会在后台任务调度前短暂显示默认 broker/topic。
 - task payload 复用 AINAS 执行路径。
-- receipt 逻辑和持久化测试已覆盖。
+- receipt 逻辑和持久化测试已覆盖；任务已经执行成功但 broker receipt 发布失败时，会锁存 `last_control_error` 并关闭自动控制，避免第三方系统没有收到回执而现场继续生产控制。
 - alert topic retained 报警快照已覆盖。
 
 未完成验收：

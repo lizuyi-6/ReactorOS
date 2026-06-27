@@ -14,9 +14,10 @@ use serde_json::{json, Value};
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::{
-    api::{alarms_for, execute_integration_task, AinasTaskRequest, AppError, AppState},
+    api::{execute_integration_task, live_alarms_for, AinasTaskRequest, AppError, AppState},
     db::IntegrationTask,
-    modbus_tcp::ModbusTcpConfig,
+    modbus_tcp::{validate_modbus_tcp_config, ModbusTcpConfig},
+    state::timestamp_is_fresh,
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -191,8 +192,34 @@ pub fn load_integration_config(path: impl AsRef<Path>) -> Result<IntegrationConf
     }
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read integration config {}", path.display()))?;
-    toml::from_str(&raw)
-        .with_context(|| format!("failed to parse integration config {}", path.display()))
+    let config: IntegrationConfig = toml::from_str(&raw)
+        .with_context(|| format!("failed to parse integration config {}", path.display()))?;
+    validate_integration_config(&config)
+        .with_context(|| format!("invalid integration config {}", path.display()))?;
+    Ok(config)
+}
+
+pub fn validate_integration_config(config: &IntegrationConfig) -> Result<()> {
+    validate_mqtt_bridge_config(&config.mqtt)?;
+    validate_modbus_tcp_config(&config.modbus_tcp)?;
+    Ok(())
+}
+
+pub fn validate_mqtt_bridge_config(config: &MqttBridgeConfig) -> Result<()> {
+    if !config.enabled {
+        return Ok(());
+    }
+    ensure_non_empty("MQTT host", &config.host)?;
+    ensure_non_empty("MQTT client_id", &config.client_id)?;
+    ensure_non_empty("MQTT task_topic", &config.task_topic)?;
+    ensure_non_empty("MQTT receipt_topic", &config.receipt_topic)?;
+    ensure_non_empty("MQTT status_topic", &config.status_topic)?;
+    ensure_non_empty("MQTT alert_topic", &config.alert_topic)?;
+    ensure_positive_u64("MQTT keep_alive_s", config.keep_alive_s)?;
+    ensure_positive_usize("MQTT queue_capacity", config.queue_capacity)?;
+    ensure_positive_u64("MQTT alert_interval_s", config.alert_interval_s)?;
+    validate_mqtt_tls_config(config)?;
+    Ok(())
 }
 
 pub fn start_mqtt_bridge(config: MqttBridgeConfig, state: AppState) {
@@ -256,14 +283,19 @@ async fn run_mqtt_bridge(
                                 snapshot.last_task_id = receipt.task_id;
                                 snapshot.last_error = receipt.error.clone();
                             });
-                            client
+                            let receipt_payload = serde_json::to_vec(&receipt)?;
+                            if let Err(err) = client
                                 .publish(
                                     config.receipt_topic.clone(),
                                     QoS::AtLeastOnce,
                                     false,
-                                    serde_json::to_vec(&receipt)?,
+                                    receipt_payload,
                                 )
-                                .await?;
+                                .await
+                            {
+                                latch_mqtt_receipt_publish_failure(&state, &receipt, &err.to_string()).await;
+                                return Err(err.into());
+                            }
                         }
                     }
                     Ok(_) => {}
@@ -335,6 +367,27 @@ pub fn validate_mqtt_tls_config(config: &MqttBridgeConfig) -> Result<()> {
     Ok(())
 }
 
+fn ensure_non_empty(field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        anyhow::bail!("{field} must not be empty");
+    }
+    Ok(())
+}
+
+fn ensure_positive_u64(field: &str, value: u64) -> Result<()> {
+    if value == 0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
+fn ensure_positive_usize(field: &str, value: usize) -> Result<()> {
+    if value == 0 {
+        anyhow::bail!("{field} must be greater than 0");
+    }
+    Ok(())
+}
+
 async fn publish_status(
     client: &AsyncClient,
     config: &MqttBridgeConfig,
@@ -363,7 +416,7 @@ async fn publish_alert_snapshot(
     config: &MqttBridgeConfig,
     state: &AppState,
 ) -> Result<MqttAlertSnapshot> {
-    let snapshot = mqtt_alert_snapshot(state).await;
+    let snapshot = mqtt_alert_snapshot(state).await?;
     client
         .publish(
             config.alert_topic.clone(),
@@ -375,16 +428,23 @@ async fn publish_alert_snapshot(
     Ok(snapshot)
 }
 
-pub async fn mqtt_alert_snapshot(state: &AppState) -> MqttAlertSnapshot {
-    let runtime = state.runtime.read().await;
+pub async fn mqtt_alert_snapshot(state: &AppState) -> Result<MqttAlertSnapshot> {
+    let runtime = state.runtime.read().await.clone();
     let sample = runtime.latest_sample.as_ref();
     let sensor_fresh = sample
         .map(|sample| {
-            Utc::now().signed_duration_since(sample.captured_at)
-                <= chrono::Duration::milliseconds(state.safety.control.sensor_timeout_ms)
+            timestamp_is_fresh(sample.captured_at, state.safety.control.sensor_timeout_ms)
         })
         .unwrap_or(false);
-    let alarms = alarms_for(&runtime, sample, state.ai_memory.as_ref());
+    let alarms = live_alarms_for(
+        state,
+        state.safety.as_ref(),
+        &runtime,
+        sample,
+        state.ai_memory.as_ref(),
+    )
+    .await
+    .map_err(|err| anyhow::anyhow!("{}", err.message()))?;
     let high_count = alarms
         .iter()
         .filter(|alarm| alarm.get("level").and_then(Value::as_str) == Some("high"))
@@ -394,7 +454,7 @@ pub async fn mqtt_alert_snapshot(state: &AppState) -> MqttAlertSnapshot {
         .filter(|alarm| alarm.get("level").and_then(Value::as_str) == Some("medium"))
         .count();
 
-    MqttAlertSnapshot {
+    Ok(MqttAlertSnapshot {
         device_id: "reactor_001",
         active: !alarms.is_empty(),
         active_count: alarms.len(),
@@ -406,7 +466,7 @@ pub async fn mqtt_alert_snapshot(state: &AppState) -> MqttAlertSnapshot {
         active_batch_id: runtime.active_batch_id,
         alarms,
         updated_at: Utc::now(),
-    }
+    })
 }
 
 pub async fn execute_mqtt_task_payload(state: &AppState, payload: &[u8]) -> MqttTaskReceipt {
@@ -457,6 +517,28 @@ fn receipt_from_result(result: Result<IntegrationTask, AppError>) -> MqttTaskRec
     }
 }
 
+async fn latch_mqtt_receipt_publish_failure(
+    state: &AppState,
+    receipt: &MqttTaskReceipt,
+    err: &str,
+) {
+    if receipt.status != "executed" {
+        return;
+    }
+    let mut runtime = state.runtime.write().await;
+    match receipt.action.as_deref() {
+        Some("start_process" | "stop_process") => {
+            runtime.latch_audit_failure_after_device_action("MQTT task receipt publish", err);
+        }
+        Some("set_targets") => {
+            runtime.latch_control_fault(format!(
+                "MQTT task set_targets receipt publish failed after target intent commit: {err}"
+            ));
+        }
+        _ => {}
+    }
+}
+
 fn set_status(status: &SharedMqttStatus, next: MqttBridgeStatus) {
     *status
         .lock()
@@ -478,6 +560,78 @@ fn update_status(status: &SharedMqttStatus, update: impl FnOnce(&mut MqttBridgeS
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        config::{
+            load_device_config, ControlConfig, DeviceMode, ForbiddenControlZone, OptimizerBounds,
+            SafetyConfig, StirrerSafety, TemperatureSafety,
+        },
+        db::Db,
+        device::PipelineDevice,
+        memory::AiMemory,
+        state::{RuntimeState, SharedState},
+    };
+    use tokio::sync::RwLock;
+
+    fn test_safety() -> Arc<SafetyConfig> {
+        Arc::new(SafetyConfig {
+            control: ControlConfig {
+                auto_enabled_default: false,
+                manual_lock_default: false,
+                control_interval_ms: 2000,
+                sensor_timeout_ms: 6000,
+                require_device_status_for_control: false,
+                write_retry_backoff_ms: 5000,
+                safety_guard_timeout_ms: 1000,
+                ai_stop_product_concentration_percent: 95.0,
+                require_command_ack: false,
+                command_ack_timeout_ms: 2000,
+            },
+            temperature: TemperatureSafety {
+                min_c: 20.0,
+                max_c: 160.0,
+                max_step_c: 2.0,
+                default_target_c: 60.0,
+            },
+            stirrer: StirrerSafety {
+                min_rpm: 0.0,
+                max_rpm: 1200.0,
+                max_step_rpm: 50.0,
+                default_target_rpm: 300.0,
+            },
+            optimizer: OptimizerBounds {
+                min_temperature_c: 35.0,
+                max_temperature_c: 140.0,
+                min_stirrer_rpm: 100.0,
+                max_stirrer_rpm: 1000.0,
+                min_heating_minutes: 15.0,
+                max_heating_minutes: 240.0,
+                min_stirring_minutes: 15.0,
+                max_stirring_minutes: 240.0,
+            },
+            forbidden_control_zones: vec![ForbiddenControlZone {
+                name: "hot-low-stir".to_string(),
+                reason: "bench safety envelope".to_string(),
+                min_temperature_c: 125.0,
+                max_temperature_c: 160.0,
+                min_stirrer_rpm: 0.0,
+                max_stirrer_rpm: 350.0,
+            }],
+        })
+    }
+
+    fn test_app_state(safety: Arc<SafetyConfig>, runtime: SharedState) -> AppState {
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: Arc::new(PipelineDevice),
+            device_mode: DeviceMode::Pipeline,
+            device_config: Arc::new(load_device_config("config/device.toml").unwrap()),
+            safety,
+            ai_memory: Arc::new(AiMemory::default()),
+            ai_provider: None,
+            test_reset_enabled: false,
+        }
+    }
 
     #[test]
     fn set_status_from_config_updates_snapshot_synchronously() {
@@ -512,5 +666,50 @@ mod tests {
         assert_eq!(snapshot.client_id, "xingshu-status-test");
         assert_eq!(snapshot.task_topic, "xingshu/status-test/tasks");
         assert_eq!(snapshot.alert_interval_s, 7);
+    }
+
+    #[tokio::test]
+    async fn mqtt_receipt_publish_failure_latches_fault_only_after_executed_actions() {
+        let safety = test_safety();
+        let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+        runtime.write().await.auto_enabled = true;
+        let state = test_app_state(safety, runtime.clone());
+        let executed = MqttTaskReceipt {
+            ok: true,
+            source: "mqtt",
+            task_id: Some(7),
+            external_task_id: Some("mqtt-7".to_string()),
+            action: Some("set_targets".to_string()),
+            status: "executed".to_string(),
+            response: Some(json!({"status": "executed"})),
+            error: None,
+        };
+
+        latch_mqtt_receipt_publish_failure(&state, &executed, "broker queue closed").await;
+
+        let state_snapshot = runtime.read().await;
+        assert!(!state_snapshot.auto_enabled);
+        assert!(state_snapshot
+            .last_control_error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("MQTT task set_targets receipt publish failed after target intent commit"));
+        drop(state_snapshot);
+
+        runtime.write().await.last_control_error = None;
+        let rejected = MqttTaskReceipt {
+            ok: false,
+            source: "mqtt",
+            task_id: Some(8),
+            external_task_id: Some("mqtt-8".to_string()),
+            action: Some("set_targets".to_string()),
+            status: "rejected".to_string(),
+            response: None,
+            error: Some("manual lock is active".to_string()),
+        };
+
+        latch_mqtt_receipt_publish_failure(&state, &rejected, "broker queue closed").await;
+
+        assert!(runtime.read().await.last_control_error.is_none());
     }
 }

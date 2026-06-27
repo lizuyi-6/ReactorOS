@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:15173/",
+  "apiBase": "http://127.0.0.1:18300",
+  "csv": {
+    "filename": "batches-1780841485282.csv",
+    "ok": true
+  },
+  "xlsx": {
+    "filename": "batches-1780841486412.xlsx",
+    "ok": true
+  },
+  "screenshots": {
+    "en": "output/playwright/vue-history-xlsx-export-en.png",
+    "zh": "output/playwright/vue-history-xlsx-export-zh.png"
+  },
+  "languageChecks": {
+    "en": true,
+    "zh": true
+  },
+  "consoleErrors": []
+}

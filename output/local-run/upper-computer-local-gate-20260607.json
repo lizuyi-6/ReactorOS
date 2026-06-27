@@ -1,0 +1,304 @@
+{
+  "generated_at": "2026-06-07T15:45:17.888Z",
+  "generated_at_local": "2026/06/07 23:45:17",
+  "time_zone": "Asia/Shanghai",
+  "baseUrl": "http://127.0.0.1:18098/",
+  "reportPath": "X:\\tianhks\\output\\local-run\\upper-computer-local-gate-20260607.json",
+  "summary": {
+    "passed": 7,
+    "failed": 0,
+    "status": "passed"
+  },
+  "checks": [
+    {
+      "name": "health endpoint",
+      "status": "passed",
+      "elapsed_ms": 34,
+      "detail": {
+        "ok": true,
+        "service": "reactor-edge-daemon"
+      }
+    },
+    {
+      "name": "web hmi shell and i18n controls",
+      "status": "passed",
+      "elapsed_ms": 27,
+      "detail": {
+        "bytes": 1969045,
+        "shell": "vue-release",
+        "markers": [
+          "id=\"app\"",
+          "ReactorOS HMI",
+          "reactoros.vue.language",
+          "Vue 3",
+          "Integration Surface",
+          "Base inference",
+          "PRD LoRA/RK"
+        ]
+      }
+    },
+    {
+      "name": "local bearer login and role permissions",
+      "status": "passed",
+      "elapsed_ms": 12,
+      "detail": {
+        "operator": {
+          "role": "operator",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "export_reports",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop"
+          ]
+        },
+        "engineer": {
+          "role": "engineer",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "view_audit",
+            "export_reports",
+            "edit_process",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop",
+            "modbus_debug",
+            "apply_integration_task"
+          ]
+        },
+        "admin": {
+          "role": "admin",
+          "permissions": [
+            "view_monitor",
+            "view_history",
+            "view_audit",
+            "export_reports",
+            "edit_process",
+            "start_stop_process",
+            "set_safe_targets",
+            "apply_ai_suggestion",
+            "emergency_stop",
+            "modbus_debug",
+            "edit_system_config",
+            "delete_data",
+            "manage_users",
+            "apply_integration_task"
+          ]
+        }
+      }
+    },
+    {
+      "name": "config summary delivery surface",
+      "status": "passed",
+      "elapsed_ms": 2,
+      "detail": {
+        "device_mode": "pipeline",
+        "storage_encryption": {
+          "algorithm": "AES-256-GCM",
+          "enabled": false,
+          "encrypted_fields": [
+            "integration_tasks.request_json",
+            "integration_tasks.response_json"
+          ],
+          "key_source": null
+        },
+        "integrations": {
+          "ainas_ready": true,
+          "ainas_task_api": true,
+          "cli": true,
+          "json_bridge": false,
+          "modbus_rtu": false,
+          "modbus_tcp": false,
+          "modbus_tcp_status": {
+            "bind": "0.0.0.0:502",
+            "enabled": false,
+            "last_error": null,
+            "listening": false,
+            "require_tls": true,
+            "tls_status": "configured",
+            "unit_id": 1,
+            "updated_at": "2026-06-07T15:41:11.669579800Z"
+          },
+          "mqtt": false,
+          "mqtt_status": {
+            "alert_interval_s": 5,
+            "alert_topic": "xingshu/reactor_001/alerts",
+            "broker": "127.0.0.1:8883",
+            "ca_cert_configured": true,
+            "client_cert_configured": true,
+            "client_id": "xingshu-reactor-001",
+            "connected": false,
+            "enabled": false,
+            "last_alert_active_count": 0,
+            "last_alert_at": null,
+            "last_error": null,
+            "last_task_id": null,
+            "receipt_topic": "xingshu/reactor_001/task_receipts",
+            "status_topic": "xingshu/reactor_001/status",
+            "task_topic": "xingshu/reactor_001/tasks",
+            "updated_at": "2026-06-07T15:41:11.669474700Z",
+            "use_tls": true
+          },
+          "rest_api": true
+        },
+        "local_ai": {
+          "adapter_path": null,
+          "conversion": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_CONVERT_SCRIPT to the GGUF conversion entrypoint",
+            "path": null
+          },
+          "enabled": false,
+          "inference": {
+            "available": false,
+            "configured": false,
+            "detail": "inference binary, GGUF model, and HTTP inference endpoint are missing",
+            "path": null
+          },
+          "inference_endpoint": null,
+          "lora_adapter": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_LORA to the LoRA adapter file",
+            "path": null
+          },
+          "missing": [
+            "XINGSHU_LOCAL_AI_ENABLED",
+            "XINGSHU_LOCAL_AI_BIN",
+            "XINGSHU_LOCAL_AI_GGUF",
+            "XINGSHU_LOCAL_AI_LORA",
+            "XINGSHU_LOCAL_AI_TRAIN_SCRIPT",
+            "XINGSHU_LOCAL_AI_CONVERT_SCRIPT",
+            "XINGSHU_LOCAL_AI_RK_REPORT"
+          ],
+          "mode": "disabled",
+          "model_family": "Qwen3.5-2B",
+          "model_path": null,
+          "ready_for_base_inference": false,
+          "ready_for_inference": false,
+          "ready_for_lora_inference": false,
+          "ready_for_prd_lora": false,
+          "ready_for_training": false,
+          "rk_validation": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_RK_REPORT to the RK latency validation report",
+            "path": null
+          },
+          "runtime": "llama.cpp",
+          "training": {
+            "available": false,
+            "configured": false,
+            "detail": "set XINGSHU_LOCAL_AI_TRAIN_SCRIPT to the PEFT/LoRA training entrypoint",
+            "path": null
+          },
+          "training_endpoint": null
+        }
+      }
+    },
+    {
+      "name": "modbus map read/write shape",
+      "status": "passed",
+      "elapsed_ms": 2,
+      "detail": {
+        "read_registers": 8,
+        "write_registers": 7,
+        "coils": 4,
+        "discrete_inputs": 5
+      }
+    },
+    {
+      "name": "visual i18n audit evidence",
+      "status": "passed",
+      "elapsed_ms": 3,
+      "detail": {
+        "report": "output\\visual-i18n\\upper-computer-i18n-audit-20260605.json",
+        "pageCount": 18,
+        "expectedDataPipeline503Count": 13
+      }
+    },
+    {
+      "name": "required upper-computer delivery documents",
+      "status": "passed",
+      "elapsed_ms": 3,
+      "detail": {
+        "count": 17,
+        "files": [
+          {
+            "file": "docs/upper_computer_development_doc.md",
+            "bytes": 24706
+          },
+          {
+            "file": "docs/upper_computer_user_manual.md",
+            "bytes": 9772
+          },
+          {
+            "file": "docs/upper_computer_test_report.md",
+            "bytes": 20116
+          },
+          {
+            "file": "docs/upper_computer_gap_status.md",
+            "bytes": 16600
+          },
+          {
+            "file": "docs/upper_computer_requirement_gap_matrix.md",
+            "bytes": 23788
+          },
+          {
+            "file": "docs/upper_computer_api_acceptance_manual.md",
+            "bytes": 11084
+          },
+          {
+            "file": "docs/upper_computer_cli_reference.md",
+            "bytes": 9226
+          },
+          {
+            "file": "docs/upper_computer_maintenance_manual.md",
+            "bytes": 8648
+          },
+          {
+            "file": "docs/upper_computer_modbus_register_map.md",
+            "bytes": 4988
+          },
+          {
+            "file": "docs/upper_computer_rk_deployment_acceptance_guide.md",
+            "bytes": 7673
+          },
+          {
+            "file": "docs/upper_computer_security_key_lifecycle.md",
+            "bytes": 6701
+          },
+          {
+            "file": "docs/upper_computer_external_acceptance_checklist.md",
+            "bytes": 9932
+          },
+          {
+            "file": "docs/upper_computer_visual_evidence_index.md",
+            "bytes": 13912
+          },
+          {
+            "file": "docs/upper_computer_delivery_readiness_index.md",
+            "bytes": 11527
+          },
+          {
+            "file": "docs/upper_computer_training_material_plan.md",
+            "bytes": 10096
+          },
+          {
+            "file": "docs/architecture-deviations.md",
+            "bytes": 22569
+          },
+          {
+            "file": "docs/third_party_interface_acceptance_report.md",
+            "bytes": 8022
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -11,9 +11,9 @@ use tokio::{
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    api::{apply_modbus_register_write, AppState},
+    api::{alarms_for, apply_modbus_register_write, unfinished_batch_status, AppState},
     config::{RegistersConfig, WriteRegister},
-    state::RuntimeState,
+    state::{downstream_command_fault_reason, timestamp_is_fresh, RuntimeState},
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -85,6 +85,34 @@ impl ModbusTcpStatus {
     }
 }
 
+pub fn validate_modbus_tcp_config(config: &ModbusTcpConfig) -> Result<()> {
+    if !config.enabled {
+        return Ok(());
+    }
+    config
+        .bind
+        .parse::<SocketAddr>()
+        .with_context(|| format!("Modbus TCP bind address is invalid: {}", config.bind))?;
+    if config.unit_id == 0 {
+        anyhow::bail!("Modbus TCP unit_id must be between 1 and 247");
+    }
+    if !(1..=253).contains(&config.max_pdu_bytes) {
+        anyhow::bail!("Modbus TCP max_pdu_bytes must be between 1 and 253");
+    }
+    if config.require_tls {
+        let Some((cert_path, key_path)) =
+            crate::tls::paired_paths(&config.tls_cert, &config.tls_key, "Modbus TCP TLS")?
+        else {
+            anyhow::bail!("Modbus TCP TLS is required but tls_cert/tls_key are not configured");
+        };
+        let _ = crate::tls::load_cert_chain(&cert_path)?;
+        let _ = crate::tls::load_private_key(&key_path)?;
+    } else {
+        let _ = crate::tls::paired_paths(&config.tls_cert, &config.tls_key, "Modbus TCP TLS")?;
+    }
+    Ok(())
+}
+
 type SharedModbusTcpStatus = Arc<RwLock<ModbusTcpStatus>>;
 
 static MODBUS_TCP_STATUS: std::sync::OnceLock<SharedModbusTcpStatus> = std::sync::OnceLock::new();
@@ -149,11 +177,12 @@ async fn run_modbus_tcp_server(
         let (stream, peer) = listener.accept().await?;
         let state = state.clone();
         let max_pdu_bytes = config.max_pdu_bytes.max(1);
+        let expected_unit_id = config.unit_id;
         if let Some(acceptor) = tls_acceptor.clone() {
             tokio::spawn(async move {
                 let result = async {
                     let stream = acceptor.accept(stream).await?;
-                    handle_modbus_tcp_stream(stream, state, max_pdu_bytes).await
+                    handle_modbus_tcp_stream(stream, state, max_pdu_bytes, expected_unit_id).await
                 }
                 .await;
                 if let Err(err) = result {
@@ -162,7 +191,9 @@ async fn run_modbus_tcp_server(
             });
         } else {
             tokio::spawn(async move {
-                if let Err(err) = handle_modbus_tcp_stream(stream, state, max_pdu_bytes).await {
+                if let Err(err) =
+                    handle_modbus_tcp_stream(stream, state, max_pdu_bytes, expected_unit_id).await
+                {
                     tracing::warn!("Modbus TCP client {peer} disconnected: {err}");
                 }
             });
@@ -190,6 +221,7 @@ pub async fn handle_modbus_tcp_stream<S>(
     mut stream: S,
     state: AppState,
     max_pdu_bytes: usize,
+    expected_unit_id: u8,
 ) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -208,6 +240,12 @@ where
         }
         let mut pdu = vec![0_u8; length - 1];
         stream.read_exact(&mut pdu).await?;
+        if unit_id != expected_unit_id {
+            let function = pdu.first().copied().unwrap_or(0);
+            let response = exception_response(function, 0x0B);
+            write_mbap_response(&mut stream, transaction_id, unit_id, &response).await?;
+            continue;
+        }
         let response = handle_modbus_tcp_pdu(&state, &pdu).await;
         write_mbap_response(&mut stream, transaction_id, unit_id, &response).await?;
     }
@@ -235,13 +273,30 @@ pub async fn handle_modbus_tcp_pdu(state: &AppState, pdu: &[u8]) -> Vec<u8> {
     }
     let result = match pdu[0] {
         0x01 => {
-            let runtime = state.runtime.read().await;
-            read_bool_points(pdu, coil_values(&runtime))
+            let runtime = state.runtime.read().await.clone();
+            match unfinished_batch_status(state, &runtime).await {
+                Ok(batch_status) => read_bool_points(
+                    pdu,
+                    coil_values(&runtime, batch_status.has_unfinished_batch(&runtime)),
+                ),
+                Err(_) => Err(exception(pdu[0], 0x04)),
+            }
         }
-        0x02 => read_bool_points(pdu, {
-            let runtime = state.runtime.read().await;
-            discrete_input_values(state, &runtime)
-        }),
+        0x02 => {
+            let runtime = state.runtime.read().await.clone();
+            match unfinished_batch_status(state, &runtime).await {
+                Ok(batch_status) => read_bool_points(
+                    pdu,
+                    discrete_input_values(
+                        state,
+                        &runtime,
+                        batch_status.has_unfinished_batch(&runtime),
+                        batch_status.recovery_required(),
+                    ),
+                ),
+                Err(_) => Err(exception(pdu[0], 0x04)),
+            }
+        }
         0x03 => read_holding_registers(state, pdu).await,
         0x06 => write_single_register(state, pdu).await,
         function => Err(ModbusException {
@@ -470,37 +525,57 @@ fn encode_raw(value: f64, scale: f64, offset: f64) -> Result<u16, ModbusExceptio
     Ok(raw as u16)
 }
 
-fn coil_values(runtime: &RuntimeState) -> BTreeMap<u16, bool> {
+fn coil_values(runtime: &RuntimeState, has_unfinished_batch: bool) -> BTreeMap<u16, bool> {
     BTreeMap::from([
         (0, runtime.auto_enabled),
         (1, runtime.manual_lock),
         (2, runtime.emergency_stop),
-        (3, runtime.active_batch_id.is_some()),
+        (3, has_unfinished_batch),
     ])
 }
 
-fn discrete_input_values(state: &AppState, runtime: &RuntimeState) -> BTreeMap<u16, bool> {
+fn discrete_input_values(
+    state: &AppState,
+    runtime: &RuntimeState,
+    has_unfinished_batch: bool,
+    batch_recovery_required: bool,
+) -> BTreeMap<u16, bool> {
     let sensor_fresh = runtime
         .latest_sample
         .as_ref()
         .map(|sample| {
-            Utc::now().signed_duration_since(sample.captured_at)
-                <= chrono::Duration::milliseconds(state.safety.control.sensor_timeout_ms)
+            timestamp_is_fresh(sample.captured_at, state.safety.control.sensor_timeout_ms)
         })
         .unwrap_or(false);
     let device_connected = runtime
         .device_status
         .as_ref()
-        .map(|device| device.connected)
-        .unwrap_or_else(|| runtime.latest_sample.is_some());
+        .map(|device| {
+            device.connected
+                && device.last_frame_ok
+                && downstream_command_fault_reason(device).is_none()
+                && device
+                    .last_seen_at
+                    .as_ref()
+                    .map(|last_seen| {
+                        timestamp_is_fresh(*last_seen, state.safety.control.sensor_timeout_ms)
+                    })
+                    .unwrap_or(false)
+        })
+        .unwrap_or_else(|| !state.safety.control.require_device_status_for_control && sensor_fresh);
     BTreeMap::from([
-        (0, device_connected),
+        (0, device_connected && !batch_recovery_required),
         (1, sensor_fresh),
         (
             2,
-            runtime.emergency_stop
-                || runtime.last_sensor_error.is_some()
-                || runtime.last_control_error.is_some(),
+            batch_recovery_required
+                || !alarms_for(
+                    state.safety.as_ref(),
+                    runtime,
+                    runtime.latest_sample.as_ref(),
+                    state.ai_memory.as_ref(),
+                )
+                .is_empty(),
         ),
         (
             3,
@@ -510,7 +585,7 @@ fn discrete_input_values(state: &AppState, runtime: &RuntimeState) -> BTreeMap<u
                 .map(|sample| sample.tilt_state != 0)
                 .unwrap_or(false),
         ),
-        (4, runtime.active_batch_id.is_some()),
+        (4, has_unfinished_batch),
     ])
 }
 

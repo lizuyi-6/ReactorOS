@@ -92,7 +92,13 @@ If the display user is not `pi`, edit `deploy/reactor-os-chromium.service` befor
 - `REACTOR_OS_WAIT_SECONDS`: startup wait timeout, default `60`; set `0` to skip.
 - `REACTOR_OS_LOW_LOAD`: default `1`; disables background Chromium networking,
   sync, extension, component update, translate/media features, and crash upload
-  work that is unnecessary for a closed industrial kiosk.
+  work that is unnecessary for a closed industrial kiosk. It also enables
+  low-end-device mode, caps renderer processes, and limits Chromium disk/media
+  cache for RK3568-class boards.
+- `REACTOR_OS_CHROMIUM_USER_DATA_DIR`: Chromium profile directory, default
+  `${XDG_RUNTIME_DIR:-/tmp}/reactor-os-chromium`.
+- `REACTOR_OS_CHROMIUM_CACHE_DIR`: Chromium cache directory, default
+  `${XDG_RUNTIME_DIR:-/tmp}/reactor-os-chromium-cache`.
 - `REACTOR_OS_DISABLE_GPU`: set `1` only when the board image has broken GPU
   acceleration. Keep unset on RK3568/LubanCat 2 unless rendering is unstable.
 - `CHROMIUM_BIN`: explicit browser binary path.

@@ -1,0 +1,1605 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:18098/",
+  "apiBase": "http://127.0.0.1:18098",
+  "strictAllBrowsers": true,
+  "captureScreenshots": false,
+  "browsers": [
+    {
+      "name": "chromium",
+      "engine": "chromium",
+      "channel": null,
+      "status": "ok",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        }
+      ],
+      "skipped": false,
+      "skipReason": null,
+      "ok": true
+    },
+    {
+      "name": "chrome",
+      "engine": "chromium",
+      "channel": "chrome",
+      "status": "ok",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        }
+      ],
+      "skipped": false,
+      "skipReason": null,
+      "ok": true
+    },
+    {
+      "name": "msedge",
+      "engine": "chromium",
+      "channel": "msedge",
+      "status": "ok",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        }
+      ],
+      "skipped": false,
+      "skipReason": null,
+      "ok": true
+    },
+    {
+      "name": "firefox",
+      "engine": "firefox",
+      "channel": null,
+      "status": "ok",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        }
+      ],
+      "skipped": false,
+      "skipReason": null,
+      "ok": true
+    },
+    {
+      "name": "webkit",
+      "engine": "webkit",
+      "channel": null,
+      "status": "ok",
+      "viewport": {
+        "width": 1366,
+        "height": 768
+      },
+      "pages": [
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "en",
+          "heading": "Realtime Monitor",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "en",
+          "heading": "Process Control",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "en",
+          "heading": "AI Decision",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "en",
+          "heading": "History Data",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "en",
+          "heading": "Audit Log",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "en",
+          "heading": "Modbus Debug",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "Integration Surface",
+            "Base inference",
+            "LoRA inference",
+            "PRD LoRA/RK"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "en",
+          "heading": "System Settings",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/monitor",
+          "name": "monitor",
+          "language": "zh",
+          "heading": "实时监控",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/control",
+          "name": "control",
+          "language": "zh",
+          "heading": "参数配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/ai",
+          "name": "ai",
+          "language": "zh",
+          "heading": "AI 决策",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/history",
+          "name": "history",
+          "language": "zh",
+          "heading": "历史数据",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/audit",
+          "name": "audit",
+          "language": "zh",
+          "heading": "审计日志",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/modbus",
+          "name": "modbus",
+          "language": "zh",
+          "heading": "Modbus 调试",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [
+            "集成接口状态",
+            "基础模型入口",
+            "LoRA 推理闭环",
+            "PRD LoRA/RK 闭环"
+          ],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        },
+        {
+          "route": "/settings",
+          "name": "settings",
+          "language": "zh",
+          "heading": "系统配置",
+          "opened": true,
+          "headingFound": true,
+          "requiredFound": [],
+          "requiredMissing": [],
+          "renderPlaceholdersAbsent": true,
+          "overflow": {
+            "docScroll": 1366,
+            "docClient": 1366,
+            "contentScroll": 1098,
+            "contentClient": 1098,
+            "stackScroll": 1050,
+            "stackClient": 1050
+          },
+          "screenshot": null,
+          "ok": true
+        }
+      ],
+      "skipped": false,
+      "skipReason": null,
+      "ok": true
+    }
+  ],
+  "unexpectedConsoleMessages": []
+}

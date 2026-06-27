@@ -15,16 +15,69 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
+use tokio::sync::Mutex as AsyncMutex;
+use tokio_modbus::{
+    client::{rtu, Reader, Writer},
+    Slave,
+};
+use tokio_serial::{
+    DataBits as TokioDataBits, Parity as TokioParity, SerialPortBuilderExt,
+    StopBits as TokioStopBits,
+};
 
 use crate::{
     config::{
         DeviceConfig, DeviceMode, JsonBridgeAdcSensor, JsonBridgeConfig, ReadRegister,
         SafetyConfig, WriteRegister,
     },
-    control::{clamp_operator_targets, SafeCommand},
+    control::SafeCommand,
     number::round2,
-    state::{fit_tilt_angle_deg, ControlTargets, DeviceStatusSnapshot, SensorSnapshot},
+    state::{
+        fit_tilt_angle_deg, timestamp_age_ms, ControlTargets, DeviceStatusSnapshot, SensorSnapshot,
+    },
 };
+
+/// Command-level handshake outcome. The upper computer treats a downstream
+/// write as complete only when the device echoes the same `request_id` with a
+/// positive ACK. This closes the fire-and-forget blind spot of `write_targets`
+/// (which returns Ok as soon as bytes are flushed / a file is written) and the
+/// stale-ACK mismatch risk of the next-round `last_command_ok` poll. See
+/// `docs/command_ack_handshake.md`.
+#[derive(Debug, Clone)]
+pub struct CommandAck {
+    /// `request_id` echoed by the downstream; must equal the id generated for
+    /// this command, else the ACK is stale and must be ignored.
+    pub request_id: String,
+    pub status: AckStatus,
+    /// Targets the downstream reports it actually accepted/applied (after its
+    /// own clamping). `None` when the protocol does not echo applied values.
+    /// Used to detect a silent clamp or an applied-value mismatch (CLAUDE 3.2).
+    pub accepted_targets: Option<ControlTargets>,
+}
+
+#[derive(Debug, Clone)]
+pub enum AckStatus {
+    /// Downstream echoed the request_id and confirmed execution.
+    Confirmed,
+    /// Downstream received the command but refused (out-of-range, busy, fault).
+    Rejected(String),
+    /// No matching ACK within the handshake timeout — delivery unconfirmed;
+    /// the control loop treats this as a fail-closed condition.
+    Timeout,
+    /// Device mode has no real handshake and fell back to `write_targets`.
+    /// Treated as a configuration error when `require_command_ack` is on.
+    Unverified,
+}
+
+impl CommandAck {
+    pub fn unverified(request_id: impl Into<String>) -> Self {
+        Self {
+            request_id: request_id.into(),
+            status: AckStatus::Unverified,
+            accepted_targets: None,
+        }
+    }
+}
 
 #[async_trait::async_trait]
 pub trait ReactorDevice: Send + Sync {
@@ -37,6 +90,22 @@ pub trait ReactorDevice: Send + Sync {
         Ok((sample, status))
     }
     async fn write_targets(&self, command: &SafeCommand) -> Result<()>;
+    /// Command-level handshake: write the command and wait for a matching ACK.
+    ///
+    /// Default implementation falls back to the fire-and-forget `write_targets`
+    /// and reports `Unverified`; real device modes override to perform an
+    /// explicit ACK exchange. When `require_command_ack` is enabled the control
+    /// loop treats `Unverified` as a configuration error and fails closed.
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let _ = timeout;
+        self.write_targets(command).await?;
+        Ok(CommandAck::unverified(request_id))
+    }
     async fn read_device_status(&self) -> Result<Option<DeviceStatusSnapshot>> {
         Ok(None)
     }
@@ -114,11 +183,27 @@ impl ReactorDevice for PipelineDevice {
     async fn write_targets(&self, _command: &SafeCommand) -> Result<()> {
         Ok(())
     }
+
+    async fn write_targets_acknowledged(
+        &self,
+        _command: &SafeCommand,
+        request_id: &str,
+        _timeout: Duration,
+    ) -> Result<CommandAck> {
+        // Pipeline mode never emits commands (an external controller owns
+        // actuation), so there is nothing to confirm; report Confirmed with no
+        // applied-targets echo.
+        Ok(CommandAck {
+            request_id: request_id.to_string(),
+            status: AckStatus::Confirmed,
+            accepted_targets: None,
+        })
+    }
 }
 
 struct ModbusRtuDevice {
     config: DeviceConfig,
-    port: Arc<StdMutex<Box<dyn SerialPort>>>,
+    client: Arc<AsyncMutex<tokio_modbus::client::Context>>,
 }
 
 struct Esp32SerialDevice {
@@ -129,8 +214,24 @@ struct Esp32SerialDevice {
 struct JsonBridgeDevice {
     config: JsonBridgeConfig,
     last_commanded_shake_speed_cpm: Arc<StdMutex<Option<f64>>>,
-    last_temperature_command: Arc<StdMutex<Option<f64>>>,
     last_stirrer_command: Arc<StdMutex<Option<f64>>>,
+}
+
+#[derive(Debug, Default)]
+struct JsonBridgePendingCacheUpdate {
+    shake_speed_cpm: Option<f64>,
+    stirrer_rpm: Option<f64>,
+}
+
+struct JsonBridgePendingControl {
+    control: JsonBridgeControl,
+    cache_update: JsonBridgePendingCacheUpdate,
+}
+
+struct JsonBridgePendingComponentOutcome {
+    response: ComponentControlOutcome,
+    command: Option<JsonBridgeControl>,
+    cache_update: JsonBridgePendingCacheUpdate,
 }
 
 impl Esp32SerialDevice {
@@ -145,11 +246,12 @@ impl Esp32SerialDevice {
 
 impl ModbusRtuDevice {
     fn new(config: DeviceConfig) -> Result<Self> {
-        let port = open_serial_port(&config)?;
+        let serial = open_tokio_serial_port(&config)?;
+        let client = rtu::attach_slave(serial, Slave(config.modbus.slave_id));
 
         Ok(Self {
             config,
-            port: Arc::new(StdMutex::new(port)),
+            client: Arc::new(AsyncMutex::new(client)),
         })
     }
 }
@@ -159,7 +261,6 @@ impl JsonBridgeDevice {
         Self {
             config,
             last_commanded_shake_speed_cpm: Arc::new(StdMutex::new(None)),
-            last_temperature_command: Arc::new(StdMutex::new(None)),
             last_stirrer_command: Arc::new(StdMutex::new(None)),
         }
     }
@@ -169,70 +270,134 @@ impl JsonBridgeDevice {
 impl ReactorDevice for ModbusRtuDevice {
     async fn read_sample(&self) -> Result<SensorSnapshot> {
         let config = self.config.clone();
-        let port = Arc::clone(&self.port);
-        tokio::task::spawn_blocking(move || {
-            let mut port = port
-                .lock()
-                .map_err(|_| anyhow!("serial port lock poisoned"))?;
-            let temperature_raw = read_holding_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.temperature_c.address,
-            )?;
-            let stirrer_raw = read_holding_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.stirrer_rpm.address,
-            )?;
-            let temperature_c =
-                decode_read_register(temperature_raw, &config.modbus.registers.temperature_c)?;
-            let stirrer_rpm =
-                decode_read_register(stirrer_raw, &config.modbus.registers.stirrer_rpm)?;
-            Ok(SensorSnapshot {
-                temperature_c,
-                pressure_mpa: 0.0,
-                stirrer_rpm,
-                shake_speed_cpm: 0.0,
-                tilt_state: 0,
-                tilt_angle_deg: 0.0,
-                flow_rate_l_min: 0.0,
-                product_concentration_percent: 0.0,
-                ph: 7.0,
-                captured_at: Utc::now(),
-            })
+        let mut client = self.client.lock().await;
+        let temperature_raw =
+            read_holding_register(&mut client, config.modbus.registers.temperature_c.address)
+                .await?;
+        let stirrer_raw =
+            read_holding_register(&mut client, config.modbus.registers.stirrer_rpm.address).await?;
+        let temperature_c =
+            decode_read_register(temperature_raw, &config.modbus.registers.temperature_c)?;
+        let stirrer_rpm = decode_read_register(stirrer_raw, &config.modbus.registers.stirrer_rpm)?;
+        Ok(SensorSnapshot {
+            temperature_c,
+            pressure_mpa: 0.0,
+            stirrer_rpm,
+            shake_speed_cpm: 0.0,
+            tilt_state: 0,
+            tilt_angle_deg: 0.0,
+            flow_rate_l_min: 0.0,
+            product_concentration_percent: 0.0,
+            ph: 7.0,
+            captured_at: Utc::now(),
         })
-        .await?
     }
 
     async fn write_targets(&self, command: &SafeCommand) -> Result<()> {
         let config = self.config.clone();
-        let port = Arc::clone(&self.port);
-        let command = command.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut port = port
-                .lock()
-                .map_err(|_| anyhow!("serial port lock poisoned"))?;
-            write_single_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.target_temperature_c.address,
-                encode_write_register(
-                    command.target_temperature_c,
-                    &config.modbus.registers.target_temperature_c,
-                )?,
-            )?;
-            write_single_register(
-                &mut **port,
-                config.modbus.slave_id,
-                config.modbus.registers.target_stirrer_rpm.address,
-                encode_write_register(
-                    command.target_stirrer_rpm,
-                    &config.modbus.registers.target_stirrer_rpm,
-                )?,
-            )?;
-            Ok(())
+        let mut client = self.client.lock().await;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+            encode_write_register(
+                command.target_temperature_c,
+                &config.modbus.registers.target_temperature_c,
+            )?,
+        )
+        .await?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+            encode_write_register(
+                command.target_stirrer_rpm,
+                &config.modbus.registers.target_stirrer_rpm,
+            )?,
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        _timeout: Duration,
+    ) -> Result<CommandAck> {
+        // Modbus FC06 is already a request-response: each write_single_register
+        // Ok means the slave echoed the write back (transport ACK). The
+        // handshake adds a read-back verification — re-reading the target
+        // registers and confirming the slave now HOLDS exactly the raw we wrote.
+        // A mismatch means the slave rejected/clamped/overwrote the value: fail
+        // closed (Rejected). request_id has no Modbus wire representation (the
+        // transaction id is owned by tokio-modbus), so it is only carried in the
+        // CommandAck for audit correlation. Read-back is instantaneous, hence
+        // timeout is unused.
+        let config = self.config.clone();
+        let mut client = self.client.lock().await;
+        let expected_temp_raw = encode_write_register(
+            command.target_temperature_c,
+            &config.modbus.registers.target_temperature_c,
+        )?;
+        let expected_stir_raw = encode_write_register(
+            command.target_stirrer_rpm,
+            &config.modbus.registers.target_stirrer_rpm,
+        )?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+            expected_temp_raw,
+        )
+        .await?;
+        write_single_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+            expected_stir_raw,
+        )
+        .await?;
+        let held_temp_raw = read_holding_register(
+            &mut client,
+            config.modbus.registers.target_temperature_c.address,
+        )
+        .await?;
+        let held_stir_raw = read_holding_register(
+            &mut client,
+            config.modbus.registers.target_stirrer_rpm.address,
+        )
+        .await?;
+        if held_temp_raw != expected_temp_raw || held_stir_raw != expected_stir_raw {
+            let held_temp =
+                decode_write_register(held_temp_raw, &config.modbus.registers.target_temperature_c);
+            let held_stir =
+                decode_write_register(held_stir_raw, &config.modbus.registers.target_stirrer_rpm);
+            return Ok(CommandAck {
+                request_id: request_id.to_string(),
+                status: AckStatus::Rejected(format!(
+                    "modbus read-back mismatch: target_temperature_c held {held_temp} sent {}, target_stirrer_rpm held {held_stir} sent {}",
+                    command.target_temperature_c, command.target_stirrer_rpm
+                )),
+                accepted_targets: None,
+            });
+        }
+        let accepted = ControlTargets {
+            temperature_c: decode_write_register(
+                held_temp_raw,
+                &config.modbus.registers.target_temperature_c,
+            ),
+            heat_time_s: command.heat_time_s,
+            hold_time_s: command.hold_time_s,
+            cool_time_s: command.cool_time_s,
+            stirrer_rpm: decode_write_register(
+                held_stir_raw,
+                &config.modbus.registers.target_stirrer_rpm,
+            ),
+            shake_speed_cpm: command.target_shake_speed_cpm,
+            target_pressure_mpa: command.target_pressure_mpa,
+        };
+        Ok(CommandAck {
+            request_id: request_id.to_string(),
+            status: AckStatus::Confirmed,
+            accepted_targets: Some(accepted),
         })
-        .await?
     }
 
     fn control_capabilities(&self) -> Vec<DeviceComponentCapability> {
@@ -324,6 +489,80 @@ impl ReactorDevice for Esp32SerialDevice {
         .await?
     }
 
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let config = self.config.clone();
+        let port = Arc::clone(&self.port);
+        let command = command.clone();
+        let request_id = request_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            let mut port = port
+                .lock()
+                .map_err(|_| anyhow!("serial port lock poisoned"))?;
+            // Send the command carrying our rid so the downstream can echo it.
+            let frame = build_esp32_command_with_rid(
+                &config.esp32.command_prefix,
+                &command,
+                &request_id,
+                config.esp32.checksum,
+            );
+            port.write_all(frame.as_bytes())?;
+            port.flush()?;
+            // Read on an independent cloned reader whose timeout is set short
+            // (100 ms) so the sample-path reader is unaffected and we never
+            // block forever on a silent line. Loop until an ACK frame echoing
+            // our rid arrives, or the handshake window expires. Sample frames
+            // and unparsable lines are skipped.
+            let mut reader_port = port.try_clone()?;
+            reader_port.set_timeout(Duration::from_millis(100))?;
+            let mut reader = BufReader::new(reader_port);
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(CommandAck {
+                        request_id,
+                        status: AckStatus::Timeout,
+                        accepted_targets: None,
+                    });
+                }
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Ok(_) => {}
+                }
+                if let Ok(ack) =
+                    parse_esp32_ack_frame(&line, &config.esp32.frame_prefix, config.esp32.checksum)
+                {
+                    if ack.request_id == request_id {
+                        let status = if ack.ok {
+                            AckStatus::Confirmed
+                        } else {
+                            AckStatus::Rejected(
+                                ack.error
+                                    .unwrap_or_else(|| "downstream rejected command".to_string()),
+                            )
+                        };
+                        return Ok(CommandAck {
+                            request_id,
+                            status,
+                            accepted_targets: None,
+                        });
+                    }
+                    // ACK for a different (stale) rid: keep waiting for ours.
+                }
+                // Otherwise a sample frame or malformed line: skip, keep waiting.
+            }
+        })
+        .await?
+    }
+
     fn control_capabilities(&self) -> Vec<DeviceComponentCapability> {
         vec![
             component_capability(
@@ -404,7 +643,6 @@ impl ReactorDevice for JsonBridgeDevice {
         let config = self.config.clone();
         let command = command.clone();
         let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
-        let last_temperature_command = Arc::clone(&self.last_temperature_command);
         let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
         tokio::task::spawn_blocking(move || {
             let current = read_json_bridge_state(&config.state_path)?;
@@ -413,13 +651,104 @@ impl ReactorDevice for JsonBridgeDevice {
                 &current,
                 &command,
                 &last_commanded_shake_speed_cpm,
-                &last_temperature_command,
                 &last_stirrer_command,
             )?;
             if let Some(control) = control {
-                write_json_bridge_control(&config.control_path, &control)?;
+                write_json_bridge_control(&config.control_path, &control.control)?;
+                apply_json_bridge_cache_update(
+                    &control.cache_update,
+                    &last_commanded_shake_speed_cpm,
+                    &last_stirrer_command,
+                )?;
             }
             Ok(())
+        })
+        .await?
+    }
+
+    async fn write_targets_acknowledged(
+        &self,
+        command: &SafeCommand,
+        request_id: &str,
+        timeout: Duration,
+    ) -> Result<CommandAck> {
+        let config = self.config.clone();
+        let command = command.clone();
+        let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
+        let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
+        let request_id = request_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            // Reuse the SafeCommand -> atomic-control conversion, but override
+            // the request_id so the downstream echoes back the id the upper
+            // computer generated for this handshake (not the bridge's internal
+            // sequence). Then poll state.json until the downstream reports it
+            // processed this exact request_id.
+            let current = read_json_bridge_state(&config.state_path)?;
+            let pending = next_json_bridge_control(
+                &config,
+                &current,
+                &command,
+                &last_commanded_shake_speed_cpm,
+                &last_stirrer_command,
+            )?;
+            let Some(pending) = pending else {
+                // No atomic command to send (all targets within deadband): the
+                // downstream has nothing to apply, so the handshake is trivially
+                // confirmed.
+                return Ok(CommandAck {
+                    request_id,
+                    status: AckStatus::Confirmed,
+                    accepted_targets: None,
+                });
+            };
+            let mut control = pending.control;
+            control.request_id = request_id.clone();
+            write_json_bridge_control(&config.control_path, &control)?;
+            apply_json_bridge_cache_update(
+                &pending.cache_update,
+                &last_commanded_shake_speed_cpm,
+                &last_stirrer_command,
+            )?;
+
+            // Poll state.json: Confirmed when the downstream echoes our rid with
+            // ok=true, Rejected when ok=false, Timeout when no matching echo
+            // arrives within the handshake window.
+            let deadline = std::time::Instant::now() + timeout;
+            loop {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(CommandAck {
+                        request_id,
+                        status: AckStatus::Timeout,
+                        accepted_targets: None,
+                    });
+                }
+                if let Ok(state) = read_json_bridge_state(&config.state_path) {
+                    if state.last_command_request_id.as_deref() == Some(request_id.as_str()) {
+                        match state.last_command_ok {
+                            Some(true) => {
+                                return Ok(CommandAck {
+                                    request_id,
+                                    status: AckStatus::Confirmed,
+                                    accepted_targets: None,
+                                });
+                            }
+                            Some(false) => {
+                                let detail = state.last_command_error.unwrap_or_else(|| {
+                                    "downstream rejected command without an error detail"
+                                        .to_string()
+                                });
+                                return Ok(CommandAck {
+                                    request_id,
+                                    status: AckStatus::Rejected(detail),
+                                    accepted_targets: None,
+                                });
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
         })
         .await?
     }
@@ -488,9 +817,21 @@ impl ReactorDevice for JsonBridgeDevice {
         let targets = targets.clone();
         let safety = safety.clone();
         let last_commanded_shake_speed_cpm = Arc::clone(&self.last_commanded_shake_speed_cpm);
-        let last_temperature_command = Arc::clone(&self.last_temperature_command);
         let last_stirrer_command = Arc::clone(&self.last_stirrer_command);
         tokio::task::spawn_blocking(move || {
+            if json_bridge_direct_control_is_risk_reducing(&request) {
+                let outcome =
+                    json_bridge_component_control_outcome_without_state(&config, &request)?;
+                if let Some(control) = &outcome.command {
+                    write_json_bridge_control(&config.control_path, control)?;
+                    apply_json_bridge_cache_update(
+                        &outcome.cache_update,
+                        &last_commanded_shake_speed_cpm,
+                        &last_stirrer_command,
+                    )?;
+                }
+                return Ok(outcome.response);
+            }
             let state = read_json_bridge_state(&config.state_path)?;
             validate_json_bridge_state(&config, &state)?;
             let outcome = json_bridge_component_control_outcome(
@@ -500,13 +841,17 @@ impl ReactorDevice for JsonBridgeDevice {
                 &targets,
                 &safety,
                 &last_commanded_shake_speed_cpm,
-                &last_temperature_command,
                 &last_stirrer_command,
             )?;
             if let Some(control) = &outcome.command {
                 write_json_bridge_control(&config.control_path, control)?;
+                apply_json_bridge_cache_update(
+                    &outcome.cache_update,
+                    &last_commanded_shake_speed_cpm,
+                    &last_stirrer_command,
+                )?;
             }
-            Ok(outcome)
+            Ok(outcome.response)
         })
         .await?
         .map(Some)
@@ -564,13 +909,23 @@ fn targets_for_component(
     let mut next = current.clone();
     match (command.component_id.as_str(), command.action.as_str()) {
         ("temperature_controller", "set_target_temperature") => {
-            next.temperature_c = component_number(command, "value")?;
+            next.temperature_c = component_number_in_range(
+                command,
+                "value",
+                safety.temperature.min_c,
+                safety.temperature.max_c,
+            )?;
         }
         ("stirrer_motor", "set_rpm") => {
-            next.stirrer_rpm = component_number(command, "value")?;
+            next.stirrer_rpm = component_number_in_range(
+                command,
+                "value",
+                safety.stirrer.min_rpm,
+                safety.stirrer.max_rpm,
+            )?;
         }
         ("shake_stepper", "set_speed") => {
-            next.shake_speed_cpm = component_number(command, "value")?;
+            next.shake_speed_cpm = component_number_in_range(command, "value", 0.0, 60.0)?;
         }
         ("shake_stepper", "start") => {
             if next.shake_speed_cpm <= 0.01 {
@@ -588,7 +943,7 @@ fn targets_for_component(
             ));
         }
     }
-    Ok(clamp_operator_targets(safety, next))
+    Ok(round_component_targets(next))
 }
 
 fn component_number(command: &ComponentControlCommand, field: &str) -> Result<f64> {
@@ -605,6 +960,33 @@ fn component_number(command: &ComponentControlCommand, field: &str) -> Result<f6
         return Err(anyhow!("component control {field} must be finite"));
     }
     Ok(number)
+}
+
+fn component_number_in_range(
+    command: &ComponentControlCommand,
+    field: &str,
+    min: f64,
+    max: f64,
+) -> Result<f64> {
+    let number = component_number(command, field)?;
+    if !(min..=max).contains(&number) {
+        return Err(anyhow!(
+            "component control {field} must be between {min} and {max}"
+        ));
+    }
+    Ok(number)
+}
+
+fn round_component_targets(targets: ControlTargets) -> ControlTargets {
+    ControlTargets {
+        temperature_c: round2(targets.temperature_c),
+        heat_time_s: round2(targets.heat_time_s),
+        hold_time_s: round2(targets.hold_time_s),
+        cool_time_s: round2(targets.cool_time_s),
+        stirrer_rpm: round2(targets.stirrer_rpm),
+        shake_speed_cpm: round2(targets.shake_speed_cpm),
+        target_pressure_mpa: round2(targets.target_pressure_mpa),
+    }
 }
 
 fn safe_command_from_targets(targets: &ControlTargets, reason: &str) -> SafeCommand {
@@ -627,16 +1009,19 @@ fn json_bridge_component_control_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     if let Some(control) = json_bridge_direct_component_control(config, request) {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: Some(control.clone()),
+                targets: None,
+                message: "component command written to json bridge control.json".to_string(),
+            },
             command: Some(control),
-            targets: None,
-            message: "component command written to json bridge control.json".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     }
 
@@ -657,7 +1042,6 @@ fn json_bridge_component_control_outcome(
                 targets,
                 safety,
                 last_commanded_shake_speed_cpm,
-                last_temperature_command,
                 last_stirrer_command,
             )
         }
@@ -715,6 +1099,56 @@ fn json_bridge_direct_component_control(
     Some(control)
 }
 
+fn json_bridge_direct_control_is_risk_reducing(request: &ComponentControlCommand) -> bool {
+    matches!(
+        (request.component_id.as_str(), request.action.as_str()),
+        ("shake_stepper", "stop") | ("heater_relay", "off")
+    )
+}
+
+fn json_bridge_component_control_outcome_without_state(
+    config: &JsonBridgeConfig,
+    request: &ComponentControlCommand,
+) -> Result<JsonBridgePendingComponentOutcome> {
+    let Some(control) = json_bridge_direct_component_control(config, request) else {
+        return Err(anyhow!(
+            "component control {}:{} requires valid json bridge state",
+            request.component_id,
+            request.action
+        ));
+    };
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.clone()),
+            targets: None,
+            message: "risk-reducing component command written to json bridge control.json"
+                .to_string(),
+        },
+        command: Some(control),
+        cache_update: JsonBridgePendingCacheUpdate::default(),
+    })
+}
+
+fn apply_json_bridge_cache_update(
+    update: &JsonBridgePendingCacheUpdate,
+    last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
+    last_stirrer_command: &StdMutex<Option<f64>>,
+) -> Result<()> {
+    if let Some(value) = update.shake_speed_cpm {
+        *last_commanded_shake_speed_cpm
+            .lock()
+            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? = Some(value);
+    }
+    if let Some(value) = update.stirrer_rpm {
+        *last_stirrer_command
+            .lock()
+            .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? = Some(value);
+    }
+    Ok(())
+}
+
 fn json_bridge_stirrer_component_outcome(
     config: &JsonBridgeConfig,
     state: &JsonBridgeState,
@@ -722,7 +1156,7 @@ fn json_bridge_stirrer_component_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     let next_targets = targets_for_component(request, targets, safety)?;
     let safe = safe_command_from_targets(&next_targets, "manual component control");
     let rpm = safe.target_stirrer_rpm;
@@ -733,12 +1167,16 @@ fn json_bridge_stirrer_component_outcome(
         .map(|current| (rpm - current).abs() <= 0.01)
         .unwrap_or(false)
     {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: None,
+                targets: Some(safe),
+                message: "stirrer target already matches json bridge state".to_string(),
+            },
             command: None,
-            targets: Some(safe),
-            message: "stirrer target already matches json bridge state".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     }
     let control = build_json_bridge_control(
@@ -747,15 +1185,19 @@ fn json_bridge_stirrer_component_outcome(
         Some(serde_json::json!(rpm)),
         Some("stirrer_motor"),
     );
-    *last_stirrer_command
-        .lock()
-        .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? = Some(rpm);
-    Ok(ComponentControlOutcome {
-        component_id: request.component_id.clone(),
-        action: request.action.clone(),
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.clone()),
+            targets: Some(safe),
+            message: "stirrer RPM written to json bridge control.json".to_string(),
+        },
         command: Some(control),
-        targets: Some(safe),
-        message: "stirrer RPM written to json bridge control.json".to_string(),
+        cache_update: JsonBridgePendingCacheUpdate {
+            stirrer_rpm: Some(rpm),
+            ..JsonBridgePendingCacheUpdate::default()
+        },
     })
 }
 
@@ -766,9 +1208,8 @@ fn json_bridge_target_component_outcome(
     targets: &ControlTargets,
     safety: &SafetyConfig,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<ComponentControlOutcome> {
+) -> Result<JsonBridgePendingComponentOutcome> {
     let next_targets = targets_for_component(request, targets, safety)?;
     let safe = safe_command_from_targets(&next_targets, "manual component control");
     let Some(control) = next_json_bridge_control(
@@ -776,24 +1217,31 @@ fn json_bridge_target_component_outcome(
         state,
         &safe,
         last_commanded_shake_speed_cpm,
-        last_temperature_command,
         last_stirrer_command,
     )?
     else {
-        return Ok(ComponentControlOutcome {
-            component_id: request.component_id.clone(),
-            action: request.action.clone(),
+        return Ok(JsonBridgePendingComponentOutcome {
+            response: ComponentControlOutcome {
+                component_id: request.component_id.clone(),
+                action: request.action.clone(),
+                command: None,
+                targets: Some(safe),
+                message: "component target already inside json bridge deadband".to_string(),
+            },
             command: None,
-            targets: Some(safe),
-            message: "component target already inside json bridge deadband".to_string(),
+            cache_update: JsonBridgePendingCacheUpdate::default(),
         });
     };
-    Ok(ComponentControlOutcome {
-        component_id: request.component_id.clone(),
-        action: request.action.clone(),
-        command: Some(control),
-        targets: Some(safe),
-        message: "component target translated to json bridge command".to_string(),
+    Ok(JsonBridgePendingComponentOutcome {
+        response: ComponentControlOutcome {
+            component_id: request.component_id.clone(),
+            action: request.action.clone(),
+            command: Some(control.control.clone()),
+            targets: Some(safe),
+            message: "component target translated to json bridge command".to_string(),
+        },
+        command: Some(control.control),
+        cache_update: control.cache_update,
     })
 }
 
@@ -936,7 +1384,7 @@ pub fn write_json_bridge_control(path: &Path, control: &JsonBridgeControl) -> Re
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create json bridge dir {}", parent.display()))?;
     }
-    let tmp_path = path.with_extension("json.tmp");
+    let tmp_path = json_bridge_control_tmp_path(path, control);
     let bytes = serde_json::to_vec_pretty(control)?;
     {
         let mut file = File::create(&tmp_path)
@@ -952,36 +1400,134 @@ pub fn write_json_bridge_control(path: &Path, control: &JsonBridgeControl) -> Re
             tmp_path.display()
         )
     })?;
+    sync_json_bridge_parent_dir(parent)?;
+    Ok(())
+}
+
+fn json_bridge_control_tmp_path(path: &Path, control: &JsonBridgeControl) -> std::path::PathBuf {
+    static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+    let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("control.json");
+    let request_id = sanitize_tmp_path_segment(&control.request_id);
+    path.with_file_name(format!("{file_name}.{request_id}.{sequence}.tmp"))
+}
+
+fn sanitize_tmp_path_segment(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    if sanitized.is_empty() {
+        "request".to_string()
+    } else {
+        sanitized
+    }
+}
+
+#[cfg(unix)]
+fn sync_json_bridge_parent_dir(parent: Option<&Path>) -> Result<()> {
+    if let Some(parent) = parent {
+        let directory = File::open(parent)
+            .with_context(|| format!("failed to open json bridge dir {}", parent.display()))?;
+        directory
+            .sync_all()
+            .with_context(|| format!("failed to sync json bridge dir {}", parent.display()))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_json_bridge_parent_dir(_parent: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
 fn open_serial_port(config: &DeviceConfig) -> Result<Box<dyn SerialPort>> {
-    let parity = match config.serial.parity.as_str() {
-        "N" | "n" => Parity::None,
-        "E" | "e" => Parity::Even,
-        "O" | "o" => Parity::Odd,
-        other => return Err(anyhow!("unsupported serial parity {other}")),
-    };
-    let stop_bits = match config.serial.stopbits {
-        1 => StopBits::One,
-        2 => StopBits::Two,
-        other => return Err(anyhow!("unsupported serial stopbits {other}")),
-    };
-    let data_bits = match config.serial.bytesize {
-        5 => DataBits::Five,
-        6 => DataBits::Six,
-        7 => DataBits::Seven,
-        8 => DataBits::Eight,
-        other => return Err(anyhow!("unsupported serial bytesize {other}")),
-    };
-
     serialport::new(&config.serial.port, config.serial.baudrate)
         .timeout(Duration::from_millis(config.serial.timeout_ms))
-        .parity(parity)
-        .stop_bits(stop_bits)
-        .data_bits(data_bits)
+        .parity(serial_parity(&config.serial.parity)?)
+        .stop_bits(serial_stop_bits(config.serial.stopbits)?)
+        .data_bits(serial_data_bits(config.serial.bytesize)?)
         .open()
         .map_err(|err| anyhow!("failed to open serial port {}: {err}", config.serial.port))
+}
+
+fn open_tokio_serial_port(config: &DeviceConfig) -> Result<tokio_serial::SerialStream> {
+    tokio_serial::new(&config.serial.port, config.serial.baudrate)
+        .timeout(Duration::from_millis(config.serial.timeout_ms))
+        .parity(tokio_serial_parity(&config.serial.parity)?)
+        .stop_bits(tokio_serial_stop_bits(config.serial.stopbits)?)
+        .data_bits(tokio_serial_data_bits(config.serial.bytesize)?)
+        .open_native_async()
+        .map_err(|err| {
+            anyhow!(
+                "failed to open async Modbus RTU serial port {}: {err}",
+                config.serial.port
+            )
+        })
+}
+
+fn serial_parity(value: &str) -> Result<Parity> {
+    match value {
+        "N" | "n" => Ok(Parity::None),
+        "E" | "e" => Ok(Parity::Even),
+        "O" | "o" => Ok(Parity::Odd),
+        other => Err(anyhow!("unsupported serial parity {other}")),
+    }
+}
+
+fn serial_stop_bits(value: u8) -> Result<StopBits> {
+    match value {
+        1 => Ok(StopBits::One),
+        2 => Ok(StopBits::Two),
+        other => Err(anyhow!("unsupported serial stopbits {other}")),
+    }
+}
+
+fn serial_data_bits(value: u8) -> Result<DataBits> {
+    match value {
+        5 => Ok(DataBits::Five),
+        6 => Ok(DataBits::Six),
+        7 => Ok(DataBits::Seven),
+        8 => Ok(DataBits::Eight),
+        other => Err(anyhow!("unsupported serial bytesize {other}")),
+    }
+}
+
+fn tokio_serial_parity(value: &str) -> Result<TokioParity> {
+    match value {
+        "N" | "n" => Ok(TokioParity::None),
+        "E" | "e" => Ok(TokioParity::Even),
+        "O" | "o" => Ok(TokioParity::Odd),
+        other => Err(anyhow!("unsupported serial parity {other}")),
+    }
+}
+
+fn tokio_serial_stop_bits(value: u8) -> Result<TokioStopBits> {
+    match value {
+        1 => Ok(TokioStopBits::One),
+        2 => Ok(TokioStopBits::Two),
+        other => Err(anyhow!("unsupported serial stopbits {other}")),
+    }
+}
+
+fn tokio_serial_data_bits(value: u8) -> Result<TokioDataBits> {
+    match value {
+        5 => Ok(TokioDataBits::Five),
+        6 => Ok(TokioDataBits::Six),
+        7 => Ok(TokioDataBits::Seven),
+        8 => Ok(TokioDataBits::Eight),
+        other => Err(anyhow!("unsupported serial bytesize {other}")),
+    }
 }
 
 fn read_json_bridge_state(path: &Path) -> Result<JsonBridgeState> {
@@ -999,9 +1545,13 @@ fn validate_json_bridge_state(config: &JsonBridgeConfig, state: &JsonBridgeState
     }
     let last_seen = timestamp_ms_to_utc(state.last_seen_ms)
         .ok_or_else(|| anyhow!("json bridge state last_seen_ms is out of range"))?;
-    let age = Utc::now()
-        .signed_duration_since(last_seen)
-        .num_milliseconds();
+    let age = timestamp_age_ms(last_seen);
+    if age < 0 {
+        return Err(anyhow!(
+            "json bridge state timestamp is {} ms in the future; check controller clock synchronization",
+            -age
+        ));
+    }
     if age > config.max_state_age_ms {
         return Err(anyhow!(
             "json bridge state stale; last_seen_ms is {age} ms old, max {} ms",
@@ -1016,9 +1566,8 @@ fn next_json_bridge_control(
     state: &JsonBridgeState,
     command: &SafeCommand,
     last_commanded_shake_speed_cpm: &StdMutex<Option<f64>>,
-    last_temperature_command: &StdMutex<Option<f64>>,
     last_stirrer_command: &StdMutex<Option<f64>>,
-) -> Result<Option<JsonBridgeControl>> {
+) -> Result<Option<JsonBridgePendingControl>> {
     if let Err(err) = validate_json_bridge_state(config, state) {
         return Err(anyhow!(
             "json bridge refuses control because state is not valid: {err}"
@@ -1027,27 +1576,32 @@ fn next_json_bridge_control(
 
     let motor = bit_or_field(state.motor, state.status, 1).unwrap_or(0);
     if command.target_shake_speed_cpm <= 0.01 && motor != 0 {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? = Some(0.0);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "motor",
-            Some(serde_json::json!(0)),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "motor",
+                Some(serde_json::json!(0)),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(0.0),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
     if command.target_shake_speed_cpm > 0.01 && motor == 0 {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? =
-            Some(command.target_shake_speed_cpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "motor",
-            Some(serde_json::json!(1)),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "motor",
+                Some(serde_json::json!(1)),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(command.target_shake_speed_cpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     let cached_speed = *last_commanded_shake_speed_cpm
@@ -1060,20 +1614,22 @@ fn next_json_bridge_control(
         .unwrap_or(0.0);
     let speed_delta = command.target_shake_speed_cpm - current_speed;
     if speed_delta.abs() > config.speed_deadband_cpm {
-        *last_commanded_shake_speed_cpm
-            .lock()
-            .map_err(|_| anyhow!("json bridge speed cache lock poisoned"))? =
-            Some(command.target_shake_speed_cpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "speed",
-            Some(serde_json::json!(if speed_delta > 0.0 {
-                "up"
-            } else {
-                "down"
-            })),
-            None,
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "speed",
+                Some(serde_json::json!(if speed_delta > 0.0 {
+                    "up"
+                } else {
+                    "down"
+                })),
+                None,
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                shake_speed_cpm: Some(command.target_shake_speed_cpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     if config.relay_temperature_control {
@@ -1103,22 +1659,17 @@ fn next_json_bridge_control(
             relay
         };
         if desired_relay != relay {
-            *last_temperature_command
-                .lock()
-                .map_err(|_| anyhow!("json bridge temperature cache lock poisoned"))? =
-                Some(command.target_temperature_c);
-            return Ok(Some(build_json_bridge_control(
-                &config.request_id_prefix,
-                "relay",
-                Some(serde_json::json!(desired_relay)),
-                None,
-            )));
+            return Ok(Some(JsonBridgePendingControl {
+                control: build_json_bridge_control(
+                    &config.request_id_prefix,
+                    "relay",
+                    Some(serde_json::json!(desired_relay)),
+                    None,
+                ),
+                cache_update: JsonBridgePendingCacheUpdate::default(),
+            }));
         }
     } else {
-        *last_temperature_command
-            .lock()
-            .map_err(|_| anyhow!("json bridge temperature cache lock poisoned"))? =
-            Some(command.target_temperature_c);
     }
 
     let cached_stirrer = *last_stirrer_command
@@ -1129,16 +1680,18 @@ fn next_json_bridge_control(
         .map(|current| (command.target_stirrer_rpm - current).abs() > 0.01)
         .unwrap_or(true)
     {
-        *last_stirrer_command
-            .lock()
-            .map_err(|_| anyhow!("json bridge stirrer cache lock poisoned"))? =
-            Some(command.target_stirrer_rpm);
-        return Ok(Some(build_json_bridge_control(
-            &config.request_id_prefix,
-            "stir_speed",
-            Some(serde_json::json!(command.target_stirrer_rpm)),
-            Some("stirrer_motor"),
-        )));
+        return Ok(Some(JsonBridgePendingControl {
+            control: build_json_bridge_control(
+                &config.request_id_prefix,
+                "stir_speed",
+                Some(serde_json::json!(command.target_stirrer_rpm)),
+                Some("stirrer_motor"),
+            ),
+            cache_update: JsonBridgePendingCacheUpdate {
+                stirrer_rpm: Some(command.target_stirrer_rpm),
+                ..JsonBridgePendingCacheUpdate::default()
+            },
+        }));
     }
 
     Ok(None)
@@ -1304,6 +1857,120 @@ pub fn build_esp32_command(prefix: &str, command: &SafeCommand, checksum_enabled
     }
 }
 
+/// Command frame carrying a request_id, so the downstream can echo it back in
+/// its ACK. Used by the command-level handshake; the legacy fire-and-forget
+/// `build_esp32_command` omits the rid.
+pub fn build_esp32_command_with_rid(
+    prefix: &str,
+    command: &SafeCommand,
+    request_id: &str,
+    checksum_enabled: bool,
+) -> String {
+    let body = format!(
+        "{prefix}|v=1|rid={request_id}|heat_time={:.2}|hold_time={:.2}|cool_time={:.2}|target_temp={:.2}|stir_speed={:.2}|shake_speed={:.2}|target_pressure={:.2}",
+        command.heat_time_s,
+        command.hold_time_s,
+        command.cool_time_s,
+        command.target_temperature_c,
+        command.target_stirrer_rpm,
+        command.target_shake_speed_cpm,
+        command.target_pressure_mpa
+    );
+    if checksum_enabled {
+        format!("{body}|chk={}\n", checksum_hex(body.as_bytes()))
+    } else {
+        format!("{body}\n")
+    }
+}
+
+/// Downstream ACK parsed from an ESP32 ack frame. See docs/command_ack_handshake.md.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Esp32Ack {
+    pub request_id: String,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+/// Build an ESP32 ACK frame (downstream -> upper computer). Mirrors the command
+/// frame grammar: `{prefix}|v=1|type=ack|rid=<id>|ok=<0|1>[|err=<text>]|chk=<hex>`.
+pub fn build_esp32_ack_frame(
+    prefix: &str,
+    request_id: &str,
+    ok: bool,
+    error: Option<&str>,
+    checksum_enabled: bool,
+) -> String {
+    let ok_field = if ok { "1" } else { "0" };
+    let mut body = format!("{prefix}|v=1|type=ack|rid={request_id}|ok={ok_field}");
+    if let Some(err) = error {
+        body.push_str(&format!("|err={err}"));
+    }
+    if checksum_enabled {
+        format!("{body}|chk={}\n", checksum_hex(body.as_bytes()))
+    } else {
+        format!("{body}\n")
+    }
+}
+
+/// Parse an ESP32 ACK frame. Returns Ok only when the line is a valid ack frame
+/// (prefix matches, checksum verifies, type=ack). Sample frames and malformed
+/// lines return Err so the handshake loop can skip them and keep waiting.
+pub fn parse_esp32_ack_frame(
+    line: &str,
+    expected_prefix: &str,
+    checksum_enabled: bool,
+) -> Result<Esp32Ack> {
+    let line = line.trim();
+    let parts: Vec<&str> = line.split('|').collect();
+    if parts.first().copied() != Some(expected_prefix) {
+        return Err(anyhow!("unexpected esp32 ack frame prefix"));
+    }
+    let mut fields: HashMap<&str, &str> = HashMap::new();
+    let mut checksum_field = None;
+    let mut checksum_index = None;
+    for (index, part) in parts.iter().enumerate().skip(1) {
+        let Some((key, value)) = part.split_once('=') else {
+            return Err(anyhow!("invalid esp32 ack frame field {part}"));
+        };
+        if key == "chk" {
+            checksum_field = Some(value);
+            checksum_index = Some(index);
+        } else {
+            fields.insert(key, value);
+        }
+    }
+    if checksum_enabled {
+        let chk = checksum_field.ok_or_else(|| anyhow!("esp32 ack frame missing checksum"))?;
+        let index =
+            checksum_index.ok_or_else(|| anyhow!("esp32 ack frame missing checksum position"))?;
+        let body = parts[..index].join("|");
+        let expected = checksum_hex(body.as_bytes());
+        if !chk.eq_ignore_ascii_case(&expected) {
+            return Err(anyhow!(
+                "esp32 ack checksum mismatch expected {expected} got {chk}"
+            ));
+        }
+    }
+    if required_field(&fields, "v")? != "1" {
+        return Err(anyhow!("unsupported esp32 ack frame version"));
+    }
+    if required_field(&fields, "type")? != "ack" {
+        return Err(anyhow!("esp32 frame is not an ack"));
+    }
+    let request_id = required_field(&fields, "rid")?.to_string();
+    let ok = match required_field(&fields, "ok")? {
+        "1" | "true" => true,
+        "0" | "false" => false,
+        other => return Err(anyhow!("invalid esp32 ack ok field {other}")),
+    };
+    let error = fields.get("err").map(|s| s.to_string());
+    Ok(Esp32Ack {
+        request_id,
+        ok,
+        error,
+    })
+}
+
 pub fn build_esp32_sample_frame(
     prefix: &str,
     sample: &SensorSnapshot,
@@ -1423,98 +2090,144 @@ fn encode_write_register(value: f64, register: &WriteRegister) -> Result<u16> {
     Ok(raw as u16)
 }
 
-fn read_holding_register(port: &mut dyn SerialPort, slave_id: u8, address: u16) -> Result<u16> {
-    let mut frame = vec![slave_id, 0x03, high(address), low(address), 0x00, 0x01];
-    append_crc(&mut frame);
-    port.write_all(&frame)?;
-    port.flush()?;
-
-    let mut response = [0_u8; 7];
-    port.read_exact(&mut response)?;
-    validate_crc(&response)?;
-    if response[0] != slave_id {
-        return Err(anyhow!("unexpected slave id {}", response[0]));
-    }
-    if response[1] & 0x80 != 0 {
-        return Err(anyhow!("modbus exception code {}", response[2]));
-    }
-    if response[1] != 0x03 || response[2] != 0x02 {
-        return Err(anyhow!("invalid read response"));
-    }
-    Ok(u16::from_be_bytes([response[3], response[4]]))
+/// Inverse of `encode_write_register` for read-back verification: reconstruct
+/// the engineering value the slave holds from the raw word read back from a
+/// target (write) register. Mirrors `decode_read_register` but operates on a
+/// `WriteRegister` (the target registers are write registers, not read ones).
+fn decode_write_register(raw: u16, register: &WriteRegister) -> f64 {
+    round2(raw as f64 * register.scale + register.offset)
 }
 
-fn write_single_register(
-    port: &mut dyn SerialPort,
-    slave_id: u8,
+async fn read_holding_register(
+    client: &mut tokio_modbus::client::Context,
+    address: u16,
+) -> Result<u16> {
+    let words = client
+        .read_holding_registers(address, 1)
+        .await
+        .map_err(|err| anyhow!("modbus RTU read register {address} failed: {err}"))?
+        .map_err(|code| anyhow!("modbus RTU read register {address} exception: {code:?}"))?;
+    words
+        .first()
+        .copied()
+        .ok_or_else(|| anyhow!("modbus RTU read register {address} returned no data"))
+}
+
+async fn write_single_register(
+    client: &mut tokio_modbus::client::Context,
     address: u16,
     value: u16,
 ) -> Result<()> {
-    let [value_hi, value_lo] = value.to_be_bytes();
-    let mut frame = vec![
-        slave_id,
-        0x06,
-        high(address),
-        low(address),
-        value_hi,
-        value_lo,
-    ];
-    append_crc(&mut frame);
-    port.write_all(&frame)?;
-    port.flush()?;
-
-    let mut response = [0_u8; 8];
-    port.read_exact(&mut response)?;
-    validate_crc(&response)?;
-    if response[0] != slave_id {
-        return Err(anyhow!("unexpected slave id {}", response[0]));
-    }
-    if response[1] & 0x80 != 0 {
-        return Err(anyhow!("modbus exception code {}", response[2]));
-    }
-    if response[..6] != frame[..6] {
-        return Err(anyhow!("write response does not echo request"));
-    }
-    Ok(())
+    client
+        .write_single_register(address, value)
+        .await
+        .map_err(|err| anyhow!("modbus RTU write register {address} failed: {err}"))?
+        .map_err(|code| anyhow!("modbus RTU write register {address} exception: {code:?}"))
 }
 
-fn append_crc(frame: &mut Vec<u8>) {
-    let crc = crc16_modbus(frame);
-    frame.push((crc & 0x00ff) as u8);
-    frame.push((crc >> 8) as u8);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn validate_crc(frame: &[u8]) -> Result<()> {
-    if frame.len() < 3 {
-        return Err(anyhow!("modbus frame too short"));
+    #[test]
+    fn command_ack_unverified_marks_status_without_applied_targets() {
+        let ack = CommandAck::unverified("req-unverified");
+        assert_eq!(ack.request_id, "req-unverified");
+        assert!(matches!(ack.status, AckStatus::Unverified));
+        assert!(
+            ack.accepted_targets.is_none(),
+            "unverified fallback must not fabricate applied targets"
+        );
     }
-    let expected = crc16_modbus(&frame[..frame.len() - 2]);
-    let actual = u16::from_le_bytes([frame[frame.len() - 2], frame[frame.len() - 1]]);
-    if expected != actual {
-        return Err(anyhow!("invalid modbus crc"));
-    }
-    Ok(())
-}
 
-fn crc16_modbus(bytes: &[u8]) -> u16 {
-    let mut crc = 0xffff_u16;
-    for byte in bytes {
-        crc ^= *byte as u16;
-        for _ in 0..8 {
-            if crc & 1 == 1 {
-                crc = (crc >> 1) ^ 0xa001;
-            } else {
-                crc >>= 1;
+    #[tokio::test]
+    async fn default_write_targets_acknowledged_falls_back_to_unverified() {
+        // A device that only implements write_targets (no handshake override)
+        // must fall back to the default: write Ok -> Unverified, preserving the
+        // legacy fire-and-forget path until a real ACK exchange is implemented.
+        struct LegacyDevice;
+        #[async_trait::async_trait]
+        impl ReactorDevice for LegacyDevice {
+            async fn read_sample(&self) -> Result<SensorSnapshot> {
+                Err(anyhow!("not used in this test"))
+            }
+            async fn write_targets(&self, _command: &SafeCommand) -> Result<()> {
+                Ok(())
             }
         }
+        let dev = LegacyDevice;
+        let command = SafeCommand {
+            target_temperature_c: 50.0,
+            heat_time_s: 300.0,
+            hold_time_s: 600.0,
+            cool_time_s: 180.0,
+            target_stirrer_rpm: 300.0,
+            target_shake_speed_cpm: 30.0,
+            target_pressure_mpa: 0.5,
+            reason: "test".to_string(),
+        };
+        let ack = dev
+            .write_targets_acknowledged(&command, "req-legacy", Duration::from_millis(50))
+            .await
+            .unwrap();
+        assert_eq!(ack.request_id, "req-legacy");
+        assert!(matches!(ack.status, AckStatus::Unverified));
+        assert!(ack.accepted_targets.is_none());
     }
-    crc
-}
 
-fn high(value: u16) -> u8 {
-    (value >> 8) as u8
-}
+    #[test]
+    fn decode_write_register_inverts_encode_formula() {
+        // decode_write_register must reconstruct the engineering value from the
+        // raw word using the SAME scale/offset as encode (the inverse formula),
+        // because the handshake compares the raw read back against the encoded
+        // raw and reports the held engineering value via this decode.
+        let register = WriteRegister {
+            address: 200,
+            scale: 2.0,
+            offset: 10.0,
+        };
+        assert_eq!(decode_write_register(5, &register), 20.0); // 5 * 2.0 + 10.0
+        assert_eq!(decode_write_register(0, &register), 10.0); // offset only
+    }
 
-fn low(value: u16) -> u8 {
-    (value & 0xff) as u8
+    #[test]
+    fn encode_decode_write_register_round_trips_to_same_raw() {
+        // Read-back raw comparison is sound only if encode is idempotent through
+        // decode_write_register: encode -> decode -> encode must yield the same
+        // raw, so a faithful slave (stores exactly what we wrote) always matches
+        // and a clamp/overwrite is always detected.
+        let register = WriteRegister {
+            address: 100,
+            scale: 0.1,
+            offset: 0.0,
+        };
+        for value in [0.0, 50.0, 64.25, 99.9, 150.0] {
+            let raw = encode_write_register(value, &register)
+                .unwrap_or_else(|err| panic!("encode({value}) failed: {err}"));
+            let decoded = decode_write_register(raw, &register);
+            let raw_again = encode_write_register(decoded, &register)
+                .unwrap_or_else(|err| panic!("re-encode({decoded}) failed: {err}"));
+            assert_eq!(
+                raw, raw_again,
+                "value {value}: encode->decode->encode changed raw ({raw} != {raw_again})"
+            );
+        }
+    }
+
+    #[test]
+    fn tokio_modbus_serial_config_maps_standard_rtu_settings() {
+        assert_eq!(tokio_serial_parity("N").unwrap(), TokioParity::None);
+        assert_eq!(tokio_serial_parity("E").unwrap(), TokioParity::Even);
+        assert_eq!(tokio_serial_parity("O").unwrap(), TokioParity::Odd);
+        assert_eq!(tokio_serial_stop_bits(1).unwrap(), TokioStopBits::One);
+        assert_eq!(tokio_serial_stop_bits(2).unwrap(), TokioStopBits::Two);
+        assert_eq!(tokio_serial_data_bits(8).unwrap(), TokioDataBits::Eight);
+    }
+
+    #[test]
+    fn tokio_modbus_serial_config_rejects_unsupported_rtu_settings() {
+        assert!(tokio_serial_parity("M").is_err());
+        assert!(tokio_serial_stop_bits(3).is_err());
+        assert!(tokio_serial_data_bits(9).is_err());
+    }
 }

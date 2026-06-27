@@ -50,6 +50,15 @@ pub(crate) enum Permission {
     EditSystemConfig,
     DeleteData,
     ManageUsers,
+    /// Ingest externally supplied sensor samples. This updates the runtime
+    /// field-state proof used by control interlocks, so it is restricted to
+    /// engineering/admin sessions rather than ordinary operator control.
+    IngestSensorSample,
+    /// Accept remote AINAS / MQTT task dispatch. Gated on the dispatch path
+    /// (POST /api/integrations/ainas/tasks and the MQTT task topic) so that
+    /// the operator role cannot use an integration channel to bypass the
+    /// stricter UI-side controls. Engineer and admin only.
+    ApplyIntegrationTask,
 }
 
 pub(crate) fn login_response(payload: LoginRequest) -> Result<LoginResponse, AppError> {
@@ -181,7 +190,7 @@ fn blocked_permission_names_for_role(role: AuthRole) -> Vec<&'static str> {
         .collect()
 }
 
-fn all_permissions() -> [Permission; 13] {
+fn all_permissions() -> [Permission; 15] {
     [
         Permission::ViewMonitor,
         Permission::ViewHistory,
@@ -196,6 +205,8 @@ fn all_permissions() -> [Permission; 13] {
         Permission::EditSystemConfig,
         Permission::DeleteData,
         Permission::ManageUsers,
+        Permission::IngestSensorSample,
+        Permission::ApplyIntegrationTask,
     ]
 }
 
@@ -214,6 +225,8 @@ fn permission_name(permission: Permission) -> &'static str {
         Permission::EditSystemConfig => "edit_system_config",
         Permission::DeleteData => "delete_data",
         Permission::ManageUsers => "manage_users",
+        Permission::IngestSensorSample => "ingest_sensor_sample",
+        Permission::ApplyIntegrationTask => "apply_integration_task",
     }
 }
 
@@ -241,6 +254,8 @@ fn role_allows(role: AuthRole, permission: Permission) -> bool {
                 | Permission::ApplyAiSuggestion
                 | Permission::EmergencyStop
                 | Permission::ModbusDebug
+                | Permission::IngestSensorSample
+                | Permission::ApplyIntegrationTask
         ),
         AuthRole::Admin => true,
     }

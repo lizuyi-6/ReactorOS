@@ -1,0 +1,267 @@
+{
+  "schema": "xingshu.upper_computer.field_evidence_checklist.v1",
+  "generatedAt": "2026-06-07",
+  "scope": "Li Zuyi RK/PC upper-computer final field acceptance evidence",
+  "statusLegend": {
+    "local_ready": "Local draft or automated evidence exists and must be rechecked on site.",
+    "external_required": "Real hardware, model, external platform, RK, production, or industrial-environment evidence is required.",
+    "signature_required": "Customer, project owner, or responsible-role signature is required.",
+    "draft_only": "Only draft or illustrative material exists; it cannot prove final acceptance."
+  },
+  "globalCaveats": [
+    "This checklist does not mark the PRD complete.",
+    "AI-generated training images are not real hardware, real HMI, or signature evidence.",
+    "The silent MP4 training draft is not real operation screen recording or narrated final training video.",
+    "Final PRD acceptance still requires hardware, algorithm, external platform, production security/performance, and user signature evidence."
+  ],
+  "items": [
+    {
+      "id": "L-01",
+      "title": "Local draft delivery package",
+      "status": "local_ready",
+      "owner": "upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\output\\acceptance\\field-delivery-local-draft\\00-summary\\upper_computer_delivery_manifest.json"
+      ],
+      "requiredEvidence": [
+        "Copy the package to a field date directory",
+        "Record version, environment, deployment address, and responsible people"
+      ],
+      "finalAction": "Attach field summary and signatures."
+    },
+    {
+      "id": "L-02",
+      "title": "Training PPTX draft",
+      "status": "draft_only",
+      "owner": "upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_training_deck.pptx",
+        "X:\\tianhks\\docs\\upper_computer_training_deck.md"
+      ],
+      "requiredEvidence": [
+        "Replace draft screenshots or visual placeholders with final deployment screenshots where required",
+        "Keep AI-generated image caveats visible in supporting documentation"
+      ],
+      "finalAction": "Archive final-site PPTX in the training evidence directory."
+    },
+    {
+      "id": "L-03",
+      "title": "Silent MP4 training draft",
+      "status": "draft_only",
+      "owner": "upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\outputs\\manual-20260607-training\\video\\upper_computer_training_video_draft.mp4",
+        "X:\\tianhks\\docs\\upper_computer_training_video_storyboard.md"
+      ],
+      "requiredEvidence": [
+        "Record real HMI operation flow",
+        "Add narration or subtitles",
+        "Avoid showing secrets, private keys, real passwords, or API keys"
+      ],
+      "finalAction": "Archive final narrated or subtitled MP4."
+    },
+    {
+      "id": "L-04",
+      "title": "UAT operation script",
+      "status": "signature_required",
+      "owner": "project_acceptance",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_user_acceptance_script.md"
+      ],
+      "requiredEvidence": [
+        "Execute UAT-01 through UAT-16",
+        "Attach screenshots, logs, exports, and issue IDs",
+        "Fill pass/fail/blocked/not-applicable result for every item"
+      ],
+      "finalAction": "Collect customer or project-owner signature."
+    },
+    {
+      "id": "E-01",
+      "title": "STM32 Modbus RTU hardware integration",
+      "status": "external_required",
+      "owner": "hardware,upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_modbus_register_map.md"
+      ],
+      "requiredEvidence": [
+        "STM32 firmware version",
+        "Final register map with address, unit, and scale",
+        "RS485 wiring diagram",
+        "Real sensor and actuator read/write logs",
+        "Unsafe write rejection record"
+      ],
+      "finalAction": "Update Modbus register map and PRD gap matrix."
+    },
+    {
+      "id": "E-02",
+      "title": "Hardware closed-loop control",
+      "status": "external_required",
+      "owner": "hardware,upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_external_acceptance_checklist.md"
+      ],
+      "requiredEvidence": [
+        "Heating, stirring, pressure, shaking, start/stop, emergency stop, manual lock, pause/resume action records",
+        "Audit event IDs for control commands",
+        "Fault injection and recovery notes"
+      ],
+      "finalAction": "Attach closed-loop evidence to UAT-06 and UAT-15."
+    },
+    {
+      "id": "E-03",
+      "title": "Modbus TCP external tool acceptance",
+      "status": "external_required",
+      "owner": "upper_computer,external_tool",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_modbus_register_map.md"
+      ],
+      "requiredEvidence": [
+        "Modbus Poll or Modbus Slave screenshots",
+        "Read/write register logs",
+        "TLS certificate chain validation",
+        "Concurrent connection notes",
+        "Dangerous write rejection record"
+      ],
+      "finalAction": "Archive tool outputs and screenshots."
+    },
+    {
+      "id": "E-04",
+      "title": "MQTT external broker acceptance",
+      "status": "external_required",
+      "owner": "third_party_platform,upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_api_acceptance_manual.md"
+      ],
+      "requiredEvidence": [
+        "MQTT.fx or mosquitto task publish logs",
+        "Receipt topic logs",
+        "Retained alert topic screenshot",
+        "Disconnect/reconnect record",
+        "Production certificate and account policy"
+      ],
+      "finalAction": "Attach broker evidence to third-party acceptance report."
+    },
+    {
+      "id": "E-05",
+      "title": "AINAS real platform acceptance",
+      "status": "external_required",
+      "owner": "ainas_platform,upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_api_acceptance_manual.md"
+      ],
+      "requiredEvidence": [
+        "Real AINAS task creation screenshot or API log",
+        "Task query result",
+        "Execution receipt",
+        "Safety rejection record for unsafe task if applicable"
+      ],
+      "finalAction": "Attach AINAS evidence to UAT-13."
+    },
+    {
+      "id": "E-06",
+      "title": "Qwen/GGUF/LoRA/RK model evidence",
+      "status": "external_required",
+      "owner": "algorithm,rk",
+      "localReferences": [
+        "X:\\tianhks\\docs\\local_ai_adapter_status_addendum.md",
+        "X:\\tianhks\\docs\\upper_computer_current_gap_summary_for_lizuyi.md"
+      ],
+      "requiredEvidence": [
+        "Qwen3.5-2B or GGUF file path",
+        "LoRA adapter file path",
+        "Production training script",
+        "Training manifest",
+        "Promotion and rollback record",
+        "RK latency and accuracy report"
+      ],
+      "finalAction": "Update local_ai readiness status and AI acceptance evidence."
+    },
+    {
+      "id": "E-07",
+      "title": "Production TLS and key lifecycle",
+      "status": "external_required",
+      "owner": "security,operations",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_security_key_lifecycle.md"
+      ],
+      "requiredEvidence": [
+        "Formal certificate chain",
+        "Key custody record",
+        "Rotation drill",
+        "Lost-key recovery drill",
+        "Sensitive-info masking check"
+      ],
+      "finalAction": "Attach evidence to production operations and security docs."
+    },
+    {
+      "id": "E-08",
+      "title": "Long-run reliability and industrial environment",
+      "status": "external_required",
+      "owner": "hardware,operations,upper_computer",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_external_acceptance_checklist.md"
+      ],
+      "requiredEvidence": [
+        "72-hour or 30-day run report",
+        "RS485 packet-loss statistics",
+        "Power-loss recovery record",
+        "CPU and memory sampling",
+        "MTBF or equivalent reliability argument"
+      ],
+      "finalAction": "Update final test report."
+    },
+    {
+      "id": "E-09",
+      "title": "Browser and mobile real-device acceptance",
+      "status": "external_required",
+      "owner": "qa,project_acceptance",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_visual_evidence_index.md",
+        "X:\\tianhks\\output\\playwright\\vue-browser-matrix-verification.json"
+      ],
+      "requiredEvidence": [
+        "macOS Safari screenshot",
+        "iOS screenshot or recording",
+        "Android screenshot or recording",
+        "Console error notes"
+      ],
+      "localEvidenceAlreadyAvailable": [
+        "Playwright Firefox strict browser matrix passed on 2026-06-07 with 14 route/language checks",
+        "X:\\tianhks\\output\\playwright\\vue-browser-matrix-verification.json"
+      ],
+      "finalAction": "Attach evidence to visual evidence index and UAT-14."
+    },
+    {
+      "id": "S-01",
+      "title": "Training completion signature",
+      "status": "signature_required",
+      "owner": "training,project_acceptance",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_training_attendance_and_issues.md"
+      ],
+      "requiredEvidence": [
+        "Participant list",
+        "Covered modules",
+        "Issue closure table",
+        "Trainer and project/customer signature"
+      ],
+      "finalAction": "Archive signed training record."
+    },
+    {
+      "id": "S-02",
+      "title": "Final UAT signature",
+      "status": "signature_required",
+      "owner": "project_acceptance",
+      "localReferences": [
+        "X:\\tianhks\\docs\\upper_computer_user_acceptance_script.md"
+      ],
+      "requiredEvidence": [
+        "Completed UAT result table",
+        "P0/P1 issue list",
+        "Risk acceptance record",
+        "Customer or project-owner signature"
+      ],
+      "finalAction": "Archive signed UAT package."
+    }
+  ]
+}

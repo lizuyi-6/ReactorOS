@@ -1,0 +1,44 @@
+/* Audit */
+.monitor-route .content.route-audit > .view-stack {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: 52px 92px 116px minmax(0, 1fr);
+  grid-template-areas:
+    "head head head head"
+    "metrics metrics metrics metrics"
+    "toolbar toolbar toolbar toolbar"
+    "events events events events";
+}
+
+.monitor-route .content.route-audit > .view-stack > section:nth-of-type(1) {
+  grid-area: metrics;
+}
+
+.monitor-route .content.route-audit > .view-stack > section:nth-of-type(2) {
+  grid-area: toolbar;
+}
+
+.monitor-route .content.route-audit > .view-stack > section:nth-of-type(3) {
+  grid-area: events;
+}
+
+.monitor-route .content.route-audit .metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.monitor-route .content.route-audit .audit-toolbar {
+  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  gap: 10px;
+}
+
+.monitor-route .content.route-audit .audit-filter-form {
+  grid-template-columns: minmax(180px, 1fr) minmax(130px, 0.45fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.monitor-route .content.route-audit > .view-stack > section:nth-of-type(3) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+

@@ -1,6 +1,6 @@
 # 星宿上位机密钥生命周期与敏感字段清单
 
-日期：2026-06-04
+日期：2026-06-06
 
 范围：李祖祎负责的上位机软件。本文档把当前代码已经实现的密钥、证书、token、敏感字段和生产验收要求固化成检查清单；它不是正式渗透测试或等保报告。
 
@@ -17,7 +17,7 @@
 | Modbus TCP `tls_cert` / `tls_key` | `config/integration.toml` | Modbus TCP TLS server 证书与私钥 | 已实现；本地 TLS/MBAP 回归通过 | 生产证书链、外部 Modbus Poll/Slave TLS 需验收 |
 | `STEPFUN_API_KEY` | 环境变量 | 云端大模型 API bearer key | 已实现 provider 调用 | 不得落库或进入日志；生产需最小权限 key 和调用审计 |
 | `XINGSHU_TOKEN` | 环境变量或 CLI `--token` | CLI bearer session token | 已实现 | 只作为短期 session 使用，不写入脚本和文档 |
-| 本地 AI 资产路径 | `XINGSHU_LOCAL_AI_BIN`、`XINGSHU_LOCAL_AI_GGUF`、`XINGSHU_LOCAL_AI_LORA`、`XINGSHU_LOCAL_AI_TRAIN_SCRIPT`、`XINGSHU_LOCAL_AI_CONVERT_SCRIPT`、`XINGSHU_LOCAL_AI_RK_REPORT` | 本地 Qwen/LoRA readiness 边界 | 只做 readiness 检查；真实推理/训练未实现 | 模型权重、LoRA adapter、训练数据和报告按算法资产管理 |
+| 本地 AI 资产路径 | `XINGSHU_LOCAL_AI_BIN`、`XINGSHU_LOCAL_AI_GGUF`、`XINGSHU_LOCAL_AI_LORA`、`XINGSHU_LOCAL_AI_TRAIN_SCRIPT`、`XINGSHU_LOCAL_AI_CONVERT_SCRIPT`、`XINGSHU_LOCAL_AI_RK_REPORT` | 本地 Qwen/LoRA readiness、推理/训练入口、adapter 晋级目标 | 已实现 readiness、HTTP/命令式推理入口、训练数据集导出、训练入口编排、manifest 归档和显式候选 adapter 晋级/备份；真实模型效果不由代码伪造 | 模型权重、LoRA adapter、训练数据、manifest、备份 adapter 和 RK 报告按算法资产管理 |
 
 ## 2. 已加密字段清单
 
@@ -43,7 +43,7 @@
 1. 生成：使用生产密钥管理系统或离线随机源生成 32 字节密钥。验收可用 64 位 hex 或 base64 表示。
 2. 分发：通过部署环境变量注入 `XINGSHU_DB_ENCRYPTION_KEY`、`XINGSHU_AUTH_SECRET` 和角色密码，不写入 Git、SQLite、截图或报告。
 3. 备份：`XINGSHU_DB_ENCRYPTION_KEY` 必须与数据库备份成对托管。丢失密钥后，已加密的 `integration_tasks.request_json/response_json` 无法恢复。
-4. 轮换：当前代码支持新密钥加密新写入和同密钥读取旧密文，但尚未提供自动重加密迁移工具。生产轮换需执行停机、旧密钥导出、重加密迁移、恢复验证和旧密钥封存。
+4. 轮换：当前代码已提供两段式本地工具：在 daemon 停止且没有未完成批次的维护窗口内用 `xingshu key generate --db <path> --yes` 生成新的 `<db>.key` 文件；`xingshu key rekey-integration-tasks --db <path> --old-key-file <old.env> --new-key-file <new.env> --dry-run` 可先做只读预检，确认计数后仍在停机窗口内用 `--yes` 正式把 `integration_tasks.request_json/response_json` 从旧 key 迁移到新 key。`key generate` 和正式 rekey 会检查 `reactor-edge`/`reactor-edge-daemon` 状态和未完成批次，服务明确 active 或数据库仍有 `finished_at IS NULL` 批次时拒绝；无法自动检查服务状态时，只有已有维护记录后才能加 `--confirm-daemon-stopped`，但该参数不会绕过未完成批次保护。迁移会把历史明文行一并加密；密钥材料不会打印到 human 或 JSON 输出。生产仍需旧密钥导出、数据库备份、恢复验证和旧密钥封存记录。
 5. 吊销：轮换 `XINGSHU_AUTH_SECRET` 会使旧 bearer token 全部失效。证书吊销需同步 broker、Modbus TCP 客户端和 HTTP 入口。
 
 ## 4. 验收检查项
@@ -55,9 +55,9 @@
 | 默认密码可被环境变量覆盖 | 已实现 | 生产密码策略和交接记录 |
 | TLS 证书/私钥成对校验 | 已实现 | 正式证书链、私钥权限和吊销演练 |
 | MQTT/Modbus TCP 证书链 | 配置和本地测试已有 | 外部 MQTT.fx、Modbus Poll/Slave 验收 |
-| 密钥轮换自动化 | 未实现 | 需补重加密迁移工具或明确人工 SOP |
+| 密钥轮换自动化 | 已实现本地 rekey 工具并由 `cli_tests` 覆盖 | 需用生产 key、备份库和停机窗口执行演练，形成签字记录 |
 | 正式漏洞扫描/渗透测试 | 未执行 | 需安全负责人出具报告 |
 
 ## 5. 当前结论
 
-上位机已经具备 RBAC bearer session、HTTP/Modbus TCP TLS、本地 AES-256-GCM 字段级加密、审计 hash chain 和配置状态可视化。生产交付前仍必须补齐真实密钥托管、轮换演练、证书链外部验收、敏感实验数据分级和正式安全扫描报告。
+上位机已经具备 RBAC bearer session、HTTP/Modbus TCP TLS、本地 AES-256-GCM 字段级加密、`integration_tasks` 离线 rekey、审计 hash chain 和配置状态可视化。生产交付前仍必须补齐真实密钥托管、停机轮换演练、证书链外部验收、敏感实验数据分级和正式安全扫描报告。

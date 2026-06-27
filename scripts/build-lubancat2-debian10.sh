@@ -5,6 +5,10 @@ IMAGE="${IMAGE:-reactor-os-lubancat2-debian10-builder}"
 RUST_VERSION="${RUST_VERSION:-1.90.0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+echo "Building Vue HMI on this PC..."
+(cd "${ROOT}" && npm run frontend:build)
+test -f "${ROOT}/frontend/dist/index.html"
+
 echo "Building LubanCat 2 Debian 10 builder image on this PC..."
 docker build \
   -f "${ROOT}/scripts/Dockerfile.a55-debian10" \

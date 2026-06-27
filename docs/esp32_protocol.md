@@ -113,7 +113,7 @@ curl http://127.0.0.1:8000/api/v1/reactor/reactor_001/realtime
 curl http://127.0.0.1:8000/api/devices/status
 ```
 
-没有新鲜上行数据时，`/api/live` 和实时数据接口会返回 HTTP 503；设备状态接口仍返回 HTTP 200，并在 `data.online_count` 与 `data.devices[].status` 中表达 `offline`、`stale` 或 `error`。
+没有新鲜上行数据时，`/api/live` 和实时数据接口会返回 HTTP 503；v1 realtime WebSocket 会发送同样的错误信封并断开，不继续推送旧样本值或伪造当前时间戳。设备状态接口仍返回 HTTP 200，并在 `data.online_count` 与 `data.devices[].status` 中表达 `offline`、`stale` 或 `error`。
 
 5. 下发控制检查：
 

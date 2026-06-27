@@ -1,0 +1,11 @@
+{
+  "platform": "arm64 Debian buster under QEMU user-mode (not native A55)",
+  "binary": "reactor-edge-daemon (release, lto=fat, stripped)",
+  "health_up": 0,
+  "health": {},
+  "device_status_head": "{}",
+  "rss_mb_warm": 0.00,
+  "rss_mb_after_probes": 0.00,
+  "cpu_pct_sample": "NA",
+  "note": "RSS is meaningful; CPU% under QEMU is emulation-inflated and not a native A55 figure"
+}

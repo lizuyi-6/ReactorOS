@@ -1,10 +1,10 @@
 # 星宿智能反应釜上位机 CLI 命令参考手册
 
-日期：2026-06-04
+日期：2026-06-06
 
 对象：`xingshu` 上位机命令行工具。
 
-边界说明：CLI 复用 Web HMI 和 REST API 的同一安全链路，不绕过 RBAC、安全限幅、急停、人工锁、传感器新鲜度和审计。当前 `xingshu ai train` 只用于暴露本地 LoRA 训练缺口，不代表真实 Qwen3.5-2B + LoRA 训练已完成。
+边界说明：CLI 复用 Web HMI 和 REST API 的同一安全链路，不绕过 RBAC、安全限幅、急停、人工锁、传感器新鲜度和审计。当前 `xingshu ai train` 已具备本地 LoRA 数据集导出、训练入口编排、manifest 归档和显式候选 adapter 晋级/备份边界；但这不代表真实 Qwen3.5-2B + LoRA 模型资产、生产训练脚本、推理链路和 RK 验收已经完成。
 
 ## 1. 全局参数
 
@@ -62,7 +62,11 @@ xingshu --json status
 验收重点：
 
 - `data_security.storage_encryption`
-- `local_ai.ready_for_inference`
+- `local_ai.ready_for_base_inference`
+- `local_ai.ready_for_lora_inference`
+- `local_ai.ready_for_inference`（兼容字段，等同 LoRA 推理闭环）
+- `local_ai.ready_for_training`
+- `local_ai.ready_for_prd_lora`
 - `integrations.mqtt_status`
 - `integrations.modbus_tcp_status`
 - `permissions.authentication`
@@ -75,10 +79,12 @@ xingshu --json status
 | `xingshu data export --out batches.csv` | 导出批次 CSV | 需要有运行中服务 |
 | `xingshu data export-xlsx --out batches.xlsx` | 导出 Excel 工作簿 | 需要有运行中服务 |
 | `xingshu data report --batch-id 1` | 导出单批次 Markdown 报告 | 指定批次必须存在 |
-| `xingshu data sample --duration-s 180 --interval-ms 500` | 通过正式 v1 样本入口注入演示样本 | 不写控制目标，不绕过 safety |
-| `xingshu data delete --yes` | 删除本地 SQLite 运行数据 | 破坏性操作，仅本地验收或重置演示环境使用 |
+| `xingshu --token <engineer-token> data sample --duration-s 180 --interval-ms 500` | 通过正式 v1 样本入口注入演示样本 | 需 `ingest_sensor_sample` 权限；不写控制目标，不绕过 safety |
+| `xingshu data delete --yes` | 删除本地 SQLite 运行数据 | 破坏性操作，仅停机后的本地验收或重置演示环境使用 |
 
-`data sample` 停止后，超过 `sensor_timeout_ms` 没有新样本时 `/api/live` 返回 503 是预期安全行为。
+`data sample` 停止后，超过 `sensor_timeout_ms` 没有新样本时 `/api/live` 返回 503 是预期安全行为。正式样本入口会更新控制安全门使用的 `latest_sample`，因此匿名请求和 operator token 都不能写入；但样本只证明传感器新鲜度，生产默认还要求下位机状态健康才允许危险控制。在 `require_device_status_for_control = true` 时，即使样本新鲜，缺少下位机状态也会让 `/api/live` 和 v1 realtime 显示设备 offline，v1 `data.phase` 也保持 `offline`，并产生 `device_status_unavailable` 高危报警。本地演示先用 `xingshu auth login --username engineer --password engineer123` 获取 token，或设置 `XINGSHU_TOKEN`。
+
+v1 realtime WebSocket 使用同一新鲜样本门槛；样本缺失或过期时发送 `503` 错误信封并断开，不继续推送旧样本值或用当前时间伪造实时 `timestamp`。
 
 ## 6. 控制
 
@@ -90,9 +96,12 @@ xingshu --json status
 | `xingshu control start --name demo --temp 60 --rpm 300` | 创建基础批次并启动 | 同上 |
 | `xingshu control stop` | 停止当前流程 | 写停止审计 |
 | `xingshu control estop` | 触发急停 | 最高优先级 |
-| `xingshu control estop --reset` | 复位急停 | 需符合现场安全流程 |
+| `xingshu control estop --reset` | 复位急停 | 需要新鲜现场样本；不清除设备写入故障，不开启自动控制 |
+| `xingshu control fault-reset` | 现场确认后清除锁存的设备控制写入故障 | 需要新鲜现场样本；下位机不能仍报告 `last_command_ok=false`；自动控制保持关闭 |
 
-生产现场禁止用 CLI 绕过操作 SOP；CLI 与 HMI 使用同一安全路径。
+生产现场禁止用 CLI 绕过操作 SOP；CLI 与 HMI 使用同一安全路径。人工锁打开会关闭自动控制，解除人工锁不会自动恢复自动控制。传感器或下位机状态链路异常也会关闭自动控制，恢复后仍需要操作员重新开启。
+
+`data delete` 会清空运行数据表，也必须在 daemon 停止的本地维护/验收窗口执行；如果服务明确 active，命令会拒绝。状态无法自动检查时，只有已有维护记录后才能加 `--confirm-daemon-stopped`。该确认只覆盖 daemon 状态不可验证，不会绕过生产状态保护；数据库里仍有 `finished_at IS NULL` 的未完成批次时，命令会拒绝清库。
 
 ## 7. AI
 
@@ -101,9 +110,22 @@ xingshu --json status
 | `xingshu ai suggest` | 获取或生成最新参数建议 | 本地传统优化器/云端 provider 边界可用 |
 | `xingshu ai plan` | 生成只读实验 SOP 草案 | 本地通过，不写控制 |
 | `xingshu ai model` | 查看 AI provider、memory 和 local_ai readiness | 本地通过 |
-| `xingshu ai train` | 检查本地 LoRA 训练是否可用 | 当前按预期失败并列出缺失资产 |
+| `xingshu ai train --export-only --dataset lora.jsonl` | 从真实 SQLite 批次、产品结果、样本和审计事件导出监督训练 JSONL | 本地通过，不需要模型资产 |
+| `xingshu ai train --dataset lora.jsonl --manifest train.manifest.json --dry-run` | 调用 `XINGSHU_LOCAL_AI_TRAIN_SCRIPT` 并写训练 manifest | 需配置训练脚本、GGUF 和转换脚本 |
+| `xingshu ai train --dataset lora.jsonl --promote --min-eval-score 0.8` | 训练脚本返回候选 adapter 和评估分数达标时，备份当前 `XINGSHU_LOCAL_AI_LORA` 并晋级候选 adapter | 必须显式 `--promote`；无分数、无候选文件或低于阈值会拒绝晋级 |
 
-`xingshu ai train` 要变成真实训练能力，仍需 Qwen3.5-2B/GGUF、LoRA adapter、PEFT 训练脚本、转换脚本和 RK 验收报告。
+`xingshu ai train` 的训练脚本输出建议包含：
+
+```json
+{
+  "status": "ok",
+  "evaluation": { "score": 0.91, "metrics": { "loss": 0.12 } },
+  "artifacts": { "adapter_path": "C:\\models\\candidate-adapter.gguf" }
+}
+```
+
+真实 AI 交付仍需 Qwen3.5-2B/GGUF、LoRA adapter、生产 PEFT 训练脚本、推理入口、RK 延迟报告和真实批次效果验证。
+其中 `ready_for_base_inference` 只能说明基础模型入口可用；只有 `ready_for_prd_lora=true` 才能作为 PRD 本地 LoRA/RK 侧证据。
 
 ## 8. 审计
 
@@ -141,7 +163,37 @@ xingshu --json status
 
 当前性能冒烟不证明 STM32/RS485 采集延迟、真实执行器控制延迟、LoRA 推理延迟、7x24 或 MTBF。
 
-## 12. 验收建议
+## 12. 运维预检
+
+| 命令 | 说明 |
+| --- | --- |
+| `xingshu ops preflight --production --json` | 检查生产上线前的本地配置、默认口令、session secret、数据库加密 key、MQTT/Modbus TLS 路径和备份 timer 文件 |
+| `xingshu ops backup --db data/reactor.sqlite3 --out backups/reactor.sqlite3.snapshot` | 使用 SQLite `VACUUM INTO` 生成在线快照 |
+| `xingshu ops restore --backup backups/reactor.sqlite3.snapshot --db data/reactor.sqlite3 --yes` | 校验 SQLite magic/schema/integrity 后恢复；会拒绝在 daemon 活跃时覆盖目标库，也会拒绝覆盖仍有未完成批次的可读目标库 |
+| `xingshu ops wipe --db data/reactor.sqlite3 --yes` | 覆盖并删除 DB、WAL/SHM/JOURNAL、`<db>.key` 和 sibling `backups/` 中匹配快照；会拒绝在 daemon 活跃或目标库仍有未完成批次时执行 |
+| `xingshu key generate --db data/reactor.sqlite3 --yes` | 停机维护窗口内生成新的 `XINGSHU_DB_ENCRYPTION_KEY` 文件，不在输出中泄露 key；目标库仍有未完成批次时拒绝 |
+| `xingshu key rekey-integration-tasks --db data/reactor.sqlite3 --old-key-file old.env --new-key-file data/reactor.key --dry-run` | 离线扫描并预检 `integration_tasks.request_json/response_json` 迁移计数；正式 `--yes` 提交必须停 daemon |
+
+`ops preflight --production` 有 fail 级发现时返回非 0。默认口令、缺失 `XINGSHU_AUTH_SECRET`、缺失或无效 `XINGSHU_DB_ENCRYPTION_KEY`、启用 MQTT/Modbus 但 TLS 文件缺失都会失败。MQTT/Modbus disabled 或 `device.mode=pipeline` 会给 warning，用于保留本地联调能力，但正式 RK/现场交付需逐项解释。
+
+`ops restore` / `ops wipe` 只用于停机维护窗口。执行前先停止 `reactor-edge`/`reactor-edge-daemon` 并确认现场不在生产控制；如果 systemd 状态无法被 CLI 证明已停，只有在已有记录的维护决策后才能加 `--confirm-daemon-stopped`。该参数不能用于在线覆盖或擦除运行库；只要服务明确 active，命令必须拒绝。`restore` 还会先只读检查目标库，若目标库可读且仍有未完成批次，会拒绝覆盖以保留生产证据；目标库损坏到无法检查时，restore 仍可作为救援恢复路径继续执行。`wipe` 是退役/销毁动作，若当前库可读且仍有未完成批次，会拒绝擦除。
+
+`key generate` 和 `key rekey-integration-tasks --yes` 同样要求停机维护窗口，避免 daemon 仍持有旧 key 时磁盘 key 或密文已切到新 key。正式提交还会拒绝未完成批次，避免生产记录尚未闭合时改变密钥可读性。`rekey-integration-tasks --dry-run` 不改库，可用于停机前预检；正式提交如无法自动检查 systemd 状态，也只能在已有维护记录后加 `--confirm-daemon-stopped`。
+
+示例：
+
+```powershell
+$env:XINGSHU_AUTH_SECRET = "<32+ chars production secret>"
+$env:XINGSHU_OPERATOR_PASSWORD = "<production password>"
+$env:XINGSHU_ENGINEER_PASSWORD = "<production password>"
+$env:XINGSHU_ADMIN_PASSWORD = "<production password>"
+$env:XINGSHU_DB_ENCRYPTION_KEY = "<64 hex chars or base64 32 bytes>"
+xingshu ops preflight --production --json
+```
+
+该命令不替代正式 CA/企业 CA 证书链验收、broker 联调、密钥托管/轮换演练或安全扫描。
+
+## 13. 验收建议
 
 CLI 验收至少保存：
 
@@ -150,6 +202,7 @@ CLI 验收至少保存：
 - `xingshu control --help`
 - `xingshu ai --help`
 - `xingshu modbus --help`
+- `xingshu ops preflight --production --json`
 - 关键命令的 `--json` 输出
 - 对应审计导出
 

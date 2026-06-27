@@ -1,0 +1,37 @@
+{
+  "output": "X:\\tianhks\\outputs\\manual-20260607-training\\video\\upper_computer_training_video_draft.mp4",
+  "bytes": 3619865,
+  "status": "draft_silent_slideshow",
+  "caveat": "This MP4 is a silent training deck draft, not a real现场操作录屏, not narrated training, and not user signoff evidence.",
+  "slideCount": 16,
+  "secondsPerSlide": 30,
+  "estimatedDurationSeconds": 480,
+  "sourcePreviewDir": "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview",
+  "sourcePreviewPaths": [
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-01.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-02.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-03.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-04.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-05.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-06.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-07.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-08.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-09.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-10.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-11.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-12.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-13.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-14.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-15.png",
+    "X:\\tianhks\\outputs\\manual-20260607-training\\presentations\\xingshu-upper-computer-training\\preview\\slide-16.png"
+  ],
+  "deckPptx": "X:\\tianhks\\docs\\upper_computer_training_deck.pptx",
+  "storyboard": "X:\\tianhks\\docs\\upper_computer_training_video_storyboard.md",
+  "generatedAt": "2026-06-07T13:44:18.013Z",
+  "ffprobe": {
+    "format": {
+      "duration": "480.000000",
+      "size": "3619865"
+    }
+  }
+}
