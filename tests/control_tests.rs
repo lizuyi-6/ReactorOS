@@ -25,6 +25,8 @@ fn safety() -> SafetyConfig {
             write_retry_backoff_ms: 5000,
             safety_guard_timeout_ms: 1000,
             ai_stop_product_concentration_percent: 95.0,
+            require_command_ack: false,
+            command_ack_timeout_ms: 2000,
         },
         temperature: TemperatureSafety {
             min_c: 20.0,

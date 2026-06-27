@@ -83,6 +83,12 @@ Vue 工艺生命周期切片（`/#/control` 工艺/批次面板、`src/stores/pl
 
 对外应表述为“安全逻辑已实现，独立进程可运行；生产级隔离和 watchdog 验收待补”。
 
+### 3.4.1 命令下发握手（命令级 ACK）
+
+为收敛 `write_targets` 在 ESP32 / JSON Bridge 模式下“返回 Ok 只代表字节已发出/文件已写盘，不代表下位机收到并执行”的盲区，控制循环的命令下发路径已增加命令级握手（`src/device.rs` 的 `write_targets_acknowledged`、`src/main.rs` 的 `classify_ack_outcome`）：每条命令带唯一 `request_id`，下位机回显式 ACK，上位机收到**匹配 rid 且成功**的 ACK 才算完成，否则在 `command_ack_timeout_ms`（默认 2000ms）后 fail-closed 闭锁自动控制并审计（`device_write_rejected` / `device_write_unconfirmed`）。各设备模式实现：ESP32 串口新增命令帧 `rid` 字段与 ACK 帧（`build_esp32_command_with_rid` / `parse_esp32_ack_frame`）；JSON Bridge 复用 `state.json` 的 `last_command_request_id`/`last_command_ok` 回执轮询；Modbus RTU 在 FC06 应答之上补读回验证。`require_command_ack` 默认 false（legacy 兼容），`xingshu ops preflight --production` 要求生产设 true。协议契约见 `docs/command_ack_handshake.md`。
+
+对外应表述为“命令下发的送达确认已从被动等下一轮升级为本次命令本次确认的握手，ACK 超时/拒绝 fail-closed”；**仍属未覆盖**：ESP32 固件侧 ACK 帧实现（硬件团队）、真机时序实测（ACK 往返延迟、半双工 ACK 与样本帧交错、Modbus 读回的合法 clamp 判定阈值）。
+
 ### 3.5 页面数量映射
 
 PRD 和团队分工写的是七大页面。当前 Vue 生产 HMI 已按 PRD 七大页面提供七个 hash 路由：

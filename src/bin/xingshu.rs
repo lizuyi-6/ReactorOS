@@ -2837,6 +2837,12 @@ fn ops_preflight(
                     format!("parsed {}", safety_path.display()),
                 ));
             }
+            if production && !safety.control.require_command_ack {
+                findings.push(PreflightFinding::fail(
+                    "safety_config",
+                    "require_command_ack must be true in production: downstream writes require a command-level ACK handshake (see docs/command_ack_handshake.md)",
+                ));
+            }
         }
         Err(err) => findings.push(PreflightFinding::fail(
             "safety_config",

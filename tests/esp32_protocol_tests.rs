@@ -1,6 +1,9 @@
 use reactor_edge_daemon::{
     control::SafeCommand,
-    device::{build_esp32_command, build_esp32_sample_frame, checksum_hex, parse_esp32_frame},
+    device::{
+        build_esp32_ack_frame, build_esp32_command, build_esp32_command_with_rid,
+        build_esp32_sample_frame, checksum_hex, parse_esp32_ack_frame, parse_esp32_frame,
+    },
     state::SensorSnapshot,
 };
 
@@ -130,4 +133,74 @@ fn simulated_sample_frame_round_trips_through_esp32_parser() {
         sample.product_concentration_percent
     );
     assert_eq!(parsed.ph, sample.ph);
+}
+
+#[test]
+fn builds_esp32_command_frame_with_request_id() {
+    let command = SafeCommand {
+        target_temperature_c: 192.0,
+        heat_time_s: 300.0,
+        hold_time_s: 600.0,
+        cool_time_s: 180.0,
+        target_stirrer_rpm: 520.0,
+        target_shake_speed_cpm: 35.0,
+        target_pressure_mpa: 0.5,
+        reason: "test".to_string(),
+    };
+    let frame = build_esp32_command_with_rid("TX", &command, "auto-42-1", true);
+    let body = "TX|v=1|rid=auto-42-1|heat_time=300.00|hold_time=600.00|cool_time=180.00|target_temp=192.00|stir_speed=520.00|shake_speed=35.00|target_pressure=0.50";
+    let expected = format!("{body}|chk={}\n", checksum_hex(body.as_bytes()));
+    assert_eq!(frame, expected);
+}
+
+#[test]
+fn esp32_ack_frame_round_trips_when_confirmed() {
+    let frame = build_esp32_ack_frame("RX", "auto-42-1", true, None, true);
+    let ack = parse_esp32_ack_frame(&frame, "RX", true).unwrap();
+    assert_eq!(ack.request_id, "auto-42-1");
+    assert!(ack.ok);
+    assert!(ack.error.is_none());
+}
+
+#[test]
+fn esp32_ack_frame_round_trips_rejected_with_error() {
+    let frame = build_esp32_ack_frame("RX", "auto-42-2", false, Some("target out of range"), true);
+    let ack = parse_esp32_ack_frame(&frame, "RX", true).unwrap();
+    assert_eq!(ack.request_id, "auto-42-2");
+    assert!(!ack.ok);
+    assert_eq!(ack.error.as_deref(), Some("target out of range"));
+}
+
+#[test]
+fn parse_esp32_ack_frame_rejects_bad_checksum() {
+    let frame = "RX|v=1|type=ack|rid=x|ok=1|chk=00";
+    let err = parse_esp32_ack_frame(frame, "RX", true)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("checksum mismatch"));
+}
+
+#[test]
+fn parse_esp32_ack_frame_skips_sample_frame_as_not_ack() {
+    // A sample frame (no type=ack) must NOT be misparsed as an ACK — the
+    // handshake loop relies on Err here to skip sample frames while waiting.
+    let body = "RX|v=1|seq=1|ms=1|temp=50.0|pressure=0.1|stir_speed=100|shake_speed=30|tilt_state=0|flow_rate=1.0";
+    let frame = format!("{body}|chk={}", checksum_hex(body.as_bytes()));
+    let err = parse_esp32_ack_frame(&frame, "RX", true)
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("not an ack") || err.contains("missing field"),
+        "unexpected err: {err}"
+    );
+}
+
+#[test]
+fn parse_esp32_ack_frame_rejects_missing_request_id() {
+    let body = "RX|v=1|type=ack|ok=1";
+    let frame = format!("{body}|chk={}", checksum_hex(body.as_bytes()));
+    let err = parse_esp32_ack_frame(&frame, "RX", true)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("rid"), "unexpected err: {err}");
 }
