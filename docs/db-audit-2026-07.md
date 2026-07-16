@@ -4,6 +4,7 @@
 
 ## ✅ 健康
 - 孤儿记录(全表外键完整):`control_events` / `sensor_samples` / `product_results` / `process_steps` **全部 0 孤儿**
+- `sensor_samples` 数据质量:NULL 0;10 条温度>160°C / 压力>1MPa 越限**全部 `batch_id IS NULL`**(测试注入样本,非真实异常 —— deviations doc 记 Monitor 注入越限样本验证 alarm 流);`demo_alarms` 2 条均为 demo 类(`temperature_limit`/`pressure_limit` 是 runtime alarm,不落 demo_alarms 表)
 - 审计链(有 hash 的事件)`broken_links`:**0**
 - `emergency_stop` 代码 fail-closed 正确(engage → audit hash → 审计失败 latch_control_fault)
 
