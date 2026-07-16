@@ -61,3 +61,8 @@ config/reactor-edge.env
 /identifier.sqlite
 # Output-root screenshots; subdirs like /output/playwright/ already ignored above
 /output/*.png
+
+# Claude Code local provenance hook (depends on machine-local
+# .claude/settings.local.json + IDEA built-in server on 63342;
+# not a shared project asset — script is reusable if team adopts it)
+/.claude/hooks/
