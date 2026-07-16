@@ -56,3 +56,8 @@ config/reactor-edge.env
 /output/xingshu_prd_pdf.txt
 /output/index-script-check.js
 /output/frame-*.jpg
+
+# IDEA-generated local SQLite (regenerated each IDE session, machine-local)
+/identifier.sqlite
+# Output-root screenshots; subdirs like /output/playwright/ already ignored above
+/output/*.png
