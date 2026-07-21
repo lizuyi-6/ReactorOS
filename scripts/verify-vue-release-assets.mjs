@@ -8,9 +8,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const checks = [
   {
-    file: "frontend/dist/index.html",
+    file: "workshop/frontend/dist/index.html",
     mustContain: ['id="app"'],
-    label: "Vue production single-file HMI exists",
+    label: "Workshop production single-file HMI exists",
   },
   {
     file: "deploy/reactor-edge.service",
@@ -26,13 +26,29 @@ const checks = [
   {
     file: "scripts/package-a55-debian10.sh",
     mustContain: [
-      "Missing frontend/dist/index.html",
-      'cp -r frontend/dist "${PACKAGE_DIR}/frontend/"',
+      'FRONTEND_DIST="${FRONTEND_DIST:-frontend/dist}"',
+      'cp -r "${FRONTEND_DIST}" "${PACKAGE_DIR}/frontend/"',
       "--assets auto",
       "sudo ./install.sh",
     ],
     mustNotContain: ['--assets "${ROOT}/static"'],
     label: "ARM64 package carries Vue dist and starts auto assets",
+  },
+  {
+    file: "scripts/build-lubancat2-debian10.ps1",
+    mustContain: [
+      '[string]$FrontendProject = "workshop\\frontend"',
+      '"-e", "FRONTEND_DIST=$frontendRelative/dist"',
+    ],
+    label: "LubanCat Windows build selects Workshop HMI",
+  },
+  {
+    file: "scripts/build-lubancat2-debian10.sh",
+    mustContain: [
+      'FRONTEND_PROJECT="${FRONTEND_PROJECT:-workshop/frontend}"',
+      '-e "FRONTEND_DIST=${FRONTEND_PROJECT}/dist"',
+    ],
+    label: "LubanCat Unix build selects Workshop HMI",
   },
   {
     file: "scripts/run-lubancat2-qemu.sh",

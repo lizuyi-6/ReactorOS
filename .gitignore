@@ -8,6 +8,8 @@
 /.env
 /node_modules/
 /frontend/dist/
+# workshop/ is a large (136M+) standalone workspace; keep it out of the main repo.
+/workshop/
 /test-results/
 /playwright-report/
 dist/

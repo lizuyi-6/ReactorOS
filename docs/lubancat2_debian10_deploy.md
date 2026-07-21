@@ -43,6 +43,20 @@ systemd override.
 
 ## Build On The PC
 
+The LubanCat-specific wrappers build `workshop/frontend` and pass that dist
+directory to the ARM64 packager. The generic A55 packager still accepts
+`FRONTEND_DIST`/`FRONTEND_SOURCE` overrides, so its default `frontend/dist`
+behavior remains backward compatible.
+
+On upgrade, `install.sh` preserves an existing
+`/etc/reactor-edge/reactor-edge.env` so provider keys are not replaced by the
+package template. A fresh installation still receives the packaged template;
+other TOML configuration files continue to update from the package.
+For the network-exposed default bind, the installer also creates
+`/etc/reactor-edge/reactor-edge.auth.env` with a 64-hex-character
+`XINGSHU_AUTH_SECRET` and mode `0600` when neither environment file provides a
+strong secret. Reinstalling preserves an existing strong secret.
+
 Windows PowerShell:
 
 ```powershell
@@ -192,6 +206,17 @@ Customer demo context:
 sudo ./install.sh --seed-demo-context
 ```
 
+The installed service drop-in sets `XINGSHU_SEED_DEMO_CONTEXT=true`; the daemon
+reads this through clap's environment binding. A fresh demo database receives
+two processes, six finished batches/results, one cached recommendation, and
+two non-sensor demo alarms. Runtime sensor values are still never fabricated.
+
+For an upgrade from an older database, migration adds missing
+`integration_tasks` columns before creating indexes and keeps existing batch
+rows. Duplicate active external task IDs keep the earliest row as the
+idempotency record; later duplicate rows remain in the database with only
+their duplicate `external_task_id` cleared.
+
 Status and logs:
 
 ```bash
@@ -298,7 +323,9 @@ The updater:
   after boot; pre-switch interruptions keep the existing `current` slot running
   and post-switch interruptions in `switching`, `health_checking`, or
   `rolling_back` restore `previous`
-- runs `/opt/reactor-edge/ota-boot-check.sh` as the backend `ExecStartPre`, so
+- runs `/opt/reactor-edge/ota-boot-check.sh` as root via the systemd
+  `ExecStartPre=+...` prefix while the daemon itself remains the unprivileged
+  service user, so
   manual restarts and automatic systemd restarts also re-check OTA state before
   production control starts
 - rate-limits repeated backend/kiosk crashes with systemd `StartLimit*` so a
@@ -358,6 +385,14 @@ non-sensor demo alarms:
 ```bash
 REACTOR_OS_EXTRA_ARGS=--seed-demo-context ./run.sh ./config/device.json_bridge.toml
 ```
+
+For the installed systemd service, use `sudo ./install.sh --seed-demo-context`;
+the installer writes `XINGSHU_SEED_DEMO_CONTEXT=true` to its service drop-in.
+
+The Chromium unit waits for `display-manager.service` but does not actively
+pull or order after `graphical.target`. This lets an offline kiosk start once
+LightDM and the backend are ready even when `systemd-time-wait-sync.service`
+is still waiting for NTP; ReactorOS does not mask or disable system time sync.
 
 Production sensor rule remains unchanged: demo context does not write
 `sensor_samples` and does not set `runtime.latest_sample`. Without a real

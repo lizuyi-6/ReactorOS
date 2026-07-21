@@ -13,7 +13,7 @@ const checks = [
       "After=reactor-edge-ota-boot-check.service network-online.target",
       "Requires=reactor-edge-ota-boot-check.service",
       "WorkingDirectory=/opt/reactor-edge/current",
-      "ExecStartPre=/opt/reactor-edge/ota-boot-check.sh",
+      "ExecStartPre=+/opt/reactor-edge/ota-boot-check.sh",
       "ExecStart=/opt/reactor-edge/current/bin/reactor-edge-daemon",
       "--safety-guard /opt/reactor-edge/current/bin/reactor-safety-guard",
       "--assets auto",
@@ -34,7 +34,8 @@ const checks = [
   {
     file: "deploy/reactor-os-chromium.service",
     mustContain: [
-      "After=graphical.target reactor-edge-ota-boot-check.service reactor-edge.service",
+      "After=display-manager.service reactor-edge-ota-boot-check.service reactor-edge.service",
+      "Wants=display-manager.service reactor-edge-ota-boot-check.service reactor-edge.service",
       "Requires=reactor-edge-ota-boot-check.service",
       "WorkingDirectory=/opt/reactor-edge/current",
       "ExecStart=/opt/reactor-edge/current/kiosk/run-chromium-kiosk.sh",

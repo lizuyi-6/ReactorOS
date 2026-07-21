@@ -127,7 +127,8 @@ PRD 和团队分工写的是七大页面。当前 Vue 生产 HMI 已按 PRD 七�
 
 - `Cargo.toml` 新增 `[profile.release]`：`lto = "fat"`、`codegen-units = 1`（跨 crate 内联、去死码）、`panic = "abort"`（去 unwind 表；代码无 `catch_unwind` 依赖，安全）、`strip = "symbols"`；保留 `overflow-checks = true` 不牺牲安全。
 - tokio 运行时限 2 worker 线程（默认每核一 worker，A55 上 4 个对低负载是浪费）。
-- SQLite 两条连接路径（rusqlite + SQLx pool）统一加 `synchronous=NORMAL`（WAL 下安全，减 fsync 与 eMMC 写放大）、`wal_autocheckpoint=400`、`temp_store=MEMORY`、`cache_size=-4096`（约 4 MiB）。
+- SQLite 两条连接路径（rusqlite + SQLx pool）统一加 `synchronous=NORMAL`（WAL 下安全，减 fsync 与 eMMC 写放大）、`wal_autocheckpoint=400`、`temp_store=MEMORY`、`cache_size=-4096`（约 4 MiB）和 `mmap_size=67108864`（按需映射 64 MiB 热历史/索引窗口，不预分配等量 RSS）。
+- 2026-07-19 现场升级反馈暴露了旧库迁移顺序错误：`integration_tasks` 唯一索引曾在补列/去重前创建。当前迁移在一个事务内先补 8 个兼容列、保留旧批次，再对重复活动 external task ID 保留最早幂等记录并仅清除后续重复键，最后创建索引；缺主键 `id` 的未知旧表会明确拒绝无损迁移，而不是清库或给出泛化 SQL 错误。
 
 已实测的客观产物（ARM64 交叉编译包 `dist/reactor-os-lubancat2-...`）：
 

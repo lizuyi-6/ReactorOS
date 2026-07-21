@@ -88,7 +88,7 @@ Invoke-RestMethod http://127.0.0.1:8000/api/devices/status
 
 ## 鲁班猫 2 Debian 10 交付构建
 
-鲁班猫 2 使用 RK3568 / ARM64 / Cortex-A55，继续采用电脑侧交叉编译，不在开发板上编译。推荐生成鲁班猫 2 专用包，包内 systemd 默认用户为 `cat`，Chromium kiosk 默认使用 `/home/cat/.Xauthority`。
+鲁班猫 2 使用 RK3568 / ARM64 / Cortex-A55，继续采用电脑侧交叉编译，不在开发板上编译。专用构建默认打包 `workshop/frontend` HMI，并启用 LLVM 对应的 AES（含 PMULL 指令族）、SHA2、CRC、LSE 目标特性；包内 systemd 默认用户为 `cat`，Chromium kiosk 默认使用 `/home/cat/.Xauthority`。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\build-lubancat2-debian10.ps1

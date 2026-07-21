@@ -1,7 +1,7 @@
 [Unit]
 Description=ReactorOS Chromium HMI Kiosk
-After=graphical.target reactor-edge-ota-boot-check.service reactor-edge.service
-Wants=graphical.target reactor-edge-ota-boot-check.service reactor-edge.service
+After=display-manager.service reactor-edge-ota-boot-check.service reactor-edge.service
+Wants=display-manager.service reactor-edge-ota-boot-check.service reactor-edge.service
 Requires=reactor-edge-ota-boot-check.service
 StartLimitIntervalSec=600
 StartLimitBurst=5

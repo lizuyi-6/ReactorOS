@@ -802,6 +802,113 @@ fn migration_creates_indexes_for_hot_history_queries() {
 }
 
 #[test]
+fn migration_adds_legacy_integration_columns_before_indexes_and_preserves_batches() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy-reactor.sqlite3");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            finished_at TEXT,
+            target_temperature_c REAL NOT NULL,
+            target_stirrer_rpm REAL NOT NULL,
+            heating_minutes REAL NOT NULL,
+            stirring_minutes REAL NOT NULL
+        );
+        INSERT INTO batches
+            (name, started_at, finished_at, target_temperature_c,
+             target_stirrer_rpm, heating_minutes, stirring_minutes)
+        VALUES
+            ('legacy-batch-kept', '2026-05-01T00:00:00+00:00',
+             '2026-05-01T01:00:00+00:00', 72.0, 320.0, 30.0, 45.0);
+
+        CREATE TABLE integration_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source TEXT NOT NULL,
+            action TEXT NOT NULL,
+            request_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO integration_tasks (source, action, request_json, created_at)
+        VALUES ('legacy_source', 'set_targets', '{"target":72}', '2026-05-01T00:00:00+00:00');
+        "#,
+    )
+    .unwrap();
+    drop(conn);
+
+    let db = Db::open(&path).unwrap();
+    let batches = db.recent_batches(10).unwrap();
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].name, "legacy-batch-kept");
+
+    let tasks = db.integration_tasks(Some("legacy_source"), 10).unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].status, "failed");
+    assert_eq!(tasks[0].request, json!({ "target": 72 }));
+    assert_eq!(tasks[0].response["status"], "failed");
+    assert_eq!(tasks[0].external_task_id, None);
+    assert!(db
+        .index_names_for_diagnostics()
+        .unwrap()
+        .contains(&"idx_integration_tasks_unique_active_external_task_id".to_string()));
+}
+
+#[test]
+fn migration_preserves_duplicate_legacy_tasks_and_keeps_earliest_idempotency_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy-duplicate-tasks.sqlite3");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(
+        r#"
+        CREATE TABLE integration_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_task_id TEXT,
+            source TEXT NOT NULL,
+            action TEXT NOT NULL,
+            status TEXT NOT NULL,
+            request_json TEXT NOT NULL,
+            response_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO integration_tasks
+            (external_task_id, source, action, status, request_json, response_json, created_at, updated_at)
+        VALUES
+            ('duplicate-1', 'ainas', 'set_targets', 'received', '{}', 'null',
+             '2026-05-01T00:00:00+00:00', '2026-05-01T00:00:00+00:00'),
+            ('duplicate-1', 'ainas', 'set_targets', 'executed', '{}', '{"status":"executed"}',
+             '2026-05-01T00:01:00+00:00', '2026-05-01T00:01:00+00:00');
+        "#,
+    )
+    .unwrap();
+    drop(conn);
+
+    let db = Db::open(&path).unwrap();
+    let tasks = db.integration_tasks(Some("ainas"), 10).unwrap();
+    assert_eq!(tasks.len(), 2);
+    let canonical = tasks.iter().find(|task| task.id == 1).unwrap();
+    let duplicate = tasks.iter().find(|task| task.id == 2).unwrap();
+    assert_eq!(canonical.external_task_id.as_deref(), Some("duplicate-1"));
+    assert_eq!(canonical.status, "received");
+    assert_eq!(duplicate.external_task_id, None);
+    assert_eq!(duplicate.status, "executed");
+
+    let replay = db
+        .create_integration_task(
+            "ainas",
+            Some("duplicate-1"),
+            "set_targets",
+            &json!({ "target_temperature_c": 72.0 }),
+        )
+        .unwrap();
+    assert_eq!(replay.id, 1);
+    assert_eq!(db.integration_tasks(Some("ainas"), 10).unwrap().len(), 2);
+}
+
+#[test]
 fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
     let db = Db::open_memory().unwrap();
     let mut batch_ids = Vec::new();

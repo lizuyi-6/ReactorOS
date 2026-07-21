@@ -15,6 +15,7 @@ else
   PROJECT_DIR="/project"
   SYSTEMD_DIR="/etc/systemd/system"
 fi
+AUTH_ENV_FILE="${ETC_DIR}/reactor-edge.auth.env"
 SLOTS_DIR="${PREFIX}/slots"
 INITIAL_SLOT="${REACTOR_EDGE_INITIAL_SLOT:-a}"
 ENABLE_KIOSK=1
@@ -176,6 +177,71 @@ copy_tree() {
   cp -a "${src}/." "$dst/"
 }
 
+copy_config_tree_preserving_environment() {
+  local src="$1"
+  local dst="$2"
+  local entry name target
+  mkdir -p "$dst"
+  for entry in "${src}/"*; do
+    name="$(basename "$entry")"
+    target="${dst}/${name}"
+    if [[ "$name" == "reactor-edge.env" && ( -e "$target" || -L "$target" ) ]]; then
+      if [[ ! -f "$target" ]]; then
+        echo "Existing environment path is not a regular file: $target" >&2
+        exit 1
+      fi
+      echo "Preserving existing environment file: $target"
+      continue
+    fi
+    cp -a "$entry" "$target"
+  done
+}
+
+env_value_from_file() {
+  local file="$1"
+  local key="$2"
+  [[ -f "$file" ]] || return 0
+  awk -v wanted="$key" '
+    index($0, "=") > 0 {
+      name = substr($0, 1, index($0, "=") - 1)
+      if (name == wanted) value = substr($0, index($0, "=") + 1)
+    }
+    END { if (value != "") print value }
+  ' "$file"
+}
+
+auth_secret_is_strong() {
+  local secret="$1"
+  [[ ${#secret} -ge 32 && "$secret" != "xingshu-local-rbac-session-secret" ]]
+}
+
+ensure_auth_secret() {
+  local auth_secret main_secret generated tmp
+  auth_secret="$(env_value_from_file "$AUTH_ENV_FILE" XINGSHU_AUTH_SECRET)"
+  main_secret="$(env_value_from_file "${ETC_DIR}/reactor-edge.env" XINGSHU_AUTH_SECRET)"
+  if [[ -n "$auth_secret" ]]; then
+    if auth_secret_is_strong "$auth_secret"; then
+      echo "Preserving existing strong authentication secret: $AUTH_ENV_FILE"
+      return 0
+    fi
+  elif auth_secret_is_strong "$main_secret"; then
+    echo "Using existing strong authentication secret from ${ETC_DIR}/reactor-edge.env"
+    return 0
+  fi
+
+  generated="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
+  if [[ ! "$generated" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "Failed to generate a 64-character authentication secret" >&2
+    exit 1
+  fi
+  tmp="${AUTH_ENV_FILE}.tmp.$$"
+  umask 077
+  printf 'XINGSHU_AUTH_SECRET=%s\n' "$generated" >"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$AUTH_ENV_FILE"
+  echo "Generated strong authentication secret: $AUTH_ENV_FILE"
+}
+
 link_or_preserve_existing() {
   local path="$1"
   local target="$2"
@@ -208,7 +274,8 @@ if [[ -d "${ROOT}/frontend" ]]; then
   copy_tree "${ROOT}/frontend" "${SLOT_DIR}/frontend"
 fi
 copy_tree "${ROOT}/kiosk" "${SLOT_DIR}/kiosk"
-copy_tree "${ROOT}/config" "$ETC_DIR"
+copy_config_tree_preserving_environment "${ROOT}/config" "$ETC_DIR"
+ensure_auth_secret
 install -m 0755 "${ROOT}/health-check.sh" "${SLOT_DIR}/health-check.sh"
 install -m 0755 "${ROOT}/backup.sh" "${SLOT_DIR}/backup.sh"
 install -m 0755 "${ROOT}/ota-update.sh" "${SLOT_DIR}/ota-update.sh"
@@ -254,7 +321,7 @@ if [[ "${SEED_DEMO_CONTEXT}" -eq 1 ]]; then
   mkdir -p "${SYSTEMD_DIR}/reactor-edge.service.d"
   cat >"${SYSTEMD_DIR}/reactor-edge.service.d/10-demo-context.conf" <<'EOF'
 [Service]
-Environment=REACTOR_OS_EXTRA_ARGS=--seed-demo-context
+Environment=XINGSHU_SEED_DEMO_CONTEXT=true
 EOF
 else
   rm -f "${SYSTEMD_DIR}/reactor-edge.service.d/10-demo-context.conf"
@@ -302,6 +369,9 @@ JSON bridge:
 
 Service user:
   ${SERVICE_USER}:${SERVICE_GROUP}
+
+Authentication secret:
+  ${AUTH_ENV_FILE} (generated once with mode 0600 when no strong secret exists)
 
 Application slot:
   current: ${PREFIX}/current -> ${SLOT_DIR}

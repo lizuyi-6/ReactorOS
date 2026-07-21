@@ -9,11 +9,13 @@ TARGET_DIR="${TARGET_DIR:-target-a55-arm64-buster}"
 PKG_PREFIX="${PKG_PREFIX:-reactor-os-a55-arm64-debian10-chromium-kiosk}"
 DIST_DIR="${DIST_DIR:-dist}"
 CONFIG_NAME="${CONFIG_NAME:-device.json_bridge.toml}"
-A55_RUSTFLAGS="${A55_RUSTFLAGS:--C target-cpu=cortex-a55}"
+A55_RUSTFLAGS="${A55_RUSTFLAGS:--C target-cpu=cortex-a55 -C target-feature=+aes,+sha2,+crc,+lse}"
 BOARD_NAME="${BOARD_NAME:-ARM64 Cortex-A55 Debian 10 board}"
 SERVICE_USER="${SERVICE_USER:-pi}"
 SERVICE_GROUP="${SERVICE_GROUP:-${SERVICE_USER}}"
 SERVICE_HOME="${SERVICE_HOME:-/home/${SERVICE_USER}}"
+FRONTEND_DIST="${FRONTEND_DIST:-frontend/dist}"
+FRONTEND_SOURCE="${FRONTEND_SOURCE:-frontend}"
 DIST_POINTER="${DIST_POINTER:-latest-a55-debian10-package.txt}"
 PACKAGE_README="${PACKAGE_README:-README-A55-CHROMIUM.md}"
 STEPFUN_AI_ENABLED="${STEPFUN_AI_ENABLED:-false}"
@@ -28,13 +30,13 @@ echo "==> Formatting and testing host code"
 cargo fmt --check
 CARGO_TARGET_DIR="${HOST_TARGET_DIR:-/tmp/reactor-host-target}" cargo test
 
-echo "==> Verifying Vue HMI build artifact"
-if [[ ! -f "frontend/dist/index.html" ]]; then
-  cat >&2 <<'EOF'
-Missing frontend/dist/index.html.
+echo "==> Verifying Vue HMI build artifact: ${FRONTEND_DIST}/index.html"
+if [[ ! -f "${FRONTEND_DIST}/index.html" ]]; then
+  cat >&2 <<EOF
+Missing ${FRONTEND_DIST}/index.html.
 
-Run npm run frontend:build on the host before packaging so the ARM64 release
-serves the PRD Vue / Element Plus / ECharts / Pinia HMI by default.
+Build ${FRONTEND_SOURCE} on the host before packaging so the ARM64 release
+serves the selected Vue HMI by default.
 EOF
   exit 1
 fi
@@ -66,11 +68,12 @@ fi
 
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || printf 'nogit')"
 GIT_FULL_SHA="$(git rev-parse HEAD 2>/dev/null || printf 'nogit')"
-if git diff --quiet --ignore-submodules HEAD -- 2>/dev/null && git diff --cached --quiet --ignore-submodules -- 2>/dev/null; then
+if [[ -z "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
   GIT_DIRTY="false"
 else
   GIT_DIRTY="true"
 fi
+FRONTEND_SHA256="$(sha256sum "${FRONTEND_DIST}/index.html" | awk '{print $1}')"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BUILT_AT_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 PACKAGE_NAME="${PKG_PREFIX}-${STAMP}-${GIT_SHA}"
@@ -93,7 +96,7 @@ cp "${SAFETY_GUARD_BIN}" "${PACKAGE_DIR}/bin/reactor-safety-guard"
 cp "${XINGSHU_BIN}" "${PACKAGE_DIR}/bin/xingshu"
 cp config/*.toml "${PACKAGE_DIR}/config/"
 cp -r static/. "${PACKAGE_DIR}/static/"
-cp -r frontend/dist "${PACKAGE_DIR}/frontend/"
+cp -r "${FRONTEND_DIST}" "${PACKAGE_DIR}/frontend/"
 cp kiosk/run-chromium-kiosk.sh "${PACKAGE_DIR}/kiosk/"
 cp deploy/reactor-edge.service "${PACKAGE_DIR}/deploy/"
 cp deploy/reactor-edge-ota-boot-check.service "${PACKAGE_DIR}/deploy/"
@@ -134,6 +137,9 @@ REACTOR_EDGE_PKG_PREFIX=${PKG_PREFIX}
 REACTOR_EDGE_BOARD_NAME=${BOARD_NAME}
 REACTOR_EDGE_SERVICE_USER=${SERVICE_USER}
 REACTOR_EDGE_CONFIG_NAME=${CONFIG_NAME}
+REACTOR_EDGE_RUSTFLAGS=${A55_RUSTFLAGS}
+REACTOR_EDGE_FRONTEND_SOURCE=${FRONTEND_SOURCE}
+REACTOR_EDGE_FRONTEND_SHA256=${FRONTEND_SHA256}
 EOF
 
 sed -i \
@@ -256,7 +262,7 @@ error state.
 
 Default HMI assets:
 
-- \`frontend/dist/index.html\`: Vue 3 + Element Plus + ECharts + Pinia production HMI.
+- \`frontend/dist/index.html\`: Vue 3 production HMI, built from \`${FRONTEND_SOURCE}\` (sha256 \`${FRONTEND_SHA256}\`).
 - \`static/index.html\`: legacy HMI fallback. The daemon is launched with \`--assets auto\` and prefers \`frontend/dist\` when present.
 
 Default paths in \`config/device.json_bridge.toml\`:

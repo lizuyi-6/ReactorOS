@@ -215,7 +215,9 @@ const ageSeconds = computed(() => (sampleAgeMs.value !== null ? Math.round(sampl
 // control_loop_terminated: backend fail-safe (state.rs:135) — supervisor task
 // died; the only recovery is a process restart. Surface it as an unmistakable
 // banner so the operator does NOT believe the system is healthy.
-const controlLoopTerminated = computed(() => Boolean(objectAt(runtime.value, "control_loop_terminated")));
+const controlLoopTerminated = computed(
+  () => textAt(runtime.value, "control_loop_terminated", "false") === "true"
+);
 const lastSensorError = computed(() => textAt(runtime.value, "last_sensor_error", ""));
 // flow_rate_l_min: real backend sample field (SensorSnapshot), previously omitted.
 const flowRate = computed(() => numberAt(sample.value, "flow_rate_l_min"));
@@ -372,26 +374,26 @@ function drawChart(): void {
   const aiTemperature = numberAt(recommendation.value, "target_temperature_c");
   chart.setOption({
     animation: false,
-    color: ["#42ff68", "#ff9f1a", "#2f8fe8"],
+    color: ["#4cae9d", "#aab5bc", "#5b8def"],
     tooltip: {
       trigger: "axis",
-      backgroundColor: "rgba(20, 20, 22, 0.96)",
-      borderColor: "#4f6b48",
+      backgroundColor: "rgba(18, 23, 27, 0.96)",
+      borderColor: "#3d4a53",
       borderWidth: 1,
-      textStyle: { color: "#f3f5f3" }
+      textStyle: { color: "#edf2f4" }
     },
-    legend: { right: 8, top: 0, textStyle: { color: "#c0d0b7" } },
+    legend: { right: 8, top: 0, textStyle: { color: "#aab5bc" } },
     grid: { left: 42, right: 20, top: 42, bottom: 28 },
     xAxis: {
       type: "category",
       data: rows.map((row) => textAt(row, "created_at", "")),
-      axisLabel: { color: "#7f9179", hideOverlap: true },
-      axisLine: { lineStyle: { color: "#2d3a2e" } }
+      axisLabel: { color: "#78858e", hideOverlap: true },
+      axisLine: { lineStyle: { color: "#344049" } }
     },
     yAxis: {
       type: "value",
-      axisLabel: { color: "#7f9179" },
-      splitLine: { lineStyle: { color: "#262f25" } }
+      axisLabel: { color: "#78858e" },
+      splitLine: { lineStyle: { color: "#273139" } }
     },
     series: [
       {
@@ -491,8 +493,8 @@ onBeforeUnmount(() => {
         <div class="enterprise-component-grid">
           <section class="origin-panel process-line-panel">
             <div class="component-head">
-              <strong>PROCESS LINE</strong>
-              <span>ESP32 -> Pi -> HMI</span>
+              <strong>{{ store.tr("工艺线概览", "Process line") }}</strong>
+              <span>ESP32 → Pi → HMI</span>
             </div>
             <div class="reactor-vessel">
               <div class="feed-label">FEED A/B/C</div>
@@ -504,14 +506,18 @@ onBeforeUnmount(() => {
 
           <section class="origin-panel detector-panel">
             <div class="component-head">
-              <strong>DETECTOR SIGNALS</strong>
-              <span class="active-alarm">{{ alarms.length || 1 }} ACTIVE ALARMS</span>
+              <strong>{{ store.tr("关键传感器", "Core sensors") }}</strong>
+              <span class="active-alarm">
+                {{ alarms.length }} {{ store.tr("条报警", alarms.length === 1 ? "alarm" : "alarms") }}
+              </span>
             </div>
             <div class="detector-list">
               <article v-for="row in detectorRows" :key="row.label">
                 <div class="detector-title">
                   <span>{{ row.label }}</span>
-                  <em>NORMAL</em>
+                  <em :class="{ stale: !sampleFresh }">
+                    {{ sampleFresh ? store.tr("在线", "LIVE") : freshnessText }}
+                  </em>
                 </div>
                 <strong>{{ row.value }} <small>{{ row.unit }}</small></strong>
                 <span>{{ row.range }}</span>
@@ -522,19 +528,25 @@ onBeforeUnmount(() => {
 
           <section class="origin-panel predictive-panel">
             <div class="component-head">
-              <strong>AI PREDICTIVE DIAGNOSTICS</strong>
-              <span>Vibration FFT & U Value</span>
+              <strong>{{ store.tr("数据与模型证据", "Data & model evidence") }}</strong>
+              <span>{{ store.tr("仅显示后端实值", "Backend values only") }}</span>
             </div>
             <div class="predictive-columns">
               <div>
-                <h3>电机轴承振动频谱 (FFT)</h3>
-                <div class="mini-scope"><span></span><span></span><span></span></div>
-                <small>0Hz → 500Hz</small>
+                <h3>{{ store.tr("采样窗口", "Sample window") }}</h3>
+                <div class="signal-summary">
+                  <strong>{{ samples.length }}</strong>
+                  <span>{{ store.tr("条真实样本", "real samples") }}</span>
+                </div>
+                <small>{{ freshnessText }}</small>
               </div>
               <div>
-                <h3>热力学传热系数 (U-VALUE)</h3>
-                <div class="mini-scope hot"><span></span><span></span></div>
-                <small>10m ago → now</small>
+                <h3>{{ store.tr("建议来源", "Recommendation source") }}</h3>
+                <div class="signal-summary">
+                  <strong>{{ textAt(recommendation, "provider", "--") }}</strong>
+                  <span>{{ recommendation ? store.tr("已有建议", "available") : store.tr("暂无建议", "not available") }}</span>
+                </div>
+                <small>{{ store.tr("详情需进入 AI 页面复核", "Review details on the AI page") }}</small>
               </div>
             </div>
           </section>
@@ -542,7 +554,7 @@ onBeforeUnmount(() => {
 
         <section class="origin-panel operator-control-panel">
           <div class="origin-panel-head">
-            <h2>OPERATOR CONTROL</h2>
+            <h2>{{ store.tr("运行参数与温度趋势", "Parameters & temperature trend") }}</h2>
             <span>{{ freshnessText }}</span>
           </div>
           <div class="operator-fields">
@@ -559,31 +571,33 @@ onBeforeUnmount(() => {
       <aside class="dark-right-stack">
         <section class="origin-panel ai-command-panel">
           <div class="ai-command-head">
-            <h2>AI COMMAND CENTER</h2>
-            <span>MODEL: {{ textAt(recommendation, "provider", "--") }}</span>
+            <h2>{{ store.tr("AI 参数建议", "AI recommendation") }}</h2>
+            <span>{{ store.tr("模型", "Model") }}: {{ textAt(recommendation, "provider", "--") }}</span>
           </div>
           <div class="ai-command-body">
             <p class="ai-command-note">{{ textAt(recommendation, "rationale", store.tr("暂无 AI 建议", "No AI recommendation")) }}</p>
             <div class="ai-target-box">
               <div>
-                <span>TARGET TEMP</span>
+                <span>{{ store.tr("建议温度", "Suggested temp") }}</span>
                 <strong>{{ fixed(numberAt(recommendation, "target_temperature_c"), 1) }} degC</strong>
               </div>
               <div>
-                <span>TARGET RPM</span>
+                <span>{{ store.tr("建议转速", "Suggested RPM") }}</span>
                 <strong>{{ fixed(numberAt(recommendation, "target_stirrer_rpm"), 0) }}</strong>
               </div>
             </div>
-            <button class="apply-ai-button" type="button">⚡ APPLY AI PARAMS</button>
+            <RouterLink class="apply-ai-button" to="/ai">
+              {{ store.tr("进入 AI 页面复核建议", "Review recommendation") }}
+            </RouterLink>
           </div>
         </section>
 
         <section class="origin-panel current-batch-panel">
           <div class="current-batch-head">
-            <h2>CURRENT BATCH</h2>
+            <h2>{{ store.tr("当前批次", "Current batch") }}</h2>
             <span>ID: {{ textAt(runtime, "active_batch_id", "--") }}</span>
           </div>
-          <div class="batch-started">Started --:--:--</div>
+          <div class="batch-started">{{ store.tr("状态来自后端实时数据", "Live backend state") }}</div>
           <dl>
             <template v-for="row in currentBatchPanelRows" :key="row.label">
               <dt>{{ row.label }}</dt>
@@ -591,8 +605,8 @@ onBeforeUnmount(() => {
             </template>
           </dl>
           <div class="batch-actions">
-            <button type="button">VIEW LOG</button>
-            <button type="button">MANUAL OVERRIDE</button>
+            <RouterLink to="/history">{{ store.tr("查看批次", "View batches") }}</RouterLink>
+            <RouterLink to="/control">{{ store.tr("进入控制", "Open control") }}</RouterLink>
           </div>
         </section>
       </aside>
