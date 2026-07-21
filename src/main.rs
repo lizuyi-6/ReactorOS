@@ -49,7 +49,7 @@ struct Args {
     enable_test_reset: bool,
     #[arg(long)]
     safety_guard: Option<PathBuf>,
-    #[arg(long, default_value_t = false)]
+    #[arg(long, env = "XINGSHU_SEED_DEMO_CONTEXT", default_value_t = false)]
     seed_demo_context: bool,
 }
 

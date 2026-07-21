@@ -13,7 +13,7 @@ Group=pi
 WorkingDirectory=/opt/reactor-edge/current
 Environment=MALLOC_ARENA_MAX=2
 Environment=RUST_LOG=warn
-ExecStartPre=/opt/reactor-edge/ota-boot-check.sh
+ExecStartPre=+/opt/reactor-edge/ota-boot-check.sh
 ExecStart=/opt/reactor-edge/current/bin/reactor-edge-daemon \
   --config /etc/reactor-edge/device.toml \
   --safety /etc/reactor-edge/safety.toml \
@@ -36,6 +36,7 @@ ReadWritePaths=-/project
 # Optional real AI provider. Keep the key in this EnvironmentFile outside git.
 # If STEPFUN_AI_ENABLED=true is set there, startup fails when the key is missing.
 EnvironmentFile=-/etc/reactor-edge/reactor-edge.env
+EnvironmentFile=-/etc/reactor-edge/reactor-edge.auth.env
 
 [Install]
 WantedBy=multi-user.target

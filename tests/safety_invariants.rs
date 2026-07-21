@@ -10,7 +10,9 @@ use std::fs;
 use std::path::PathBuf;
 
 fn src(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join(name)
 }
 
 fn read_src(name: &str) -> String {

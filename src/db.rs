@@ -39,6 +39,7 @@ use crate::{
 
 const READ_CONNECTIONS: usize = 2;
 const SQLITE_BUSY_TIMEOUT: Duration = Duration::from_secs(15);
+const SQLITE_MMAP_SIZE_BYTES: i64 = 64 * 1024 * 1024;
 pub const DB_ENCRYPTION_KEY_ENV: &str = "XINGSHU_DB_ENCRYPTION_KEY";
 pub const ENCRYPTED_JSON_PREFIX: &str = "xingshu:v1:aes256gcm:";
 const DB_ENCRYPTION_AAD: &[u8] = b"xingshu:integration_tasks:json:v1";
@@ -249,7 +250,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_tasks_unique_active_external_t
     WHERE external_task_id IS NOT NULL
       AND status IN ('received', 'executing', 'executed');
 "#;
-const COLUMN_MIGRATIONS: [(&str, &str, &str); 11] = [
+const COLUMN_MIGRATIONS: [(&str, &str, &str); 19] = [
     ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
     (
         "sensor_samples",
@@ -277,6 +278,42 @@ const COLUMN_MIGRATIONS: [(&str, &str, &str); 11] = [
     ("control_events", "previous_hash", "TEXT"),
     ("control_events", "event_hash", "TEXT"),
     ("batches", "process_id", "INTEGER REFERENCES processes(id)"),
+    ("integration_tasks", "external_task_id", "TEXT"),
+    (
+        "integration_tasks",
+        "source",
+        "TEXT NOT NULL DEFAULT 'legacy'",
+    ),
+    (
+        "integration_tasks",
+        "action",
+        "TEXT NOT NULL DEFAULT 'set_targets'",
+    ),
+    (
+        "integration_tasks",
+        "status",
+        "TEXT NOT NULL DEFAULT 'failed'",
+    ),
+    (
+        "integration_tasks",
+        "request_json",
+        "TEXT NOT NULL DEFAULT '{}'",
+    ),
+    (
+        "integration_tasks",
+        "response_json",
+        r#"TEXT NOT NULL DEFAULT '{"status":"failed","error":"legacy task migrated without original response"}'"#,
+    ),
+    (
+        "integration_tasks",
+        "created_at",
+        "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'",
+    ),
+    (
+        "integration_tasks",
+        "updated_at",
+        "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'",
+    ),
 ];
 
 #[derive(Clone)]
@@ -600,19 +637,33 @@ impl Db {
     }
 
     pub fn migrate(&self) -> Result<()> {
-        let conn = self.write_conn()?;
-        conn.execute_batch(SCHEMA_SQL)?;
-        create_indexes(&conn)?;
-        let has_legacy_pressure_kpa = column_exists(&conn, "sensor_samples", "pressure_kpa")?;
+        let mut conn = self.write_conn()?;
+        conn.execute_batch(SCHEMA_SQL)
+            .context("failed to create base SQLite schema before migrations")?;
+        let tx = conn
+            .transaction()
+            .context("failed to begin SQLite schema migration transaction")?;
+        let has_legacy_pressure_kpa = column_exists(&tx, "sensor_samples", "pressure_kpa")?;
         for migration in COLUMN_MIGRATIONS {
-            add_column_if_missing(&conn, migration.0, migration.1, migration.2)?;
+            add_column_if_missing(&tx, migration.0, migration.1, migration.2).with_context(
+                || {
+                    format!(
+                        "failed to migrate SQLite column {}.{}",
+                        migration.0, migration.1
+                    )
+                },
+            )?;
         }
         if has_legacy_pressure_kpa {
-            conn.execute(
+            tx.execute(
                 "UPDATE sensor_samples SET pressure_mpa = pressure_kpa / 1000.0 WHERE pressure_mpa = 0 AND pressure_kpa > 0",
                 [],
             )?;
         }
+        prepare_integration_task_unique_index(&tx)?;
+        create_indexes(&tx).context("failed to create SQLite indexes after column migrations")?;
+        tx.commit()
+            .context("failed to commit SQLite schema migration transaction")?;
         Ok(())
     }
 
@@ -5530,6 +5581,7 @@ fn open_sqlx_pool(path: &Path) -> Option<sqlx::SqlitePool> {
         .pragma("wal_autocheckpoint", "400")
         .pragma("temp_store", "MEMORY")
         .pragma("cache_size", "-4096")
+        .pragma("mmap_size", SQLITE_MMAP_SIZE_BYTES.to_string())
         .busy_timeout(SQLITE_BUSY_TIMEOUT);
     Some(
         SqlitePoolOptions::new()
@@ -5562,11 +5614,99 @@ fn configure_connection(conn: Connection) -> Result<Connection> {
         PRAGMA cache_size=-4096;
         "#,
     )?;
+    // A bounded mmap window lets SQLite serve hot history/index pages without
+    // copying them through the small heap page cache. mmap_size is a per-
+    // connection setting and reserves address space on demand; it does not
+    // eagerly allocate 64 MiB of RSS on the 2 GiB RK3568 target.
+    conn.pragma_update(None, "mmap_size", SQLITE_MMAP_SIZE_BYTES)?;
     Ok(conn)
 }
 
 fn create_indexes(conn: &Connection) -> Result<()> {
     conn.execute_batch(INDEX_SQL)?;
+    Ok(())
+}
+
+fn prepare_integration_task_unique_index(conn: &Connection) -> Result<()> {
+    if !column_exists(conn, "integration_tasks", "id")? {
+        anyhow::bail!(
+            "legacy integration_tasks schema is missing primary key column id; refusing a lossy automatic migration; preserve the database and run an explicit export/import migration"
+        );
+    }
+
+    let existing_sql: Option<String> = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_integration_tasks_unique_active_external_task_id'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let normalized = existing_sql.as_deref().map(|sql| {
+        sql.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_ascii_lowercase()
+    });
+    let expected_index = normalized.as_deref().is_some_and(|sql| {
+        sql.contains("create unique index")
+            && sql.contains("on integration_tasks(source, external_task_id)")
+            && sql.contains("where external_task_id is not null")
+            && sql.contains("status in ('received', 'executing', 'executed')")
+    });
+
+    let duplicate_count: i64 = conn.query_row(
+        r#"
+        SELECT COUNT(*)
+        FROM integration_tasks AS duplicate
+        WHERE duplicate.external_task_id IS NOT NULL
+          AND duplicate.status IN ('received', 'executing', 'executed')
+          AND EXISTS (
+              SELECT 1
+              FROM integration_tasks AS canonical
+              WHERE canonical.source = duplicate.source
+                AND canonical.external_task_id = duplicate.external_task_id
+                AND canonical.status IN ('received', 'executing', 'executed')
+                AND canonical.id < duplicate.id
+          )
+        "#,
+        [],
+        |row| row.get(0),
+    )?;
+
+    if !expected_index || duplicate_count > 0 {
+        conn.execute(
+            "DROP INDEX IF EXISTS idx_integration_tasks_unique_active_external_task_id",
+            [],
+        )?;
+    }
+    if duplicate_count > 0 {
+        let repaired = conn.execute(
+            r#"
+            UPDATE integration_tasks AS duplicate
+            SET external_task_id = NULL
+            WHERE duplicate.external_task_id IS NOT NULL
+              AND duplicate.status IN ('received', 'executing', 'executed')
+              AND EXISTS (
+                  SELECT 1
+                  FROM integration_tasks AS canonical
+                  WHERE canonical.source = duplicate.source
+                    AND canonical.external_task_id = duplicate.external_task_id
+                    AND canonical.status IN ('received', 'executing', 'executed')
+                    AND canonical.id < duplicate.id
+              )
+            "#,
+            [],
+        )?;
+        if repaired as i64 != duplicate_count {
+            anyhow::bail!(
+                "legacy integration task duplicate repair changed {repaired} rows but expected {duplicate_count}; rolling back migration"
+            );
+        }
+        tracing::warn!(
+            repaired,
+            "legacy integration task duplicates preserved with later duplicate external_task_id values cleared before unique-index creation"
+        );
+    }
     Ok(())
 }
 
@@ -6086,4 +6226,70 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tuning_tests {
+    use super::*;
+
+    fn pragma_i64(conn: &Connection, name: &str) -> i64 {
+        conn.query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn rusqlite_connection_uses_rk3568_storage_tuning() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = configure_connection(Connection::open(dir.path().join("rusqlite.db")).unwrap())
+            .unwrap();
+        let journal_mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(journal_mode, "wal");
+        assert_eq!(pragma_i64(&conn, "synchronous"), 1);
+        assert_eq!(pragma_i64(&conn, "wal_autocheckpoint"), 400);
+        assert_eq!(pragma_i64(&conn, "temp_store"), 2);
+        assert_eq!(pragma_i64(&conn, "cache_size"), -4096);
+        assert_eq!(pragma_i64(&conn, "mmap_size"), SQLITE_MMAP_SIZE_BYTES);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn sqlx_connection_uses_rk3568_storage_tuning() {
+        let dir = tempfile::tempdir().unwrap();
+        let pool = open_sqlx_pool(&dir.path().join("sqlx.db")).unwrap();
+
+        let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let synchronous: i64 = sqlx::query_scalar("PRAGMA synchronous")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let wal_autocheckpoint: i64 = sqlx::query_scalar("PRAGMA wal_autocheckpoint")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let temp_store: i64 = sqlx::query_scalar("PRAGMA temp_store")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let cache_size: i64 = sqlx::query_scalar("PRAGMA cache_size")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let mmap_size: i64 = sqlx::query_scalar("PRAGMA mmap_size")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(journal_mode, "wal");
+        assert_eq!(synchronous, 1);
+        assert_eq!(wal_autocheckpoint, 400);
+        assert_eq!(temp_store, 2);
+        assert_eq!(cache_size, -4096);
+        assert_eq!(mmap_size, SQLITE_MMAP_SIZE_BYTES);
+        pool.close().await;
+    }
 }

@@ -20,7 +20,7 @@ const hmiPageCounts: Record<string, number> = {
   "/history": 3,
   "/audit": 2,
   "/modbus": 4,
-  "/settings": 6
+  "/settings": 7
 };
 const {
   alarmStatusType,

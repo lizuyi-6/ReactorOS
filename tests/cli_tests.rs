@@ -2,7 +2,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
@@ -15,6 +15,7 @@ use reactor_edge_daemon::{
     safety_guard::evaluate_with_process,
     state::{ControlTargets, SensorSnapshot},
 };
+use rusqlite::Connection;
 
 // Some Windows test cases spawn real subprocesses (ping / sleep) whose
 // IO contention is amplified by cargo test's default multi-thread runner.
@@ -2311,6 +2312,64 @@ fn daemon_rejects_test_reset_on_non_loopback_bind() {
         stderr.contains("--enable-test-reset may only be used with a loopback bind address"),
         "unexpected stderr: {stderr}"
     );
+}
+
+#[test]
+fn daemon_environment_flag_seeds_demo_processes_batches_and_recommendation() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let db_path = temp_dir.path().join("env-seeded.sqlite3");
+    let mut child = daemon()
+        .args(["--bind", "127.0.0.1:0", "--assets", "static"])
+        .arg("--db")
+        .arg(&db_path)
+        .env("XINGSHU_SEED_DEMO_CONTEXT", "true")
+        .env("RUST_LOG", "error")
+        .env_remove("STEPFUN_AI_ENABLED")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut observed = None;
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "daemon exited before environment-driven demo seed: {status}; stderr={}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        if db_path.is_file() {
+            if let Ok(conn) = Connection::open(&db_path) {
+                let counts = (
+                    conn.query_row("SELECT COUNT(*) FROM processes", [], |row| {
+                        row.get::<_, i64>(0)
+                    }),
+                    conn.query_row("SELECT COUNT(*) FROM batches", [], |row| {
+                        row.get::<_, i64>(0)
+                    }),
+                    conn.query_row("SELECT COUNT(*) FROM product_results", [], |row| {
+                        row.get::<_, i64>(0)
+                    }),
+                    conn.query_row("SELECT COUNT(*) FROM ai_recommendations", [], |row| {
+                        row.get::<_, i64>(0)
+                    }),
+                );
+                if let (Ok(processes), Ok(batches), Ok(results), Ok(recommendations)) = counts {
+                    if processes >= 2 && batches >= 6 && results >= 6 && recommendations >= 1 {
+                        observed = Some((processes, batches, results, recommendations));
+                        break;
+                    }
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert_eq!(observed, Some((2, 6, 6, 1)));
 }
 
 #[test]

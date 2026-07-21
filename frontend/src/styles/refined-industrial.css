@@ -1,0 +1,1368 @@
+/*
+ * ReactorOS refined industrial HMI theme.
+ *
+ * This file intentionally loads after the historical theme layers. It keeps
+ * their fixed-page visibility rules and responsive route layouts, but replaces
+ * the arcade/neon treatment with a quieter operator-workstation hierarchy.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0d1115;
+  --surface: #13181d;
+  --surface-low: #171d22;
+  --surface-card: #1b2228;
+  --surface-high: #222a31;
+  --line: #2b353d;
+  --line-strong: #3d4a53;
+  --text: #edf2f4;
+  --muted: #aab5bc;
+  --dim: #78858e;
+  --primary: #4cae9d;
+  --blue: #5b8def;
+  --green: #51b58a;
+  --green-fill: #368f6d;
+  --amber: #d9a441;
+  --red: #e35650;
+  --red-soft: rgba(227, 86, 80, 0.14);
+  --font-ui: "Segoe UI", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+  --font-data: "Cascadia Mono", Consolas, "SFMono-Regular", monospace;
+
+  --hmi-bg: #0d1115;
+  --hmi-bg-grid: transparent;
+  --hmi-panel: #171d22;
+  --hmi-panel-2: #1b2228;
+  --hmi-panel-3: #12171b;
+  --hmi-line: #2b353d;
+  --hmi-line-soft: #303b43;
+  --hmi-green: #4cae9d;
+  --hmi-blue: #5b8def;
+  --hmi-cyan: #63b3c0;
+  --hmi-amber: #d9a441;
+  --hmi-red: #e35650;
+  --hmi-text: #edf2f4;
+  --hmi-muted: #aab5bc;
+  --hmi-dim: #78858e;
+  --hmi-data-shadow: none;
+
+  --ipc-green: #4cae9d;
+  --ipc-blue: #5b8def;
+  --ipc-yellow: #d9a441;
+  --ipc-red: #e35650;
+
+  --el-color-primary: #4cae9d;
+  --el-color-primary-light-3: #72c1b3;
+  --el-color-primary-light-5: #91d0c5;
+  --el-color-primary-light-7: #315f58;
+  --el-color-primary-light-8: #274b46;
+  --el-color-primary-light-9: #1b302d;
+  --el-color-primary-dark-2: #368f81;
+  --el-color-success: #51b58a;
+  --el-color-warning: #d9a441;
+  --el-color-danger: #e35650;
+  --el-color-error: #e35650;
+  --el-color-info: #78858e;
+  --el-bg-color: #1b2228;
+  --el-bg-color-page: #0d1115;
+  --el-bg-color-overlay: #222a31;
+  --el-text-color-primary: #edf2f4;
+  --el-text-color-regular: #b9c3c9;
+  --el-text-color-secondary: #89969e;
+  --el-text-color-placeholder: #66737b;
+  --el-border-color: #344049;
+  --el-border-color-light: #303a42;
+  --el-border-color-lighter: #29333a;
+  --el-border-color-extra-light: #232c32;
+  --el-fill-color: #171d22;
+  --el-fill-color-light: #20272d;
+  --el-fill-color-lighter: #1a2025;
+  --el-fill-color-extra-light: #151a1f;
+  --el-fill-color-dark: #262e35;
+  --el-fill-color-darker: #303940;
+  --el-fill-color-blank: #171d22;
+  --el-box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  --el-box-shadow-light: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+*,
+*::before,
+*::after {
+  letter-spacing: 0 !important;
+  text-shadow: none !important;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  background: var(--bg);
+}
+
+body,
+.app-shell,
+.monitor-route {
+  color: var(--text);
+  background:
+    radial-gradient(circle at 82% 0%, rgba(76, 174, 157, 0.055), transparent 28rem),
+    linear-gradient(180deg, #10151a 0%, #0d1115 100%) !important;
+  background-size: auto !important;
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: var(--font-ui);
+}
+
+.mono,
+.value,
+.sensor-number,
+.setpoint,
+.runtime-clock,
+.batch-label,
+.session-name,
+.metric strong,
+.target-summary strong,
+.detector-list article > strong,
+.operator-fields strong,
+.ai-target-box strong,
+.current-batch-panel dd {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Application shell ------------------------------------------------------ */
+
+.monitor-route .topbar {
+  grid-template-columns: minmax(210px, 252px) minmax(0, 1fr) auto minmax(126px, 148px) 108px;
+  height: 60px !important;
+  min-height: 60px !important;
+  padding: 0;
+  border-bottom: 1px solid var(--line) !important;
+  background: rgba(19, 24, 29, 0.98) !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2) !important;
+}
+
+.monitor-route .topbar:not(.has-hmi-pager) {
+  grid-template-columns: minmax(210px, 252px) minmax(0, 1fr) minmax(126px, 148px) 108px;
+}
+
+.monitor-route .topbar:not(.has-hmi-pager) .topbar-clock {
+  grid-column: 3;
+}
+
+.monitor-route .topbar:not(.has-hmi-pager) .legacy-estop {
+  grid-column: 4;
+}
+
+.monitor-route .brand-line {
+  height: 60px;
+  gap: 11px;
+  padding: 0 18px;
+  border-right: 1px solid var(--line) !important;
+  background: #11161a;
+}
+
+.monitor-route .brand-line::before {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  border: 1px solid rgba(76, 174, 157, 0.8) !important;
+  border-radius: 50%;
+  background: rgba(76, 174, 157, 0.08) !important;
+  box-shadow: none !important;
+  color: #8fd0c5;
+  content: "R";
+  font-family: var(--font-data);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.monitor-route .brand-line strong {
+  color: var(--text) !important;
+  font-size: 19px !important;
+  font-weight: 700;
+}
+
+.monitor-route .brand-line strong::after {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  content: "Industrial HMI";
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.monitor-route .brand-line small {
+  display: none !important;
+}
+
+.monitor-route .top-divider {
+  display: none;
+}
+
+.monitor-route .batch-label {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.monitor-route .status-cluster {
+  display: flex !important;
+  align-items: center;
+  align-self: stretch;
+  gap: 5px;
+  height: 60px !important;
+  padding: 0 10px;
+  overflow: hidden;
+  border: 0;
+}
+
+.monitor-route .status-cluster .el-tag {
+  width: auto !important;
+  min-width: 0;
+  height: 28px;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--line) !important;
+  border-radius: 4px;
+  background: #171d22 !important;
+  color: var(--muted) !important;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.monitor-route .status-cluster .el-tag::before {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  box-shadow: none !important;
+}
+
+.monitor-route .status-cluster .el-tag--success::before {
+  background: var(--green);
+}
+
+.monitor-route .status-cluster .el-tag--warning::before {
+  background: var(--amber);
+}
+
+.monitor-route .status-cluster .el-tag--danger::before {
+  background: var(--red);
+}
+
+.monitor-route .status-cluster .el-tag--info::before {
+  background: var(--blue);
+}
+
+.monitor-route .status-cluster .el-tag__content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-route .hmi-screen-pager {
+  align-self: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #11161a;
+}
+
+.monitor-route .hmi-page-button {
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+  color: var(--dim) !important;
+  font-family: var(--font-data);
+  font-size: 10px !important;
+  font-weight: 700;
+}
+
+.monitor-route .hmi-page-button:hover {
+  background: var(--surface-high) !important;
+  color: var(--text) !important;
+}
+
+.monitor-route .hmi-page-button.active {
+  background: #315f58 !important;
+  color: #f4fffd !important;
+  box-shadow: none !important;
+}
+
+.monitor-route .topbar-clock {
+  height: 60px;
+  gap: 8px;
+  justify-content: center;
+  padding: 0 12px;
+  border-left: 1px solid var(--line) !important;
+  border-right: 1px solid var(--line) !important;
+  background: #11161a !important;
+}
+
+.monitor-route .runtime-clock {
+  color: var(--text) !important;
+  font-size: 13px;
+}
+
+.monitor-route .topbar-clock .muted {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.monitor-route .legacy-estop {
+  width: 108px !important;
+  height: 60px;
+  border: 0 !important;
+  border-left: 1px solid #7c3431 !important;
+  border-radius: 0 !important;
+  background: #c94742 !important;
+  box-shadow: none !important;
+  color: #fff !important;
+  font-size: 13px !important;
+  font-weight: 800;
+}
+
+.monitor-route .legacy-estop:hover {
+  background: #dc554f !important;
+}
+
+.monitor-route .legacy-sidebar {
+  top: 60px !important;
+  width: 88px !important;
+  border-right: 1px solid var(--line) !important;
+  background: #11161a !important;
+  box-shadow: none !important;
+}
+
+.monitor-route .legacy-nav-item {
+  min-height: 72px !important;
+  flex: 1 1 0;
+  gap: 6px;
+  padding: 7px 6px;
+  border: 0 !important;
+  border-bottom: 1px solid #222b31 !important;
+  background: transparent !important;
+  color: var(--dim) !important;
+  font-family: var(--font-ui);
+  font-size: 10px !important;
+  font-weight: 600;
+}
+
+.monitor-route .legacy-nav-icon {
+  min-width: 26px;
+  color: #93a1aa !important;
+  font-family: var(--font-data);
+  font-size: 18px !important;
+  font-weight: 600;
+}
+
+.monitor-route .legacy-nav-item:hover {
+  background: #181e23 !important;
+  color: var(--text) !important;
+}
+
+.monitor-route .legacy-nav-item.active {
+  border-left: 3px solid var(--primary) !important;
+  background: #1c252a !important;
+  color: #dce8e6 !important;
+  box-shadow: none !important;
+}
+
+.monitor-route .legacy-nav-item.active .legacy-nav-icon {
+  color: #79c5b8 !important;
+}
+
+.monitor-route .utility-strip {
+  display: none !important;
+}
+
+.monitor-route .content {
+  margin-left: 88px !important;
+  background: transparent !important;
+}
+
+.monitor-route .content.monitor-screen,
+.monitor-route .content.hmi-fixed {
+  height: calc(100vh - 60px) !important;
+  padding: 14px 16px !important;
+}
+
+.monitor-route .content.monitor-screen > .error-alert,
+.monitor-route .content.hmi-fixed > .error-alert {
+  display: flex !important;
+}
+
+/* Shared panels, typography, forms and tables --------------------------- */
+
+.view-stack {
+  gap: 14px;
+}
+
+.view-heading {
+  align-items: center;
+  min-height: 46px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.view-heading::after {
+  display: none !important;
+}
+
+.view-heading h1 {
+  margin: 2px 0 3px;
+  color: var(--text) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 20px !important;
+  font-weight: 650;
+}
+
+.view-heading span,
+.view-heading p {
+  color: var(--dim) !important;
+  font-size: 12px;
+}
+
+.eyebrow,
+.panel-label {
+  color: #79c5b8 !important;
+  font-size: 10px !important;
+  font-weight: 700;
+  text-transform: none !important;
+}
+
+.panel,
+.analysis-block,
+.metric,
+.origin-panel {
+  border: 1px solid var(--line) !important;
+  border-radius: 6px !important;
+  background: var(--surface-card) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12) !important;
+}
+
+.panel,
+.analysis-block {
+  padding: 14px;
+}
+
+.panel::before,
+.analysis-block::before,
+.metric::before,
+.origin-panel::before,
+.origin-panel::after {
+  box-shadow: none !important;
+}
+
+.panel-title,
+.origin-panel-head,
+.component-head,
+.ai-command-head,
+.current-batch-head {
+  border-color: var(--line) !important;
+  background: #20272d !important;
+}
+
+.panel-title {
+  min-height: 40px;
+  margin: -14px -14px 12px;
+  padding: 0 14px;
+}
+
+.panel-title h2,
+.panel h2,
+.analysis-block h2,
+.origin-panel h2,
+.component-head strong,
+.origin-panel-head h2,
+.ai-command-head h2,
+.current-batch-head h2 {
+  color: var(--text) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 14px !important;
+  font-weight: 650;
+  text-transform: none !important;
+}
+
+.panel p,
+.analysis-block p,
+.muted {
+  color: var(--dim) !important;
+}
+
+.metric-grid {
+  gap: 10px;
+}
+
+.metric {
+  gap: 4px;
+  padding: 12px 14px !important;
+  border-left: 3px solid #50616b !important;
+}
+
+.metric strong {
+  color: var(--text) !important;
+  font-size: 23px !important;
+  font-weight: 650;
+}
+
+.target-summary {
+  gap: 8px;
+}
+
+.target-summary > div,
+.endpoint-card,
+.result-card,
+.ai-action-card,
+.sop-step,
+.process-empty,
+.component-action-form,
+.audit-window-note {
+  border: 1px solid #303b43 !important;
+  border-radius: 5px !important;
+  background: #161c21 !important;
+  box-shadow: none !important;
+}
+
+.target-summary > div {
+  padding: 10px 12px;
+}
+
+.target-summary strong {
+  color: #dce7e9 !important;
+  font-size: 20px !important;
+}
+
+.el-button {
+  --el-button-bg-color: #242d33;
+  --el-button-border-color: #44515a;
+  --el-button-text-color: #dce4e8;
+  --el-button-hover-bg-color: #2b353c;
+  --el-button-hover-border-color: #5b6a74;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #1f272c;
+  min-height: 36px;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #3f9889;
+  --el-button-border-color: #3f9889;
+  --el-button-text-color: #ffffff;
+  --el-button-hover-bg-color: #4eaa9a;
+  --el-button-hover-border-color: #4eaa9a;
+  --el-button-hover-text-color: #ffffff;
+  --el-button-active-bg-color: #337e72;
+}
+
+.el-button--danger {
+  --el-button-bg-color: #c94742;
+  --el-button-border-color: #c94742;
+  --el-button-hover-bg-color: #dc554f;
+  --el-button-hover-border-color: #dc554f;
+}
+
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button:disabled,
+.el-button:disabled:hover,
+button:disabled {
+  border-color: #30383e !important;
+  background: #1a2024 !important;
+  box-shadow: none !important;
+  color: #626e75 !important;
+  cursor: not-allowed !important;
+  opacity: 0.72 !important;
+}
+
+.el-tag {
+  height: 24px;
+  border-radius: 3px !important;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.el-tag--success {
+  border-color: rgba(81, 181, 138, 0.38) !important;
+  background: rgba(81, 181, 138, 0.1) !important;
+  color: #75cba5 !important;
+}
+
+.el-tag--warning {
+  border-color: rgba(217, 164, 65, 0.42) !important;
+  background: rgba(217, 164, 65, 0.1) !important;
+  color: #e0b663 !important;
+}
+
+.el-tag--danger {
+  border-color: rgba(227, 86, 80, 0.42) !important;
+  background: rgba(227, 86, 80, 0.11) !important;
+  color: #ef7d77 !important;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper,
+.el-input-number {
+  border-radius: 4px !important;
+  background: #12171b !important;
+  box-shadow: 0 0 0 1px #364149 inset !important;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px #4b5962 inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px #5db4a4 inset !important;
+}
+
+.el-input__inner,
+.el-textarea__inner,
+.el-input-number .el-input__inner {
+  color: var(--text) !important;
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-form-item__label {
+  color: #9ba7ae !important;
+  font-size: 11px !important;
+  font-weight: 600;
+}
+
+.el-switch__core {
+  border-color: #4b5962 !important;
+  background: #2b343a !important;
+}
+
+.el-switch.is-checked .el-switch__core {
+  border-color: #3f9889 !important;
+  background: #3f9889 !important;
+}
+
+.data-table,
+.el-table {
+  border-color: var(--line) !important;
+  border-radius: 4px !important;
+  background: #151a1f !important;
+}
+
+.el-table,
+.el-table tr,
+.el-table td.el-table__cell {
+  background: #171d22 !important;
+  color: #c8d1d6 !important;
+}
+
+.el-table th.el-table__cell {
+  background: #222a31 !important;
+  color: #aeb9bf !important;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.el-table tr:hover > td.el-table__cell {
+  background: #20292e !important;
+}
+
+.el-table__inner-wrapper::before {
+  background: var(--line) !important;
+}
+
+.el-alert {
+  border-radius: 5px !important;
+  box-shadow: none !important;
+}
+
+.el-alert--warning {
+  border-color: rgba(217, 164, 65, 0.36) !important;
+  background: rgba(84, 62, 24, 0.34) !important;
+}
+
+/* Monitor --------------------------------------------------------------- */
+
+.monitor-screen .dark-origin-monitor,
+.monitor-workbench.dark-origin-monitor {
+  gap: 12px !important;
+}
+
+.fatal-status-banner,
+.sensor-fault-banner {
+  min-height: 42px;
+  border-radius: 5px !important;
+  box-shadow: none !important;
+}
+
+.fatal-status-banner {
+  border: 1px solid #9f3f3b !important;
+  background: #3a1d1d !important;
+}
+
+.sensor-fault-banner {
+  border: 1px solid #8b6528 !important;
+  background: #352817 !important;
+}
+
+.fatal-status-banner .status-dot,
+.sensor-fault-banner .status-dot {
+  box-shadow: none !important;
+}
+
+.telemetry-status-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+.telemetry-status-strip .ts-cell {
+  min-height: 64px;
+  padding: 10px 12px !important;
+  border: 1px solid var(--line) !important;
+  border-left: 3px solid #53636d !important;
+  border-radius: 5px !important;
+  background: #192026 !important;
+  box-shadow: none !important;
+}
+
+.telemetry-status-strip .ts-cell.good {
+  border-left-color: var(--green) !important;
+}
+
+.telemetry-status-strip .ts-cell.warn {
+  border-left-color: var(--amber) !important;
+}
+
+.telemetry-status-strip .ts-cell.bad {
+  border-left-color: var(--red) !important;
+}
+
+.telemetry-status-strip .ts-cell > span {
+  color: var(--dim) !important;
+  font-size: 10px !important;
+  font-weight: 650;
+  text-transform: none !important;
+}
+
+.telemetry-status-strip .ts-cell > strong {
+  color: var(--text) !important;
+  font-family: var(--font-data);
+  font-size: 18px !important;
+  font-weight: 650;
+}
+
+.telemetry-status-strip .ts-cell > small {
+  color: #829099 !important;
+  font-size: 10px !important;
+}
+
+.monitor-screen .dark-monitor-grid {
+  grid-template-columns: minmax(0, 1fr) 330px !important;
+  gap: 12px !important;
+}
+
+.monitor-screen .dark-monitor-main,
+.monitor-screen .dark-right-stack {
+  gap: 12px !important;
+}
+
+.monitor-screen .enterprise-component-grid {
+  grid-template-columns: minmax(260px, 1.1fr) minmax(220px, 0.82fr) minmax(240px, 0.9fr) !important;
+  gap: 12px !important;
+}
+
+.origin-panel {
+  overflow: hidden;
+}
+
+.component-head,
+.origin-panel-head,
+.ai-command-head,
+.current-batch-head {
+  min-height: 42px !important;
+  padding: 0 13px !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+.component-head > span,
+.origin-panel-head > span,
+.ai-command-head > span,
+.current-batch-head > span {
+  color: var(--dim) !important;
+  font-family: var(--font-data);
+  font-size: 10px !important;
+}
+
+.process-line-panel {
+  border-top: 2px solid #527b86 !important;
+}
+
+.detector-panel {
+  border-top: 2px solid #4f8b72 !important;
+}
+
+.predictive-panel {
+  border-top: 2px solid #766c9d !important;
+}
+
+.reactor-vessel {
+  background:
+    linear-gradient(90deg, transparent 49.7%, rgba(107, 126, 137, 0.16) 50%, transparent 50.3%),
+    linear-gradient(180deg, transparent 49.7%, rgba(107, 126, 137, 0.12) 50%, transparent 50.3%) !important;
+}
+
+.reactor-vessel::before,
+.reactor-vessel::after {
+  border-color: #3e6a5f !important;
+  background: #1d2829 !important;
+  box-shadow: none !important;
+}
+
+.reactor-vessel .vessel-body {
+  border: 3px solid #667782 !important;
+  border-radius: 18px 18px 12px 12px !important;
+  background: #202a31 !important;
+  box-shadow: inset 0 0 0 3px #151b20 !important;
+}
+
+.reactor-vessel .vessel-body span {
+  background: #3e8db7 !important;
+}
+
+.reactor-vessel > strong,
+.feed-label,
+.cond-label {
+  color: #b8c3c8 !important;
+  font-family: var(--font-ui) !important;
+  font-size: 10px !important;
+  font-weight: 600;
+}
+
+.detector-list article {
+  padding: 12px !important;
+  border-color: #2b353d !important;
+  background: transparent !important;
+}
+
+.detector-title span {
+  color: #aeb8be !important;
+  font-family: var(--font-ui) !important;
+  font-size: 10px !important;
+  font-weight: 650;
+}
+
+.detector-title em,
+.active-alarm {
+  border: 1px solid rgba(81, 181, 138, 0.36) !important;
+  border-radius: 3px !important;
+  background: rgba(81, 181, 138, 0.08) !important;
+  color: #75cba5 !important;
+  font-family: var(--font-ui) !important;
+  font-style: normal;
+  font-size: 9px !important;
+}
+
+.detector-title em.stale {
+  border-color: rgba(217, 164, 65, 0.42) !important;
+  background: rgba(217, 164, 65, 0.1) !important;
+  color: #e0b663 !important;
+}
+
+.detector-list article > strong {
+  color: var(--text) !important;
+  font-size: 20px !important;
+}
+
+.detector-list article > span {
+  color: var(--dim) !important;
+}
+
+.detector-bar {
+  height: 5px !important;
+  background: #2a3339 !important;
+}
+
+.detector-bar i {
+  background: #5b9e91 !important;
+  box-shadow: none !important;
+}
+
+.predictive-columns {
+  gap: 8px !important;
+  padding: 8px !important;
+}
+
+.predictive-columns > div {
+  border: 1px solid #2d3840 !important;
+  border-radius: 4px;
+  background: #12171b !important;
+}
+
+.predictive-columns h3 {
+  color: #bfc8cd !important;
+  font-family: var(--font-ui) !important;
+  font-size: 11px !important;
+  font-weight: 600;
+}
+
+.signal-summary {
+  display: flex;
+  min-height: 58px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid #283239;
+  background: #0f1418;
+}
+
+.signal-summary strong {
+  overflow: hidden;
+  color: #e0e8eb;
+  font-family: var(--font-data);
+  font-size: 18px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-summary span {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.mini-scope {
+  border-color: #283239 !important;
+  background: #0f1418 !important;
+}
+
+.mini-scope span {
+  background: #5b8def !important;
+  box-shadow: none !important;
+}
+
+.mini-scope span:nth-child(2) {
+  background: #4cae9d !important;
+}
+
+.operator-control-panel {
+  border-top: 2px solid #4c8591 !important;
+}
+
+.operator-fields {
+  gap: 8px !important;
+  padding: 10px 12px 4px !important;
+}
+
+.operator-fields label {
+  min-width: 0;
+  padding: 9px 10px !important;
+  border: 1px solid #303b43 !important;
+  border-radius: 4px !important;
+  background: #151b20 !important;
+}
+
+.operator-fields label > span,
+.operator-fields label > small {
+  color: var(--dim) !important;
+  font-size: 10px !important;
+}
+
+.operator-fields strong {
+  color: #e4ecef !important;
+  font-size: 17px !important;
+}
+
+.origin-chart {
+  padding: 0 6px 6px;
+}
+
+.ai-command-panel {
+  border: 1px solid #3b5361 !important;
+  border-top: 2px solid #5b8def !important;
+  background: #192026 !important;
+}
+
+.ai-command-head {
+  background: #202931 !important;
+}
+
+.ai-command-body {
+  gap: 12px !important;
+  padding: 14px !important;
+  background: transparent !important;
+}
+
+.ai-command-note {
+  min-height: 84px;
+  margin: 0;
+  padding: 12px 0 12px 14px !important;
+  border-left: 3px solid #5b8def !important;
+  color: #ced7dc !important;
+  font-family: var(--font-ui) !important;
+  font-size: 13px !important;
+  font-style: normal !important;
+  line-height: 1.6;
+}
+
+.ai-target-box {
+  gap: 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.ai-target-box > div {
+  padding: 10px;
+  border: 1px solid #34414a;
+  border-radius: 4px;
+  background: #13191e;
+}
+
+.ai-target-box span {
+  color: var(--dim) !important;
+  font-size: 10px !important;
+}
+
+.ai-target-box strong {
+  color: #dfe8ec !important;
+  font-size: 18px !important;
+}
+
+.apply-ai-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px !important;
+  border: 1px solid #4f7da6 !important;
+  border-radius: 4px !important;
+  background: #315d85 !important;
+  box-shadow: none !important;
+  color: #fff !important;
+  font-family: var(--font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.apply-ai-button:hover {
+  background: #3a6b98 !important;
+}
+
+.current-batch-panel {
+  border-top: 2px solid #596a74 !important;
+}
+
+.batch-started {
+  color: var(--dim) !important;
+}
+
+.current-batch-panel dt {
+  color: #89969e !important;
+  font-family: var(--font-ui) !important;
+}
+
+.current-batch-panel dd {
+  color: #dce4e8 !important;
+}
+
+.batch-actions a,
+.batch-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border: 1px solid #46535c !important;
+  border-radius: 4px !important;
+  background: #222a31 !important;
+  box-shadow: none !important;
+  color: #d7e0e4 !important;
+  font-family: var(--font-ui) !important;
+  font-size: 11px !important;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+/* Fixed route surfaces -------------------------------------------------- */
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) {
+  gap: 12px !important;
+}
+
+.monitor-route .content.hmi-fixed > .view-stack:not(.monitor-workbench) > .view-heading {
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 0 10px !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: transparent !important;
+}
+
+.monitor-route .content.hmi-fixed .metric,
+.monitor-route .content.hmi-fixed .panel,
+.monitor-route .content.hmi-fixed .analysis-block {
+  padding: 12px !important;
+  border-color: var(--line) !important;
+  background: var(--surface-card) !important;
+}
+
+.monitor-route .content.hmi-fixed .panel-title {
+  min-height: 38px !important;
+  margin: -12px -12px 10px !important;
+  padding: 0 12px !important;
+  border-bottom: 1px solid var(--line) !important;
+  background: #20272d !important;
+}
+
+.monitor-route .content.hmi-fixed .panel-title h2,
+.monitor-route .content.hmi-fixed .panel h2,
+.monitor-route .content.hmi-fixed .analysis-block h2 {
+  font-size: 13px !important;
+}
+
+.monitor-route .content.hmi-fixed .el-button,
+.monitor-route .content.hmi-fixed .el-button--small {
+  min-height: 36px !important;
+}
+
+.monitor-route .content.hmi-fixed .switch-grid label,
+.monitor-route .content.hmi-fixed .emergency-actions {
+  min-height: 46px;
+  border: 1px solid #303b43 !important;
+  border-radius: 5px !important;
+  background: #151b20 !important;
+  color: #b7c1c7 !important;
+}
+
+.monitor-route .content.hmi-fixed .process-list,
+.monitor-route .content.hmi-fixed .process-steps {
+  gap: 8px;
+}
+
+.monitor-route .content.hmi-fixed .raw-json pre,
+.monitor-route .content.hmi-fixed .ai-result pre {
+  border-color: #2c373e !important;
+  border-radius: 4px !important;
+  background: #0e1317 !important;
+  color: #b9c7cd !important;
+}
+
+/* The legacy pager omitted Settings' eleventh direct section (Endpoint
+   Matrix). Give it a dedicated seventh screen instead of leaving it hidden. */
+.monitor-route .content.hmi-fixed.hmi-page-6.route-settings > .view-stack > section:nth-of-type(11) {
+  display: grid !important;
+  grid-column: 1 / -1 !important;
+}
+
+/* Responsive ------------------------------------------------------------ */
+
+@media (max-width: 1180px) {
+  .monitor-route .topbar,
+  .monitor-route .topbar.has-hmi-pager {
+    grid-template-columns: minmax(190px, 220px) minmax(0, 1fr) auto 108px !important;
+  }
+
+  .monitor-route .status-cluster .el-tag:nth-child(2),
+  .monitor-route .status-cluster .el-tag:nth-child(3) {
+    display: none !important;
+  }
+
+  .monitor-route .status-cluster .el-tag:nth-child(5),
+  .monitor-route .status-cluster .el-tag:nth-child(6) {
+    display: inline-flex !important;
+  }
+
+  .monitor-route .topbar-clock {
+    display: none !important;
+  }
+
+  .monitor-route .hmi-screen-pager {
+    grid-column: 3;
+  }
+
+  .monitor-route .legacy-estop {
+    grid-column: 4;
+  }
+
+  .monitor-screen .dark-monitor-grid {
+    grid-template-columns: minmax(0, 1fr) 300px !important;
+  }
+
+  .monitor-screen .enterprise-component-grid {
+    grid-template-columns: minmax(250px, 1fr) minmax(210px, 0.8fr) !important;
+  }
+
+  .monitor-screen .predictive-panel {
+    display: none;
+  }
+}
+
+@media (max-width: 920px) {
+  .monitor-route .topbar,
+  .monitor-route .topbar.has-hmi-pager {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    grid-template-columns: minmax(170px, 1fr) auto 92px !important;
+    grid-template-rows: 56px 40px;
+    height: 96px !important;
+    min-height: 96px !important;
+  }
+
+  .monitor-route .brand-line {
+    grid-column: 1;
+    grid-row: 1;
+    height: 56px;
+    padding: 0 12px;
+  }
+
+  .monitor-route .brand-line strong {
+    font-size: 17px !important;
+  }
+
+  .monitor-route .batch-label,
+  .monitor-route .topbar-clock {
+    display: none !important;
+  }
+
+  .monitor-route .status-cluster {
+    display: flex !important;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: 40px !important;
+    padding: 5px 8px;
+    border-top: 1px solid #222b31;
+    background: #101519;
+  }
+
+  .monitor-route .status-cluster .el-tag {
+    height: 28px;
+  }
+
+  .monitor-route .hmi-screen-pager {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .monitor-route .legacy-estop {
+    grid-column: 3;
+    grid-row: 1;
+    width: 92px !important;
+    height: 56px;
+  }
+
+  .monitor-route .legacy-sidebar {
+    position: sticky !important;
+    top: 96px !important;
+    z-index: 35;
+    width: 100% !important;
+    height: 58px !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line) !important;
+  }
+
+  .monitor-route .legacy-nav-item {
+    min-width: 92px;
+    min-height: 58px !important;
+    flex: 1 0 92px;
+    border-bottom: 0 !important;
+    border-right: 1px solid #222b31 !important;
+  }
+
+  .monitor-route .legacy-nav-item.active {
+    border-left: 0 !important;
+    border-bottom: 3px solid var(--primary) !important;
+  }
+
+  .monitor-route .legacy-nav-icon {
+    font-size: 15px !important;
+  }
+
+  .monitor-route .content {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+
+  .monitor-route .content.monitor-screen,
+  .monitor-route .content.hmi-fixed {
+    height: auto !important;
+    min-height: calc(100vh - 154px) !important;
+    padding: 12px !important;
+    overflow: visible !important;
+  }
+
+  .monitor-screen .dark-monitor-grid,
+  .monitor-screen .dark-monitor-main,
+  .monitor-screen .dark-right-stack,
+  .monitor-screen .enterprise-component-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .monitor-screen .predictive-panel {
+    display: block;
+  }
+
+  .telemetry-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .monitor-route .brand-line::before,
+  .monitor-route .brand-line strong::after {
+    display: none !important;
+  }
+
+  .monitor-route .brand-line strong {
+    font-size: 15px !important;
+  }
+
+  .monitor-route .hmi-page-button {
+    width: 28px !important;
+    min-width: 28px !important;
+  }
+
+  .monitor-route .status-cluster .el-tag:nth-child(6) {
+    display: none !important;
+  }
+
+  .telemetry-status-strip,
+  .predictive-columns,
+  .operator-fields,
+  .ai-target-box {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .monitor-route .content.monitor-screen,
+  .monitor-route .content.hmi-fixed {
+    padding: 10px !important;
+  }
+
+  .view-heading {
+    align-items: flex-start;
+  }
+}
