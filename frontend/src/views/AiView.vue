@@ -1,802 +1,419 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
+import PageHeader from "../components/PageHeader.vue";
+import EmptyState from "../components/EmptyState.vue";
+import HmiButton from "../components/HmiButton.vue";
+import { aiApi } from "../api";
+import { errorMessage } from "../api/errors";
+import { useAuthStore } from "../stores/auth";
+import { useLiveStore } from "../stores/live";
 import { usePlantStore } from "../stores/plant";
-import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
-import type { AiControlRequest, ApiRecord } from "../stores/plant";
+import { useLanguage } from "../i18n";
+import { boolText, fixed, text } from "../utils/format";
+import type { AiControlResponse, ExperimentPlanResponse } from "../api/types";
 
-const store = usePlantStore();
-const localAi = computed(() => objectAt(store.config, "local_ai"));
-// missing: Vec<String> of absent local-LoRA assets (local_ai.rs:36). Surfaced
-// so the operator can see exactly which env vars / files block local inference,
-// rather than just a boolean "not ready".
-const localAiMissing = computed(() => arrayAt<string>(localAi.value, "missing"));
-const aiMemory = computed(() => objectAt(store.config, "ai_memory"));
-const localAiModeLabels: Record<string, Translation> = {
-  prd_lora_ready: { zh: "PRD LoRA/RK 闭环", en: "PRD LoRA/RK ready" },
-  lora_inference_ready: { zh: "LoRA 推理入口就绪", en: "LoRA inference ready" },
-  base_inference_only: { zh: "仅基础模型入口", en: "Base model only" },
-  configured_not_ready: { zh: "配置未就绪", en: "Configured, not ready" },
-  disabled: { zh: "未启用", en: "Disabled" }
-};
-const provider = computed(() => objectAt(store.recommendation, "provider"));
-const recommendation = computed(() => store.recommendation);
-// The backend Recommendation struct is a flat record (see src/optimizer.rs).
-// It does NOT wrap targets/reasons/alternatives/updated_at. Reading the
-// real fields keeps the page aligned with the API; reading fake keys would
-// show empty values that look like a healthy recommendation.
-const targetTempC = computed(() => textAt(recommendation.value, "target_temperature_c"));
-const targetStirrerRpm = computed(() => textAt(recommendation.value, "target_stirrer_rpm"));
-const heatingMinutes = computed(() => textAt(recommendation.value, "heating_minutes"));
-const stirringMinutes = computed(() => textAt(recommendation.value, "stirring_minutes"));
-const expectedScore = computed(() => textAt(recommendation.value, "expected_score"));
-const rationale = computed(() => textAt(recommendation.value, "rationale"));
-const basedOn = computed(() => numberAt(recommendation.value, "based_on_batch_count"));
-// shake_speed_cpm and target_pressure_mpa are not part of the current
-// Recommendation envelope; if the page ever needs them they must come from
-// runtime targets, not from a non-existent targets wrapper.
-const liveRuntime = computed(() => objectAt(store.live, "runtime") ?? store.runtimeFallback);
-const liveTargets = computed(() => objectAt(liveRuntime.value, "targets"));
-const currentShakeSpeed = computed(() => textAt(liveTargets.value, "shake_speed_cpm"));
-const currentPressure = computed(() => textAt(liveTargets.value, "target_pressure_mpa"));
-const dryRunPlan = ref<Record<string, unknown> | null>(null);
-const executeResult = ref<Record<string, unknown> | null>(null);
-const experimentPlan = ref<Record<string, unknown> | null>(null);
+const auth = useAuthStore();
+const live = useLiveStore();
+const plant = usePlantStore();
+const { tr } = useLanguage();
+
 const submitting = ref(false);
-const actionMessage = ref("");
+const loadingPlan = ref(false);
+const controlResult = ref<AiControlResponse | null>(null);
+const plan = ref<ExperimentPlanResponse | null>(null);
 
-const intentOptions = [
-  { value: "optimize_and_control", label: { zh: "寻优并控制", en: "Optimize and control" } },
-  { value: "hold_only", label: { zh: "仅保持现状", en: "Hold only" } },
-  { value: "cool_down", label: { zh: "降温收敛", en: "Cool down" } }
-];
+const localAi = computed(() => plant.config?.local_ai ?? null);
+const aiProvider = computed(() => live.live?.ai_provider ?? plant.config?.ai_provider ?? null);
+const recommendation = computed(() => live.recommendation ?? plant.recommendation);
 
-const dryRunForm = reactive<AiControlRequest>({
+const aiForm = reactive({
+  intent: "optimize_and_control",
   dry_run: true,
-  allow_process_start: true,
-  allow_process_stop: true,
-  allow_component_control: true,
-  allow_target_adjustment: true,
-  intent: "optimize_and_control"
+  allow_process_start: false,
+  allow_process_stop: false,
+  allow_component_control: false,
+  allow_target_adjustment: true
 });
 
-const aiResult = computed<ApiRecord | null>(() => (dryRunPlan.value ?? executeResult.value) as ApiRecord | null);
-const aiResultActions = computed(() => arrayAt<ApiRecord>(aiResult.value, "actions"));
-const aiResultSafety = computed(() => objectAt(aiResult.value, "safety"));
-const aiResultTargets = computed(() => objectAt(aiResult.value, "recommended_targets"));
-const experimentPlanSteps = computed(() => arrayAt<ApiRecord>(experimentPlan.value, "steps"));
-const acceptanceCriteria = computed(() => arrayAt<string>(experimentPlan.value, "acceptance_criteria"));
-const safetyNotes = computed(() => arrayAt<string>(experimentPlan.value, "safety_notes"));
-const modelBoundary = computed(() => arrayAt<string>(experimentPlan.value, "model_boundary"));
-const nextActions = computed(() => arrayAt<string>(experimentPlan.value, "next_actions"));
+const executeBlocked = computed(() => {
+  const rt = live.runtime;
+  return (
+    !auth.isAuthenticated ||
+    submitting.value ||
+    live.liveStatus !== "fresh" ||
+    boolText(rt?.emergency_stop) ||
+    boolText(rt?.manual_lock) ||
+    live.alarms.some((a) => String(a.type ?? "") === "unfinished_batch_recovery")
+  );
+});
 
-type Translation = { zh: string; en: string };
+const localAiMode = computed(() => text(localAi.value?.mode, "--"));
+const localAiMissing = computed(() => (Array.isArray(localAi.value?.missing) ? localAi.value!.missing! : []));
 
-const providerModeLabels: Record<string, Translation> = {
-  local_optimizer: { zh: "本地优化器", en: "Local optimizer" },
-  fallback_local_optimizer: { zh: "本地安全回退", en: "Local safety fallback" },
-  stale_local_recommendation: { zh: "缓存本地推荐待刷新", en: "Cached local recommendation needs refresh" },
-  stepfun: { zh: "StepFun 云端推荐", en: "StepFun cloud recommendation" },
-  stepfun_configured: { zh: "StepFun 已配置", en: "StepFun configured" }
-};
-
-const providerReasonLabels: Record<string, Translation> = {
-  "cached local recommendation must be regenerated by StepFun before AI master control": {
-    zh: "AI 主控前必须重新生成 StepFun 推荐，避免使用过期本地缓存。",
-    en: "Cached local recommendation must be regenerated by StepFun before AI master control."
-  }
-};
-
-const decisionLabels: Record<string, Translation> = {
-  hold: { zh: "保持现状", en: "Hold" },
-  adjust_targets: { zh: "调整目标", en: "Adjust targets" },
-  start_process: { zh: "启动工艺", en: "Start process" },
-  adjust_targets_and_start_process: { zh: "调整目标并启动工艺", en: "Adjust targets and start process" },
-  stop_process: { zh: "停止工艺", en: "Stop process" },
-  control_shake_vessel: { zh: "控制摇摆部件", en: "Control shake vessel" },
-  adjust_targets_and_control_shake: { zh: "调整目标并控制摇摆", en: "Adjust targets and control shake" },
-  adjust_targets_and_start_process_and_control_shake: {
-    zh: "调整目标、启动工艺并控制摇摆",
-    en: "Adjust targets, start process, and control shake"
-  }
-};
-
-const actionTypeLabels: Record<string, Translation> = {
-  target_adjustment: { zh: "目标调整", en: "Target adjustment" },
-  process_start: { zh: "工艺启动", en: "Process start" },
-  process_stop: { zh: "工艺停止", en: "Process stop" },
-  component_control: { zh: "部件控制", en: "Component control" },
-  hold: { zh: "保持", en: "Hold" }
-};
-
-const actionStatusLabels: Record<string, Translation> = {
-  planned: { zh: "计划中", en: "Planned" },
-  executed: { zh: "已执行", en: "Executed" },
-  skipped: { zh: "已跳过", en: "Skipped" },
-  blocked: { zh: "已阻断", en: "Blocked" }
-};
-
-const targetLabels: Record<string, Translation> = {
-  temperature_c: { zh: "温度", en: "Temperature" },
-  heat_time_s: { zh: "加热时长", en: "Heat time" },
-  hold_time_s: { zh: "保温时长", en: "Hold time" },
-  cool_time_s: { zh: "冷却时长", en: "Cool time" },
-  stirrer_rpm: { zh: "搅拌转速", en: "Stirrer speed" },
-  shake_speed_cpm: { zh: "摇摆速度", en: "Shake speed" },
-  target_pressure_mpa: { zh: "目标压力", en: "Target pressure" }
-};
-
-const targetUnits: Record<string, string> = {
-  temperature_c: "C",
-  heat_time_s: "s",
-  hold_time_s: "s",
-  cool_time_s: "s",
-  stirrer_rpm: "rpm",
-  shake_speed_cpm: "cpm",
-  target_pressure_mpa: "MPa"
-};
-
-const safetyLabels: Record<string, Translation> = {
-  fresh_sample_required: { zh: "要求新鲜样本", en: "Fresh sample required" },
-  sensor_fresh: { zh: "传感器新鲜", en: "Sensor fresh" },
-  emergency_stop: { zh: "急停", en: "Emergency stop" },
-  manual_lock: { zh: "人工锁定", en: "Manual lock" },
-  device_online: { zh: "设备在线", en: "Device online" },
-  active_batch_id: { zh: "活动批次", en: "Active batch" },
-  high_alarm_count: { zh: "高等级报警", en: "High alarms" },
-  warning_alarm_count: { zh: "预警数量", en: "Warning alarms" },
-  stop_product_concentration_percent: { zh: "停机浓度阈值", en: "Stop concentration threshold" }
-};
-
-const planTextLabels: Record<string, Translation> = {
-  "Safety-gated AI experiment plan draft": {
-    zh: "安全门控 AI 实验方案草案",
-    en: "Safety-gated AI experiment plan draft"
-  },
-  draft_requires_operator_review: { zh: "草案，需操作员复核", en: "Draft requires operator review" },
-  "StepFun/local safety fallback": { zh: "StepFun / 本地安全回退", en: "StepFun/local safety fallback" },
-  "local optimizer with safety memory": { zh: "带安全记忆的本地优化器", en: "Local optimizer with safety memory" },
-  "Explore the next safe parameter point while preserving auditability and requiring operator approval before execution.": {
-    zh: "探索下一个安全参数点，同时保留审计链，并要求操作员批准后才能执行。",
-    en: "Explore the next safe parameter point while preserving auditability and requiring operator approval before execution."
-  },
-  "Pre-check and heat-up": { zh: "预检查与升温", en: "Pre-check and heat-up" },
-  "Reaction hold and sampling": { zh: "反应保温与取样", en: "Reaction hold and sampling" },
-  "Cool-down and result capture": { zh: "降温与结果记录", en: "Cool-down and result capture" },
-  "Verify vessel charge, sensor freshness, coolant flow, and clear interlocks before starting the ramp.": {
-    zh: "升温前确认釜内投料、传感器新鲜度、冷却液流量，并清除联锁状态。",
-    en: "Verify vessel charge, sensor freshness, coolant flow, and clear interlocks before starting the ramp."
-  },
-  "Hold the recommended targets, collect sample checkpoints, and record yield/product ratio after completion.": {
-    zh: "保持推荐目标，采集取样检查点，并在完成后记录收率和产物比例。",
-    en: "Hold the recommended targets, collect sample checkpoints, and record yield/product ratio after completion."
-  },
-  "Stop active heating, cool under observation, finish the batch, and save product result data for the next recommendation cycle.": {
-    zh: "停止主动加热，在观察下冷却，结束批次，并保存产物结果供下一轮推荐使用。",
-    en: "Stop active heating, cool under observation, finish the batch, and save product result data for the next recommendation cycle."
-  },
-  "Emergency stop, manual lock, stale sensor data, and high alarms must block any automatic execution.": {
-    zh: "急停、人工锁定、传感器过期和高等级报警必须阻断任何自动执行。",
-    en: "Emergency stop, manual lock, stale sensor data, and high alarms must block any automatic execution."
-  },
-  "All control targets remain inside configured safety bounds after clamping.": {
-    zh: "所有控制目标经限幅后仍在配置的安全边界内。",
-    en: "All control targets remain inside configured safety bounds after clamping."
-  },
-  "Operator records yield_percent and product_ratio before a new recommendation is considered valid.": {
-    zh: "操作员记录 yield_percent 和 product_ratio 后，新的推荐才视为有效。",
-    en: "Operator records yield_percent and product_ratio before a new recommendation is considered valid."
-  },
-  "No emergency stop, manual lock, stale sensor, or high alarm is active during execution.": {
-    zh: "执行期间不得存在急停、人工锁定、传感器过期或高等级报警。",
-    en: "No emergency stop, manual lock, stale sensor, or high alarm is active during execution."
-  },
-  "Batch report and audit events can be exported after completion.": {
-    zh: "批次完成后可导出批次报告和审计事件。",
-    en: "Batch report and audit events can be exported after completion."
-  },
-  "This endpoint only drafts an SOP; it does not start a process or write hardware targets.": {
-    zh: "该接口只生成 SOP 草案，不启动工艺，也不写入硬件目标。",
-    en: "This endpoint only drafts an SOP; it does not start a process or write hardware targets."
-  },
-  "Execution must use /api/ai/control dry-run first, then an operator-confirmed process start or target write.": {
-    zh: "真实执行必须先通过 /api/ai/control dry-run，再由操作员确认工艺启动或目标写入。",
-    en: "Execution must use /api/ai/control dry-run first, then an operator-confirmed process start or target write."
-  },
-  "All later writes still pass through RBAC, safety clamp, audit logging, and the optional independent safety guard.": {
-    zh: "后续所有写入仍会经过 RBAC、安全限幅、审计日志和可选独立安全守护进程。",
-    en: "All later writes still pass through RBAC, safety clamp, audit logging, and the optional independent safety guard."
-  },
-  "Local Qwen LoRA assets are ready for inference/training boundary checks.": {
-    zh: "本地 Qwen LoRA 资产已满足推理/训练边界检查。",
-    en: "Local Qwen LoRA assets are ready for inference/training boundary checks."
-  },
-  "The draft uses local optimizer evidence unless a configured cloud provider produces a fresh recommendation.": {
-    zh: "除非已配置云端 provider 生成新推荐，否则草案使用本地优化器证据。",
-    en: "The draft uses local optimizer evidence unless a configured cloud provider produces a fresh recommendation."
-  },
-  "It is not proof of PRD local LoRA self-evolution until Qwen/GGUF/LoRA/training/RK assets are supplied and validated.": {
-    zh: "在 Qwen/GGUF/LoRA/训练/RK 资产提供并验收前，这不代表 PRD 本地 LoRA 自进化已完成。",
-    en: "It is not proof of PRD local LoRA self-evolution until Qwen/GGUF/LoRA/training/RK assets are supplied and validated."
-  },
-  "Review the draft SOP against the actual vessel charge and hardware readiness.": {
-    zh: "结合实际投料和硬件就绪状态复核 SOP 草案。",
-    en: "Review the draft SOP against the actual vessel charge and hardware readiness."
-  },
-  "Run AI master-control preview before applying any target.": {
-    zh: "应用任何目标前先运行 AI 主控预览。",
-    en: "Run AI master-control preview before applying any target."
-  },
-  "After the batch, save product result data to close the learning loop.": {
-    zh: "批次结束后保存产物结果数据，闭合学习回路。",
-    en: "After the batch, save product result data to close the learning loop."
-  }
-};
-
-function rawAt(source: unknown, key: string): unknown {
-  if (!source || typeof source !== "object") return undefined;
-  return (source as ApiRecord)[key];
+function formatConfigKey(key: string): string {
+  const map: Record<string, string> = {
+    XINGSHU_LOCAL_AI_ENABLED: tr("本地 AI 启用", "Local AI enabled"),
+    XINGSHU_LOCAL_AI_BIN: tr("本地 AI 二进制路径", "Local AI binary path"),
+    XINGSHU_LOCAL_AI_GGUF: tr("本地 AI 模型文件", "Local AI model file"),
+    XINGSHU_LOCAL_AI_LORA: tr("本地 AI LoRA 权重", "Local AI LoRA weights"),
+    XINGSHU_LOCAL_AI_TRAIN_SCRIPT: tr("本地 AI 训练脚本", "Local AI training script"),
+    XINGSHU_LOCAL_AI_CONVERT_SCRIPT: tr("本地 AI 转换脚本", "Local AI convert script"),
+    XINGSHU_LOCAL_AI_RK_REPORT: tr("本地 AI 报告输出", "Local AI report output"),
+  };
+  return map[key] ?? key;
 }
 
-function translatedFrom(map: Record<string, Translation>, value: unknown, fallback = "--"): string {
-  if (value === null || value === undefined || value === "") return fallback;
-  const key = String(value);
-  const label = map[key];
-  return label ? store.tr(label.zh, label.en) : key;
-}
-
-function boolText(value: unknown): string {
-  if (value === true || value === "true") return store.tr("是", "Yes");
-  if (value === false || value === "false") return store.tr("否", "No");
-  return value === null || value === undefined || value === "" ? "--" : String(value);
-}
-
-function displayAt(source: unknown, key: string, fallback = "--"): string {
-  const value = rawAt(source, key);
-  if (typeof value === "boolean") return boolText(value);
-  if (Array.isArray(value)) return value.length ? value.join(", ") : fallback;
-  if (value && typeof value === "object") return JSON.stringify(value);
-  return value === null || value === undefined || value === "" ? fallback : String(value);
-}
-
-function providerModeLabel(value: unknown): string {
-  return translatedFrom(providerModeLabels, value, store.tr("暂无缓存推荐", "No cached recommendation"));
-}
-
-function providerReasonLabel(value: unknown): string {
-  if (value === null || value === undefined || value === "") return store.tr("等待 AI 推荐上下文。", "Waiting for AI recommendation context.");
-  return translatedFrom(providerReasonLabels, value);
-}
-
-function intentLabel(value: unknown): string {
-  const option = intentOptions.find((item) => item.value === String(value));
-  return option ? store.tr(option.label.zh, option.label.en) : displayValue(value);
-}
-
-function displayValue(value: unknown): string {
-  if (typeof value === "boolean") return boolText(value);
-  if (value === null || value === undefined || value === "") return "--";
-  return String(value);
-}
-
-function statusTagType(status: unknown): "success" | "warning" | "info" | "danger" {
-  if (status === "executed") return "success";
-  if (status === "planned") return "warning";
-  if (status === "blocked") return "danger";
-  return "info";
-}
-
-function translatedRationale(value: unknown): string {
-  const text = displayValue(value);
-  const match = text.match(/^AI master-control intent '([^']+)' evaluated with live pipeline data and safety interlocks(; no control action was necessary)?$/);
-  if (match) {
-    const suffix = match[2] ? store.tr("；无需执行控制动作。", "; no control action was necessary.") : "";
-    return store.tr(`AI 主控按“${intentLabel(match[1])}”意图，结合实时管线数据和安全联锁完成评估${suffix}`, text);
-  }
-  return text;
-}
-
-function translatedActionMessage(action: ApiRecord): string {
-  const message = displayAt(action, "message");
-  if (message === "apply latest AI batch recommendation to safe runtime targets") {
-    return store.tr("将最新 AI 批次推荐应用到安全运行目标。", message);
-  }
-  if (message === "no persisted recommendation yet; waiting for finished batch outcomes") {
-    return store.tr("尚无已持久化推荐；等待已完成批次的产物结果。", message);
-  }
-  const processMatch = message.match(/^AI selected runnable process '(.+)'$/);
-  if (processMatch) {
-    return store.tr(`AI 已选择可运行工艺“${processMatch[1]}”。`, message);
-  }
-  if (message === "no runnable process definition with at least one step") {
-    return store.tr("没有包含至少一个步骤的可运行工艺定义。", message);
-  }
-  if (message === "high level alarm is active; AI process start blocked") {
-    return store.tr("存在高等级报警；AI 工艺启动已阻断。", message);
-  }
-  if (message === "AI stop condition met from live concentration or alarm state") {
-    return store.tr("实时浓度或报警状态已满足 AI 停止条件。", message);
-  }
-  if (message === "AI controls shake vessel stepper through component safety gate") {
-    return store.tr("AI 通过部件安全门控控制摇摆步进电机。", message);
-  }
-  if (message === "system is already within AI target envelope or no allowed action is available") {
-    return store.tr("系统已处于 AI 目标包络内，或当前没有允许执行的动作。", message);
-  }
-  return message;
-}
-
-function targetEntries(targets: ApiRecord | null): Array<{ key: string; label: string; value: string; unit: string }> {
-  if (!targets) return [];
-  return Object.keys(targetLabels).map((key) => ({
-    key,
-    label: translatedFrom(targetLabels, key),
-    value: displayAt(targets, key),
-    unit: targetUnits[key] ?? ""
-  }));
-}
-
-function safetyEntries(safety: ApiRecord | null): Array<{ key: string; label: string; value: string }> {
-  if (!safety) return [];
-  return Object.keys(safetyLabels).map((key) => ({
-    key,
-    label: translatedFrom(safetyLabels, key),
-    value: displayAt(safety, key)
-  }));
-}
-
-function actionResult(action: ApiRecord): unknown {
-  return rawAt(action, "result");
-}
-
-function formatJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
-function translatedPlanText(value: unknown): string {
-  const text = displayValue(value);
-  const exact = planTextLabels[text];
-  if (exact) return store.tr(exact.zh, exact.en);
-
-  let match = text.match(/^Run a three-stage heat\/hold\/cool experiment at ([\d.]+) degC and ([\d.]+) RPM based on (\d+) recorded product-result batches\.(.*)$/);
-  if (match) {
-    const best = match[4].trim();
-    let bestZh = "";
-    const bestMatch = best.match(/^Best recent batch #(\d+) reached ([\d.]+)% yield and ([\d.]+) product ratio\.$/);
-    if (bestMatch) {
-      bestZh = ` 最近最佳批次 #${bestMatch[1]} 达到 ${bestMatch[2]}% 收率和 ${bestMatch[3]} 产物比例。`;
-    } else if (best === "No finished product-result batch is available beyond the current recommendation context.") {
-      bestZh = " 当前推荐上下文之外暂无已完成产物结果批次。";
-    }
-    return store.tr(`基于 ${match[3]} 个已记录产物结果批次，按 ${match[1]} 摄氏度和 ${match[2]} RPM 执行升温/保温/降温三段式实验。${bestZh}`, text);
-  }
-
-  match = text.match(/^Temperature must remain within ([\d.]+)-([\d.]+) degC and each automatic adjustment must respect max_step_c ([\d.]+)\.$/);
-  if (match) {
-    return store.tr(`温度必须保持在 ${match[1]}-${match[2]} 摄氏度内，每次自动调整必须遵守 max_step_c ${match[3]}。`, text);
-  }
-
-  match = text.match(/^Stirrer target must remain <= ([\d.]+) RPM; pressure target is safety-clamped before device write\.$/);
-  if (match) {
-    return store.tr(`搅拌目标必须不超过 ${match[1]} RPM；压力目标在写入设备前会进行安全限幅。`, text);
-  }
-
-  match = text.match(/^Local Qwen LoRA is not executable yet; missing assets: (.+)\.$/);
-  if (match) {
-    return store.tr(`本地 Qwen LoRA 尚不可执行；缺少资产：${match[1]}。`, text);
-  }
-
-  return text;
-}
-
-async function withAction(label: string, action: () => Promise<void>): Promise<void> {
+async function regenerate(): Promise<void> {
   submitting.value = true;
-  actionMessage.value = "";
-  store.error = null;
   try {
-    await action();
-    actionMessage.value = label;
+    const rec = await aiApi.regenerateRecommendation();
+    plant.recommendation = rec;
+    ElMessage.success(tr("推荐已刷新", "Recommendation regenerated"));
   } catch (error) {
-    store.error = error instanceof Error ? error.message : String(error);
+    ElMessage.error(errorMessage(error));
   } finally {
     submitting.value = false;
   }
 }
 
-async function refreshRecommendation(): Promise<void> {
-  await withAction(
-    store.tr("推荐已刷新", "Recommendation refreshed"),
-    async () => {
-      await store.generateRecommendation();
-    }
-  );
-}
-
-async function runDryRun(): Promise<void> {
-  await withAction(
-    store.tr("AI 主控 dry-run 已生成", "AI master-control dry-run generated"),
-    async () => {
-      const result = await store.applyAiControl({ ...dryRunForm, dry_run: true });
-      dryRunPlan.value = result;
-    }
-  );
-}
-
-async function executeAi(): Promise<void> {
-  await withAction(
-    store.tr("AI 主控已执行", "AI master-control executed"),
-    async () => {
-      const result = await store.applyAiControl({ ...dryRunForm, dry_run: false });
-      executeResult.value = result;
-      await store.refreshProtected();
-    }
-  );
+async function runControl(dryRun: boolean): Promise<void> {
+  submitting.value = true;
+  try {
+    const body: Record<string, unknown> = {
+      intent: aiForm.intent,
+      dry_run: dryRun,
+      allow_target_adjustment: aiForm.allow_target_adjustment
+    };
+    if (aiForm.allow_process_start) body.allow_process_start = true;
+    if (aiForm.allow_process_stop) body.allow_process_stop = true;
+    if (aiForm.allow_component_control) body.allow_component_control = true;
+    controlResult.value = await aiApi.control(body as never);
+    ElMessage.success(dryRun ? tr("预演完成", "Dry-run complete") : tr("已执行", "Executed"));
+    if (!dryRun) await live.refreshLive();
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    submitting.value = false;
+  }
 }
 
 async function loadPlan(): Promise<void> {
-  await withAction(
-    store.tr("实验方案已加载", "Experiment plan loaded"),
-    async () => {
-      experimentPlan.value = await store.loadExperimentPlan();
-    }
-  );
+  loadingPlan.value = true;
+  try {
+    plan.value = await aiApi.experimentPlan();
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    loadingPlan.value = false;
+  }
 }
 
-const safetyBlock = computed(() => {
-  const runtime = objectAt(store.live, "runtime") ?? store.runtimeFallback;
-  const unfinishedBatchIds = textAt(runtime, "unfinished_batch_ids", "");
-  return {
-    live_unavailable: store.liveStatus !== "fresh",
-    emergency_stop: textAt(runtime, "emergency_stop", "false") === "true",
-    manual_lock: textAt(runtime, "manual_lock", "false") === "true",
-    batch_recovery_required: textAt(runtime, "batch_recovery_required", "false") === "true",
-    unfinished_batch_ids: unfinishedBatchIds
-  };
-});
-const executeBlocked = computed(
-  () =>
-    safetyBlock.value.live_unavailable ||
-    safetyBlock.value.emergency_stop ||
-    safetyBlock.value.manual_lock ||
-    safetyBlock.value.batch_recovery_required
-);
-
-const localAiModeLabel = computed(() => translatedFrom(localAiModeLabels, rawAt(localAi.value, "mode"), store.tr("未就绪", "not ready")));
-const localAiTagType = computed(() => {
-  const mode = rawAt(localAi.value, "mode");
-  if (mode === "prd_lora_ready" || mode === "lora_inference_ready") return "success";
-  if (mode === "base_inference_only") return "warning";
+function actionStatusType(status: string): "success" | "warning" | "info" | "danger" {
+  if (status === "executed") return "success";
+  if (status === "planned") return "info";
+  if (status === "skipped") return "warning";
+  if (status === "blocked") return "danger";
   return "info";
+}
+
+onMounted(async () => {
+  await Promise.allSettled([plant.loadConfig()]);
 });
 </script>
 
 <template>
-  <section class="view-stack">
-    <div class="view-heading">
-      <div>
-        <p class="eyebrow">{{ store.tr("模型与优化", "Models & optimization") }}</p>
-        <h1>{{ store.tr("AI 决策", "AI Decision") }}</h1>
-        <span>{{ store.tr("本地模型边界、推荐来源、AI 主控 dry-run/execute 和 SOP 草案", "Local model readiness, recommendation source, AI master-control dry-run/execute, and SOP draft") }}</span>
-      </div>
-      <div class="heading-actions">
-        <el-tag :type="localAiTagType">{{ localAiModeLabel }}</el-tag>
-        <el-button :loading="submitting" :disabled="!store.isAuthenticated" @click="refreshRecommendation">
-          {{ store.tr("刷新推荐", "Refresh Recommendation") }}
-        </el-button>
-      </div>
+  <div class="page-stack">
+    <PageHeader :title="tr('AI 决策', 'AI Decision')" :subtitle="tr('推荐、AI 主控预演与实验 SOP 草案', 'Recommendations, AI master control dry-run and SOP drafts')">
+      <template #actions>
+        <HmiButton type="manual" :disabled="!auth.isAuthenticated" @click="regenerate">
+          {{ tr("刷新推荐", "Regenerate") }}
+        </HmiButton>
+      </template>
+    </PageHeader>
+
+    <div class="ai-grid">
+      <!-- 本地 AI 状态 -->
+      <section class="hmi-panel">
+        <div class="hmi-panel-header">
+          <span>{{ tr("本地 AI 状态", "Local AI status") }}</span>
+          <el-tag size="small" :type="localAiMissing.length === 0 ? 'success' : 'warning'">{{ localAiMode }}</el-tag>
+        </div>
+        <div class="hmi-panel-body">
+          <dl class="kv-list">
+            <dt>{{ tr("Provider", "Provider") }}</dt>
+            <dd>{{ text(aiProvider?.mode) }}</dd>
+            <dt>{{ tr("模型", "Model") }}</dt>
+            <dd>{{ text(aiProvider?.model) }}</dd>
+            <dt>{{ tr("回退原因", "Fallback") }}</dt>
+            <dd>{{ text(aiProvider?.fallback_reason, tr("无", "none")) }}</dd>
+          </dl>
+          <div v-if="localAiMissing.length > 0" class="missing-list">
+            <small class="muted">{{ tr("缺失配置项", "Missing configuration") }}</small>
+            <div class="config-status">
+              <div v-for="item in localAiMissing" :key="item" class="config-item">
+                <span class="config-name">{{ formatConfigKey(item) }}</span>
+                <el-tag size="small" type="warning">{{ tr("未配置", "Not configured") }}</el-tag>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 推荐详情 -->
+      <section class="hmi-panel">
+        <div class="hmi-panel-header">
+          <span>{{ tr("最新推荐", "Latest recommendation") }}</span>
+          <span class="muted">{{ tr("基于批次数", "Based on") }}: {{ text(recommendation?.based_on_batch_count) }}</span>
+        </div>
+        <div class="hmi-panel-body">
+          <template v-if="recommendation">
+            <p class="rationale">{{ text(recommendation.rationale) }}</p>
+            <dl class="kv-list">
+              <dt>{{ tr("目标温度", "Target temp") }}</dt>
+              <dd>{{ fixed(recommendation.target_temperature_c ?? null, 1) }} °C</dd>
+              <dt>{{ tr("目标转速", "Target RPM") }}</dt>
+              <dd>{{ fixed(recommendation.target_stirrer_rpm ?? null, 0) }} rpm</dd>
+              <dt>{{ tr("加热时长", "Heating") }}</dt>
+              <dd>{{ fixed(recommendation.heating_minutes ?? null, 1) }} min</dd>
+              <dt>{{ tr("搅拌时长", "Stirring") }}</dt>
+              <dd>{{ fixed(recommendation.stirring_minutes ?? null, 1) }} min</dd>
+              <dt>{{ tr("预期分数", "Expected score") }}</dt>
+              <dd>{{ fixed(recommendation.expected_score ?? null, 1) }}</dd>
+            </dl>
+          </template>
+          <EmptyState v-else icon="AI" :title="tr('暂无推荐', 'No recommendation')" :description="tr('录入产物结果或点击刷新推荐生成。', 'Record a product result or regenerate.')" />
+        </div>
+      </section>
     </div>
 
-    <section class="panel two-col">
-      <el-descriptions :column="1" border>
-        <el-descriptions-item :label="store.tr('基础模型入口', 'Base inference')">{{ displayAt(localAi, "ready_for_base_inference") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('LoRA 推理闭环', 'LoRA inference')">{{ displayAt(localAi, "ready_for_lora_inference") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('训练就绪', 'Training ready')">{{ displayAt(localAi, "ready_for_training") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('PRD LoRA/RK 闭环', 'PRD LoRA/RK')">{{ displayAt(localAi, "ready_for_prd_lora") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('推理端点', 'Inference endpoint')">{{ displayAt(localAi, "inference_endpoint") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('训练端点', 'Training endpoint')">{{ displayAt(localAi, "training_endpoint") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('模型路径', 'Model path')">{{ displayAt(localAi, "model_path") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('适配器路径', 'Adapter path')">{{ displayAt(localAi, "adapter_path") }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('本地优化器', 'Local optimizer')">{{ store.tr("已激活", "Active") }}</el-descriptions-item>
-      </el-descriptions>
-      <div v-if="localAiMissing.length > 0" class="analysis-block" style="border-color: var(--amber);">
-        <h2>{{ store.tr("本地 LoRA 缺失资产", "Missing Local-LoRA Assets") }}</h2>
-        <p>{{ store.tr("以下环境变量/文件缺失，阻塞本地推理与训练闭环。补齐后才能脱离云端 StepFun。", "The following env vars / files are absent and block the local inference/training loop. Fill them to leave cloud StepFun behind.") }}</p>
-        <ul class="endpoint-card ul" style="margin-top: 8px;">
-          <li v-for="item in localAiMissing" :key="item">{{ item }}</li>
-        </ul>
+    <!-- AI 主控 -->
+    <section class="hmi-panel">
+      <div class="hmi-panel-header">
+        <span>{{ tr("AI 主控", "AI master control") }}</span>
+        <span class="muted">{{ tr("先 dry-run 复核，再执行", "Dry-run first, then execute") }}</span>
       </div>
-      <div class="analysis-block">
-        <h2>{{ store.tr("AI 记忆", "AI Memory") }}</h2>
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="store.tr('优化目标', 'Objective (optimize_for)')">{{ textAt(aiMemory, "objective") || "--" }}</el-descriptions-item>
-          <el-descriptions-item :label="store.tr('已配置传感器限值', 'Sensor limits configured')">{{ textAt(aiMemory, "sensor_limit_count") }}</el-descriptions-item>
-          <el-descriptions-item :label="store.tr('参考批次数', 'Reference batches')">{{ textAt(aiMemory, "reference_batch_count") }}</el-descriptions-item>
-          <el-descriptions-item :label="store.tr('禁区数', 'Forbidden zones')">{{ textAt(aiMemory, "forbidden_zone_count") }}</el-descriptions-item>
-          <el-descriptions-item :label="store.tr('已启用', 'Enabled')">{{ textAt(aiMemory, "enabled") === "true" ? store.tr("是", "Yes") : store.tr("否", "No") }}</el-descriptions-item>
-        </el-descriptions>
-        <p class="muted">{{ store.tr("本地推理/训练由后端 local_ai 模块内部触发（无独立 REST 端点）；前端经 experiment-plan 间接可见其就绪态与缺失资产。", "Local inference/training is triggered internally by the backend local_ai module (no standalone REST endpoint); the frontend sees readiness and missing assets indirectly via experiment-plan.") }}</p>
-      </div>
-      <div class="analysis-block">
-        <h2>{{ store.tr("最新推荐来源", "Latest Recommendation Provider") }}</h2>
-        <p>{{ providerModeLabel(rawAt(provider, "mode")) }}</p>
-        <p class="muted">{{ providerReasonLabel(rawAt(provider, "fallback_reason")) }}</p>
-        <p>
-          <strong>{{ store.tr("参考批次", "Reference batches") }}:</strong>
-          <span class="inline-value">{{ basedOn ?? "--" }}</span>
-        </p>
-      </div>
-    </section>
-
-    <section class="panel control-panel">
-      <div>
-        <h2>{{ store.tr("推荐内容", "Recommendation Detail") }}</h2>
-        <p>{{ rationale || store.tr("尚无可读推荐。点 “刷新推荐” 触发一次生成。", "No rationale yet. Press Refresh Recommendation to generate one.") }}</p>
-      </div>
-      <div class="target-summary">
-        <div>
-          <span>{{ store.tr("目标温度 C", "Target temperature C") }}</span>
-          <strong>{{ targetTempC }}</strong>
-          <small>C</small>
-        </div>
-        <div>
-          <span>{{ store.tr("目标搅拌 rpm", "Target stirrer rpm") }}</span>
-          <strong>{{ targetStirrerRpm }}</strong>
-          <small>rpm</small>
-        </div>
-        <div>
-          <span>{{ store.tr("加热时长 min", "Heating minutes") }}</span>
-          <strong>{{ heatingMinutes }}</strong>
-          <small>min</small>
-        </div>
-        <div>
-          <span>{{ store.tr("搅拌时长 min", "Stirring minutes") }}</span>
-          <strong>{{ stirringMinutes }}</strong>
-          <small>min</small>
-        </div>
-        <div>
-          <span>{{ store.tr("预期分数", "Expected score") }}</span>
-          <strong>{{ expectedScore }}</strong>
-          <small>/100</small>
-        </div>
-      </div>
-      <el-descriptions :column="1" border size="small">
-        <el-descriptions-item :label="store.tr('当前摇速 cpm（来源：runtime）', 'Current shake speed cpm (from runtime)')">{{ currentShakeSpeed || "--" }}</el-descriptions-item>
-        <el-descriptions-item :label="store.tr('当前压力 MPa（来源：runtime）', 'Current pressure MPa (from runtime)')">{{ currentPressure || "--" }}</el-descriptions-item>
-      </el-descriptions>
-    </section>
-
-    <section class="panel control-panel">
-      <div>
-        <h2>{{ store.tr("AI 主控", "AI Master Control") }}</h2>
-        <p>{{ store.tr("默认仅 dry-run，operator 复核后再以 execute 提交；执行会受 RBAC、急停、人工锁定、传感器新鲜度共同约束。", "Dry-run is the default. Operators review then submit execute; the action is gated by RBAC, emergency stop, manual lock, and sensor freshness.") }}</p>
-        <p v-if="safetyBlock.live_unavailable" class="muted">
-          {{ store.tr("实时现场状态不可用：AI 执行被阻断。", "Live field state is unavailable: AI execution is blocked.") }}
-        </p>
-        <p v-else-if="safetyBlock.emergency_stop" class="muted">
-          {{ store.tr("急停已触发：AI 主控被阻断。", "Emergency stop is active: AI master control is blocked.") }}
-        </p>
-        <p v-else-if="safetyBlock.manual_lock" class="muted">
-          {{ store.tr("人工锁定已开启：AI 主控被阻断。", "Manual lock is active: AI master control is blocked.") }}
-        </p>
-        <p v-else-if="safetyBlock.batch_recovery_required" class="muted">
-          {{ store.tr("未完成批次恢复中：AI 执行被阻断。", "Unfinished batch recovery is active: AI execution is blocked.") }}
-          <span v-if="safetyBlock.unfinished_batch_ids"> {{ safetyBlock.unfinished_batch_ids }}</span>
-        </p>
-      </div>
-      <el-form label-position="top" class="control-form">
-        <el-form-item :label="store.tr('意图', 'Intent')">
-          <el-select v-model="dryRunForm.intent">
-            <el-option v-for="option in intentOptions" :key="option.value" :label="store.tr(option.label.zh, option.label.en)" :value="option.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="store.tr('允许工艺启动', 'Allow process start')">
-          <el-switch v-model="dryRunForm.allow_process_start" />
-        </el-form-item>
-        <el-form-item :label="store.tr('允许工艺停止', 'Allow process stop')">
-          <el-switch v-model="dryRunForm.allow_process_stop" />
-        </el-form-item>
-        <el-form-item :label="store.tr('允许部件控制', 'Allow component control')">
-          <el-switch v-model="dryRunForm.allow_component_control" />
-        </el-form-item>
-        <el-form-item :label="store.tr('允许目标调整', 'Allow target adjustment')">
-          <el-switch v-model="dryRunForm.allow_target_adjustment" />
-        </el-form-item>
-        <div class="control-actions">
-          <el-button :loading="submitting" :disabled="!store.isAuthenticated" @click="runDryRun">
-            {{ store.tr("Dry-run", "Dry-run") }}
-          </el-button>
-          <el-button type="primary" :loading="submitting" :disabled="!store.isAuthenticated || executeBlocked" @click="executeAi">
-            {{ store.tr("Execute (受 RBAC 约束)", "Execute (gated by RBAC)") }}
-          </el-button>
-          <span v-if="actionMessage" class="muted">{{ actionMessage }}</span>
-        </div>
-      </el-form>
-      <div v-if="dryRunPlan || executeResult" class="ai-result">
-        <div class="result-heading">
-          <div>
-            <h3>{{ store.tr("AI 结果复核", "AI Result Review") }}</h3>
-            <p class="muted">{{ store.tr("结构化展示 AI 主控的决策、动作、安全门控和推荐目标；原始响应折叠保留用于审计追溯。", "Structured review of AI master-control decision, actions, safety gates, and recommended targets; raw response stays collapsed for audit traceability.") }}</p>
+      <div class="hmi-panel-body">
+        <div class="ai-control-form">
+          <el-form-item :label="tr('意图', 'Intent')">
+            <el-select v-model="aiForm.intent" class="intent-select">
+              <el-option value="optimize_and_control" :label="tr('优化并控制', 'Optimize & control')" />
+              <el-option value="hold_only" :label="tr('仅保持', 'Hold only')" />
+              <el-option value="cool_down" :label="tr('降温', 'Cool down')" />
+            </el-select>
+          </el-form-item>
+          <div class="allow-switches">
+            <el-checkbox v-model="aiForm.allow_target_adjustment">{{ tr("允许调目标", "Allow target adjust") }}</el-checkbox>
+            <el-checkbox v-model="aiForm.allow_process_start">{{ tr("允许启动工艺", "Allow process start") }}</el-checkbox>
+            <el-checkbox v-model="aiForm.allow_process_stop">{{ tr("允许停止工艺", "Allow process stop") }}</el-checkbox>
+            <el-checkbox v-model="aiForm.allow_component_control">{{ tr("允许组件控制", "Allow component control") }}</el-checkbox>
           </div>
-          <el-tag :type="rawAt(aiResult, 'dry_run') === false ? 'success' : 'warning'">
-            {{ rawAt(aiResult, "dry_run") === false ? store.tr("已执行", "Executed") : store.tr("Dry-run 预览", "Dry-run preview") }}
-          </el-tag>
-        </div>
-        <div class="result-grid">
-          <div class="result-card">
-            <h4>{{ store.tr("决策摘要", "Decision Summary") }}</h4>
-            <dl class="field-grid">
-              <dt>{{ store.tr("模式", "Mode") }}</dt>
-              <dd>{{ translatedFrom({ ai_master_control: { zh: "AI 主控", en: "AI master control" } }, rawAt(aiResult, "mode")) }}</dd>
-              <dt>{{ store.tr("决策", "Decision") }}</dt>
-              <dd>{{ translatedFrom(decisionLabels, rawAt(aiResult, "decision")) }}</dd>
-              <dt>{{ store.tr("依据", "Rationale") }}</dt>
-              <dd>{{ translatedRationale(rawAt(aiResult, "rationale")) }}</dd>
-            </dl>
+          <div class="form-actions">
+            <HmiButton type="manual" :disabled="!auth.isAuthenticated" @click="runControl(true)">
+              {{ tr("预演（dry-run）", "Dry-run") }}
+            </HmiButton>
+            <HmiButton type="start" :disabled="executeBlocked" @click="runControl(false)">
+              {{ tr("执行", "Execute") }}
+            </HmiButton>
           </div>
-          <div class="result-card">
-            <h4>{{ store.tr("安全门控", "Safety Gate") }}</h4>
-            <dl class="field-grid compact">
-              <template v-for="entry in safetyEntries(aiResultSafety)" :key="entry.key">
-                <dt>{{ entry.label }}</dt>
-                <dd>{{ entry.value }}</dd>
+          <el-alert
+            v-if="executeBlocked && auth.isAuthenticated"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="tr('执行已被安全门控禁用', 'Execute disabled by safety gate')"
+            :description="tr('实时不可用 / 急停 / 人工锁 / 批次恢复中。', 'Live unavailable / E-stop / manual lock / batch recovery.')"
+          />
+        </div>
+
+        <!-- 结果复核 -->
+        <div v-if="controlResult" class="control-result">
+          <dl class="kv-list">
+            <dt>{{ tr("模式", "Mode") }}</dt>
+            <dd>{{ text(controlResult.mode) }}</dd>
+            <dt>{{ tr("决策", "Decision") }}</dt>
+            <dd>{{ text(controlResult.decision) }}</dd>
+            <dt>{{ tr("Dry-run", "Dry-run") }}</dt>
+            <dd>{{ boolText(controlResult.dry_run) ? "true" : "false" }}</dd>
+          </dl>
+          <p class="rationale">{{ text(controlResult.rationale) }}</p>
+          <el-table v-if="(controlResult.actions ?? []).length > 0" :data="controlResult.actions" size="small">
+            <el-table-column prop="action_type" :label="tr('动作', 'Action')" min-width="140" />
+            <el-table-column :label="tr('状态', 'Status')" width="100">
+              <template #default="{ row }">
+                <el-tag :type="actionStatusType(String(row.status ?? ''))" size="small">{{ row.status }}</el-tag>
               </template>
-            </dl>
-          </div>
-        </div>
-
-        <div class="result-card">
-          <h4>{{ store.tr("推荐目标", "Recommended Targets") }}</h4>
-          <div v-if="aiResultTargets" class="target-summary compact-targets">
-            <div v-for="entry in targetEntries(aiResultTargets)" :key="entry.key">
-              <span>{{ entry.label }}</span>
-              <strong>{{ entry.value }}</strong>
-              <small>{{ entry.unit }}</small>
-            </div>
-          </div>
-          <p v-else class="muted">{{ store.tr("本次结果没有推荐目标，通常表示保持、等待批次结果或安全门控阻断。", "This result has no recommended targets, usually because it is holding, waiting for batch outcomes, or blocked by safety gates.") }}</p>
-        </div>
-
-        <div class="result-card">
-          <h4>{{ store.tr("动作复核", "Action Review") }}</h4>
-          <div class="ai-action-list">
-            <article v-for="(action, index) in aiResultActions" :key="`${textAt(action, 'action_type')}-${index}`" class="ai-action-card">
-              <div class="ai-action-title">
-                <strong>{{ index + 1 }}. {{ translatedFrom(actionTypeLabels, rawAt(action, "action_type")) }}</strong>
-                <el-tag :type="statusTagType(rawAt(action, 'status'))">{{ translatedFrom(actionStatusLabels, rawAt(action, "status")) }}</el-tag>
-              </div>
-              <p>{{ translatedActionMessage(action) }}</p>
-              <dl class="field-grid compact">
-                <dt>{{ store.tr("目标路径", "Target path") }}</dt>
-                <dd>{{ textAt(action, "target") }}</dd>
-                <template v-if="actionResult(action)">
-                  <dt>{{ store.tr("执行结果", "Execution result") }}</dt>
-                  <dd>{{ store.tr("已返回，见折叠详情", "Returned, see collapsed detail") }}</dd>
-                </template>
-              </dl>
-              <details v-if="actionResult(action)" class="raw-json">
-                <summary>{{ store.tr("动作结果 JSON", "Action Result JSON") }}</summary>
-                <pre>{{ formatJson(actionResult(action)) }}</pre>
-              </details>
-            </article>
-          </div>
-        </div>
-
-        <details class="raw-json">
-          <summary>{{ store.tr("原始响应 JSON", "Raw Response JSON") }}</summary>
-          <pre>{{ formatJson(aiResult) }}</pre>
-        </details>
-      </div>
-      <div v-else class="ai-result empty-result">
-        <h3>{{ store.tr("AI 结果复核", "AI Result Review") }}</h3>
-        <p class="muted">{{ store.tr("尚未生成 dry-run 或 execute 结果。先运行 Dry-run，可在这里复核决策摘要、动作复核、安全门控和推荐目标。", "No dry-run or execute result yet. Run Dry-run first to review the decision summary, action review, safety gate, and recommended targets here.") }}</p>
-        <div class="ai-empty-checklist">
-          <span>{{ store.tr("决策摘要", "Decision Summary") }}</span>
-          <span>{{ store.tr("动作复核", "Action Review") }}</span>
-          <span>{{ store.tr("安全门控", "Safety Gate") }}</span>
-          <span>{{ store.tr("推荐目标", "Recommended Targets") }}</span>
+            </el-table-column>
+            <el-table-column prop="target" :label="tr('目标', 'Target')" min-width="120">
+              <template #default="{ row }">{{ text(row.target) }}</template>
+            </el-table-column>
+            <el-table-column prop="message" :label="tr('说明', 'Message')" min-width="200">
+              <template #default="{ row }">{{ text(row.message) }}</template>
+            </el-table-column>
+          </el-table>
+          <el-collapse class="raw-json">
+            <el-collapse-item :title="tr('原始响应 JSON', 'Raw response JSON')">
+              <pre class="mono">{{ JSON.stringify(controlResult, null, 2) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
         </div>
       </div>
     </section>
 
-    <section class="panel control-panel">
-      <div>
-        <h2>{{ store.tr("实验方案 / SOP 草案", "Experiment Plan / SOP Draft") }}</h2>
-        <p>{{ store.tr("只读草案，来源于历史批次结果 + 当前安全/优化器边界 + 本地 LoRA readiness。", "Read-only draft sourced from batch history, current safety/optimizer bounds, and local LoRA readiness.") }}</p>
+    <!-- SOP 草案 -->
+    <section class="hmi-panel">
+      <div class="hmi-panel-header">
+        <span>{{ tr("实验 SOP 草案", "Experiment SOP draft") }}</span>
+        <HmiButton type="manual" :disabled="loadingPlan" @click="loadPlan">{{ tr("生成草案", "Generate") }}</HmiButton>
       </div>
-      <div class="control-actions">
-        <el-button :loading="submitting" @click="loadPlan">
-          {{ store.tr("加载 SOP 草案", "Load SOP Draft") }}
-        </el-button>
+      <div class="hmi-panel-body">
+        <template v-if="plan">
+          <div class="plan-head">
+            <h3>{{ text(plan.title, tr("未命名计划", "Untitled plan")) }}</h3>
+            <el-tag size="small" type="warning">{{ text(plan.status) }}</el-tag>
+          </div>
+          <p class="rationale">{{ text(plan.objective) }}</p>
+          <p class="muted">{{ text(plan.sop_summary) }}</p>
+          <el-table v-if="(plan.steps ?? []).length > 0" :data="plan.steps" size="small" class="plan-steps">
+            <el-table-column prop="step_no" label="#" width="50" />
+            <el-table-column :label="tr('步骤', 'Step')" min-width="120">
+              <template #default="{ row }">{{ text(row.name) }}</template>
+            </el-table-column>
+            <el-table-column :label="tr('目标', 'Targets')" min-width="200">
+              <template #default="{ row }">
+                {{ fixed(row.target_temperature_c ?? null, 0) }}°C / {{ fixed(row.target_stirrer_rpm ?? null, 0) }}rpm /
+                {{ fixed(row.target_shake_speed_cpm ?? null, 0) }}cpm / {{ fixed(row.duration_minutes ?? null, 0) }}min
+              </template>
+            </el-table-column>
+            <el-table-column :label="tr('操作', 'Operator action')" min-width="180">
+              <template #default="{ row }">{{ text(row.operator_action) }}</template>
+            </el-table-column>
+            <el-table-column :label="tr('安全检查', 'Safety check')" min-width="180">
+              <template #default="{ row }">{{ text(row.safety_check) }}</template>
+            </el-table-column>
+          </el-table>
+          <div v-if="(plan.safety_notes ?? []).length > 0" class="plan-notes">
+            <strong>{{ tr("安全说明", "Safety notes") }}</strong>
+            <ul><li v-for="(note, i) in plan.safety_notes" :key="i">{{ note }}</li></ul>
+          </div>
+          <el-collapse class="raw-json">
+            <el-collapse-item :title="tr('原始计划 JSON', 'Raw plan JSON')">
+              <pre class="mono">{{ JSON.stringify(plan, null, 2) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+        </template>
+        <EmptyState
+          v-else
+          icon="▦"
+          :title="tr('尚未生成 SOP 草案', 'No SOP draft yet')"
+          :description="tr('点击「生成草案」由后端基于历史批次生成（需要已有产物结果）。', 'Click Generate; the backend drafts a plan from batch history (requires product results).')"
+        />
       </div>
-      <div v-if="experimentPlan" class="ai-result sop-review">
-        <div class="result-heading">
-          <div>
-            <h3>{{ store.tr("SOP 结构化草案", "SOP Structure Draft") }}</h3>
-            <p class="muted">{{ translatedPlanText(rawAt(experimentPlan, "objective")) }}</p>
-          </div>
-          <el-tag type="warning">{{ translatedPlanText(rawAt(experimentPlan, "status")) }}</el-tag>
-        </div>
-        <div class="result-grid">
-          <div class="result-card">
-            <h4>{{ translatedPlanText(rawAt(experimentPlan, "title")) }}</h4>
-            <dl class="field-grid">
-              <dt>{{ store.tr("来源", "Source") }}</dt>
-              <dd>{{ translatedPlanText(rawAt(experimentPlan, "source")) }}</dd>
-              <dt>{{ store.tr("摘要", "Summary") }}</dt>
-              <dd>{{ translatedPlanText(rawAt(experimentPlan, "sop_summary")) }}</dd>
-            </dl>
-          </div>
-          <div class="result-card">
-            <h4>{{ store.tr("模型边界", "Model Boundary") }}</h4>
-            <ul class="review-list">
-              <li v-for="item in modelBoundary" :key="item">{{ translatedPlanText(item) }}</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="sop-step-list">
-          <article v-for="step in experimentPlanSteps" :key="textAt(step, 'step_no')" class="sop-step">
-            <div class="ai-action-title">
-              <strong>{{ textAt(step, "step_no") }}. {{ translatedPlanText(rawAt(step, "name")) }}</strong>
-              <el-tag>{{ textAt(step, "duration_minutes") }} min</el-tag>
-            </div>
-            <div class="target-summary compact-targets">
-              <div>
-                <span>{{ store.tr("温度", "Temperature") }}</span>
-                <strong>{{ textAt(step, "target_temperature_c") }}</strong>
-                <small>C</small>
-              </div>
-              <div>
-                <span>{{ store.tr("搅拌", "Stirrer") }}</span>
-                <strong>{{ textAt(step, "target_stirrer_rpm") }}</strong>
-                <small>rpm</small>
-              </div>
-              <div>
-                <span>{{ store.tr("摇摆", "Shake") }}</span>
-                <strong>{{ textAt(step, "target_shake_speed_cpm") }}</strong>
-                <small>cpm</small>
-              </div>
-              <div>
-                <span>{{ store.tr("压力", "Pressure") }}</span>
-                <strong>{{ textAt(step, "target_pressure_mpa") }}</strong>
-                <small>MPa</small>
-              </div>
-            </div>
-            <dl class="field-grid">
-              <dt>{{ store.tr("操作动作", "Operator action") }}</dt>
-              <dd>{{ translatedPlanText(rawAt(step, "operator_action")) }}</dd>
-              <dt>{{ store.tr("安全检查", "Safety check") }}</dt>
-              <dd>{{ translatedPlanText(rawAt(step, "safety_check")) }}</dd>
-            </dl>
-          </article>
-        </div>
-
-        <div class="sop-list-grid">
-          <div class="result-card">
-            <h4>{{ store.tr("验收指标", "Acceptance Criteria") }}</h4>
-            <ul class="review-list">
-              <li v-for="item in acceptanceCriteria" :key="item">{{ translatedPlanText(item) }}</li>
-            </ul>
-          </div>
-          <div class="result-card">
-            <h4>{{ store.tr("安全说明", "Safety Notes") }}</h4>
-            <ul class="review-list">
-              <li v-for="item in safetyNotes" :key="item">{{ translatedPlanText(item) }}</li>
-            </ul>
-          </div>
-          <div class="result-card">
-            <h4>{{ store.tr("下一步", "Next Actions") }}</h4>
-            <ul class="review-list">
-              <li v-for="item in nextActions" :key="item">{{ translatedPlanText(item) }}</li>
-            </ul>
-          </div>
-        </div>
-
-        <details class="raw-json">
-          <summary>{{ store.tr("原始 SOP JSON", "Raw SOP JSON") }}</summary>
-          <pre>{{ formatJson(experimentPlan) }}</pre>
-        </details>
-      </div>
-      <p v-else class="muted">{{ store.tr("尚未加载实验方案。", "No experiment plan loaded yet.") }}</p>
     </section>
-  </section>
+  </div>
 </template>
+
+<style scoped>
+.ai-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing);
+  align-items: start;
+}
+
+.rationale {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--spacing);
+  overflow-wrap: anywhere;
+}
+
+.missing-list {
+  margin-top: var(--spacing);
+}
+
+.config-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-glass);
+}
+
+.config-name {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.ai-control-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+  margin-bottom: var(--spacing);
+}
+
+.intent-select {
+  width: 260px;
+}
+
+.allow-switches {
+  display: flex;
+  gap: var(--spacing);
+  flex-wrap: wrap;
+}
+
+.control-result {
+  border-top: 1px solid var(--border-glass);
+  padding-top: var(--spacing);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+}
+
+.raw-json pre {
+  max-height: 320px;
+  overflow: auto;
+  font-size: var(--fs-xs);
+  background: var(--bg-inset);
+  padding: var(--spacing);
+  border-radius: var(--radius-md);
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  margin-bottom: var(--spacing);
+}
+
+.plan-steps {
+  margin: var(--spacing) 0;
+}
+
+.plan-notes {
+  margin-top: var(--spacing);
+}
+
+.plan-notes ul {
+  margin: 8px 0 0;
+  padding-left: var(--spacing);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 1000px) {
+  .ai-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
