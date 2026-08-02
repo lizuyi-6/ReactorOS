@@ -5880,7 +5880,7 @@ fn sync_parent_dir(path: &Path) -> Result<()> {
 }
 
 fn validate_restored_db_file(path: &Path) -> Result<(String, Vec<String>)> {
-    let conn = rusqlite::Connection::open(path)
+    let conn = Connection::open(path)
         .with_context(|| format!("restored db is unreadable: {}", path.display()))?;
     let integrity: String = conn
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))

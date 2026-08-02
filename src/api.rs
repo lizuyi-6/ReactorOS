@@ -954,7 +954,7 @@ async fn modbus_register_write(
     ApiJson(payload): ApiJson<ModbusWriteRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     require_admin(&headers)?;
-    let response = modbus_register_map::apply_modbus_register_write(
+    let response = apply_modbus_register_write(
         &state,
         &register,
         payload.value,
@@ -3165,7 +3165,7 @@ async fn v1_control(
     let estimated_duration =
         (targets.heat_time_s + targets.hold_time_s + targets.cool_time_s).round() as i64;
     Ok(Json(success(json!({
-        "command_id": payload.command_id.unwrap_or_else(|| format!("cmd_{}", chrono::Utc::now().timestamp_millis())),
+        "command_id": payload.command_id.unwrap_or_else(|| format!("cmd_{}", Utc::now().timestamp_millis())),
         "status": "accepted",
         "estimated_duration": estimated_duration
     }))))
@@ -3673,7 +3673,7 @@ async fn start_batch(
 
 async fn finish_batch(
     State(state): State<AppState>,
-    axum::extract::Path(batch_id): axum::extract::Path<i64>,
+    Path(batch_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
     require_permission(&headers, Permission::StartStopProcess)?;

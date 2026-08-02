@@ -1279,7 +1279,7 @@ pub struct JsonBridgeControl {
     pub request_id: String,
     pub command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub value: Option<serde_json::Value>,
+    pub value: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
@@ -1363,7 +1363,7 @@ pub fn json_bridge_status_from_state(state: &JsonBridgeState) -> Result<DeviceSt
 pub fn build_json_bridge_control(
     prefix: &str,
     command: &str,
-    value: Option<serde_json::Value>,
+    value: Option<Value>,
     name: Option<&str>,
 ) -> JsonBridgeControl {
     static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
