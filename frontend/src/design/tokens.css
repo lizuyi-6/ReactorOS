@@ -1,0 +1,123 @@
+/* ============================================================
+   ReactorOS 工业 HMI 设计系统 — 现代 UI 与 工业规范 融合版
+   1. 严禁全局滚动 (No Scrolling)
+   2. 工业色彩语义 (Industrial Color Semantics)
+   3. 防误触大按钮 (Large Touch Targets)
+   4. 现代 UI 质感 (Glassmorphism, Depth, Micro-interactions)
+   ============================================================ */
+
+:root {
+  /* ---- 基础背景：深邃、哑光、带微弱渐变 ---- */
+  --bg-app: #0b0f14;
+  --bg-gradient: radial-gradient(circle at 50% 50%, #161e27 0%, #0b0f14 100%);
+  --bg-panel: rgba(22, 30, 39, 0.7);
+  --bg-panel-solid: #161e27;
+  --bg-inset: rgba(11, 15, 20, 0.8);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(59, 130, 246, 0.15);
+
+  /* ---- 边框与高光 ---- */
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --highlight: rgba(255, 255, 255, 0.1);
+
+  /* ---- 工业语义色 (Industrial Semantics) ---- */
+  /* 绿：运行/启动/正常 */
+  --ind-green: #00c853;
+  --ind-green-glow: rgba(0, 200, 83, 0.4);
+  /* 红：危险/停止/急停 */
+  --ind-red: #ff3d00;
+  --ind-red-glow: rgba(255, 61, 0, 0.4);
+  /* 橙：警告/待机 */
+  --ind-amber: #ffab00;
+  --ind-amber-glow: rgba(255, 171, 0, 0.4);
+  /* 蓝：手动/信息/普通操作 */
+  --ind-blue: #2979ff;
+  --ind-blue-glow: rgba(41, 121, 255, 0.4);
+  /* 灰：禁用/离线 */
+  --ind-gray: #455a64;
+
+  /* ---- 文本 ---- */
+  --text-primary: #eceff1;
+  --text-secondary: #b0bec5;
+  --text-tertiary: #78909c;
+  --text-inverse: #0b0f14;
+
+  /* ---- 字体 ---- */
+  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+
+  /* 字号层级：大而清晰，但有呼吸感 */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-base: 15px;
+  --fs-md: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 24px;
+  --fs-2xl: 32px;
+  --fs-3xl: 42px;
+
+  /* ---- 尺寸：防误触 ---- */
+  --touch-target: 56px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* ---- 阴影与光效 ---- */
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-btn: 0 4px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 var(--highlight);
+  --shadow-btn-active: 0 2px 4px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(0,0,0,0.2);
+
+  /* ---- 布局 ---- */
+  --header-h: 64px;
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 72px;
+  --spacing: 16px;
+}
+
+/* 覆盖 Element Plus 变量 */
+:root {
+  --el-color-primary: var(--ind-blue);
+  --el-color-success: var(--ind-green);
+  --el-color-warning: var(--ind-amber);
+  --el-color-danger: var(--ind-red);
+  --el-color-error: var(--ind-red);
+  --el-color-info: var(--ind-gray);
+
+  --el-bg-color: var(--bg-panel-solid);
+  --el-bg-color-page: var(--bg-app);
+  --el-bg-color-overlay: #1e2935;
+
+  --el-text-color-primary: var(--text-primary);
+  --el-text-color-regular: var(--text-secondary);
+  --el-text-color-secondary: var(--text-tertiary);
+  --el-text-color-placeholder: var(--text-tertiary);
+  --el-text-color-disabled: var(--ind-gray);
+
+  --el-border-color: var(--border-glass);
+  --el-border-color-light: var(--border-glass);
+  --el-border-color-lighter: var(--border-glass);
+  --el-border-color-extra-light: var(--border-glass);
+
+  --el-fill-color: var(--bg-inset);
+  --el-fill-color-light: rgba(255, 255, 255, 0.05);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-fill-color-blank: var(--bg-panel-solid);
+
+  --el-border-radius-base: var(--radius-md);
+  --el-border-radius-small: var(--radius-sm);
+
+  --el-font-family: var(--font-ui);
+  --el-font-size-base: var(--fs-base);
+
+  --el-mask-color: rgba(11, 15, 20, 0.8);
+
+  --el-box-shadow: var(--shadow-panel);
+  --el-box-shadow-light: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --el-box-shadow-lighter: 0 1px 4px rgba(0, 0, 0, 0.2);
+  --el-box-shadow-dark: 0 12px 40px rgba(0, 0, 0, 0.6);
+
+  --el-disabled-bg-color: var(--bg-inset);
+  --el-disabled-text-color: var(--ind-gray);
+  --el-disabled-border-color: var(--border-glass);
+}

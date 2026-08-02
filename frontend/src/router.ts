@@ -4,6 +4,7 @@ import AiView from "./views/AiView.vue";
 import AuditView from "./views/AuditView.vue";
 import ControlView from "./views/ControlView.vue";
 import HistoryView from "./views/HistoryView.vue";
+import LoginView from "./views/LoginView.vue";
 import ModbusView from "./views/ModbusView.vue";
 import MonitorView from "./views/MonitorView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -11,43 +12,59 @@ import SettingsView from "./views/SettingsView.vue";
 export const routes = [
   { path: "/", redirect: "/monitor" },
   {
+    path: "/login",
+    component: LoginView,
+    meta: { public: true, zh: "登录", en: "Sign in" }
+  },
+  {
     path: "/monitor",
     component: MonitorView,
-    meta: { label: "Realtime Monitor", zh: "实时监控", en: "Realtime Monitor", subZh: "传感器与曲线", subEn: "Sensors and trends" }
+    meta: { zh: "实时监控", en: "Monitor", subZh: "传感器与趋势", subEn: "Sensors & trends", icon: "▦" }
   },
   {
     path: "/control",
     component: ControlView,
-    meta: { label: "Process Control", zh: "参数配置", en: "Process Control", subZh: "安全限幅", subEn: "Safety limits" }
+    meta: { zh: "参数配置", en: "Control", subZh: "工艺与安全", subEn: "Process & safety", icon: "≋" }
   },
   {
     path: "/ai",
     component: AiView,
-    meta: { label: "AI Decision", zh: "AI 决策", en: "AI Decision", subZh: "推荐与复核", subEn: "Advice and review" }
+    meta: { zh: "AI 决策", en: "AI Lab", subZh: "推荐与复核", subEn: "Advice & review", icon: "AI" }
   },
   {
     path: "/history",
     component: HistoryView,
-    meta: { label: "History Data", zh: "历史数据", en: "History Data", subZh: "批次与结果", subEn: "Batches and results" }
+    meta: { zh: "历史数据", en: "History", subZh: "批次与结果", subEn: "Batches & results", icon: "▤" }
   },
   {
     path: "/audit",
     component: AuditView,
-    meta: { label: "Audit Log", zh: "审计日志", en: "Audit Log", subZh: "哈希链", subEn: "Hash chain" }
+    meta: { zh: "审计日志", en: "Audit", subZh: "哈希链", subEn: "Hash chain", icon: "↺", requiresAuth: true }
   },
   {
     path: "/modbus",
     component: ModbusView,
-    meta: { label: "Modbus Debug", zh: "Modbus 调试", en: "Modbus Debug", subZh: "寄存器映射", subEn: "Register map" }
+    meta: { zh: "Modbus 调试", en: "Modbus", subZh: "寄存器映射", subEn: "Register map", icon: "MB" }
   },
   {
     path: "/settings",
     component: SettingsView,
-    meta: { label: "System Settings", zh: "系统配置", en: "System Settings", subZh: "设备与安全", subEn: "Device and security" }
+    meta: { zh: "系统配置", en: "Settings", subZh: "设备与集成", subEn: "Device & integrations", icon: "⚙" }
   }
 ];
 
 export const router = createRouter({
   history: createWebHashHistory(),
   routes
+});
+
+// 路由守卫：仅对标记 requiresAuth 的页面强制登录；其余页面公开可读，
+// 页面内写操作仍由后端 401/403 拦截（配合全局登出）。
+router.beforeEach((to) => {
+  if (to.meta?.public || !to.meta?.requiresAuth) return true;
+  const hasToken = Boolean(localStorage.getItem("reactoros.vue.auth.token"));
+  if (!hasToken) {
+    return { path: "/login", query: { redirect: to.fullPath } };
+  }
+  return true;
 });
