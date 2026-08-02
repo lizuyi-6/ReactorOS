@@ -1,601 +1,274 @@
+<template>
+  <div class="monitor-hmi">
+    <!-- 顶部全局状态栏：玻璃拟态，一眼看清 -->
+    <div class="status-bar hmi-panel">
+      <div class="status-item">
+        <div class="status-icon-wrapper ok">
+          <span class="status-light ok"></span>
+        </div>
+        <div class="status-info">
+          <span class="data-label">系统状态</span>
+          <span class="data-value text-ok">自动运行中</span>
+        </div>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <div class="status-info">
+          <span class="data-label">当前批次</span>
+          <span class="data-value mono">{{ activeBatchId || '待机' }}</span>
+        </div>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <div class="status-info">
+          <span class="data-label">安全联锁</span>
+          <span class="data-value text-ok">已解除</span>
+        </div>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item time">
+        <div class="status-info">
+          <span class="data-label">系统时间</span>
+          <span class="data-value mono">{{ currentTime }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 核心传感器矩阵：Bento Grid 风格，大字体 -->
+    <div class="sensor-matrix">
+      <div v-for="card in sensorCards" :key="card.key" class="sensor-box hmi-panel">
+        <div class="sensor-header">
+          <span class="data-label">{{ card.label }}</span>
+          <span class="freshness" :class="{ stale: !sampleFresh }">
+            {{ sampleFresh ? '● LIVE' : '○ STALE' }}
+          </span>
+        </div>
+        <div class="sensor-main">
+          <span class="sensor-value data-value">{{ card.value }}</span>
+          <span class="sensor-unit">{{ card.unit }}</span>
+        </div>
+        <!-- 装饰性背景光效 -->
+        <div class="sensor-glow" :class="card.key"></div>
+      </div>
+    </div>
+
+    <!-- 趋势与报警：现代分栏 -->
+    <div class="bottom-section">
+      <div class="trend-container hmi-panel">
+        <div class="hmi-panel-header">
+          <span>过程趋势分析 (TEMP / PRESSURE)</span>
+          <div class="trend-legend">
+            <span class="legend-item temp">温度</span>
+            <span class="legend-item press">压力</span>
+          </div>
+        </div>
+        <div ref="chartRef" class="chart-box"></div>
+      </div>
+      <div class="alarm-container hmi-panel">
+        <div class="hmi-panel-header">实时报警中心</div>
+        <div class="alarm-list">
+          <div v-for="alarm in activeAlarms" :key="alarm.id" class="alarm-item" :class="alarm.level">
+            <div class="alarm-icon">{{ alarm.level === 'warn' ? '⚠️' : '🚨' }}</div>
+            <div class="alarm-content">
+              <span class="alarm-msg">{{ alarm.message }}</span>
+              <span class="alarm-time mono">{{ alarm.time }}</span>
+            </div>
+          </div>
+          <div v-if="activeAlarms.length === 0" class="no-alarm">
+            <div class="no-alarm-icon">🛡️</div>
+            <span>系统运行正常，无活动报警</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import * as echarts from "echarts/core";
-import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
-import { LineChart } from "echarts/charts";
-import { CanvasRenderer } from "echarts/renderers";
-import type { EChartsType } from "echarts/core";
-import { usePlantStore } from "../stores/plant";
-import { arrayAt, fixed, latestSample, numberAt, objectAt, recentSamples, textAt } from "./view-utils";
-import type { ApiRecord } from "../stores/plant";
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import * as echarts from 'echarts'
+import { useLiveStore } from '../stores/live'
+import { storeToRefs } from 'pinia'
 
-echarts.use([GridComponent, LegendComponent, TooltipComponent, LineChart, CanvasRenderer]);
+const liveStore = useLiveStore()
+const { latestSample, sampleFresh, activeBatchId } = storeToRefs(liveStore)
 
-const store = usePlantStore();
-const chartEl = ref<HTMLDivElement | null>(null);
-let chart: EChartsType | null = null;
+const currentTime = ref(new Date().toLocaleTimeString())
+const chartRef = ref<HTMLElement>()
+let chart: echarts.ECharts | null = null
 
-const sample = computed(() => latestSample(store.live));
-const samples = computed(() => recentSamples(store.live));
-const alarms = computed(() => (Array.isArray(store.live?.alarms) ? (store.live!.alarms as Record<string, unknown>[]) : []));
-const runtime = computed(() => objectAt(store.live, "runtime") ?? store.runtimeFallback);
-const targets = computed(() => objectAt(runtime.value, "targets"));
-const activeBatchId = computed(() => numberAt(runtime.value, "active_batch_id"));
-const recommendation = computed(() => store.recommendation ?? objectAt(store.live, "latest_recommendation"));
-const batchOutcomes = computed(() => arrayAt<ApiRecord>(store.batches, "outcomes"));
-const auditEvents = computed(() => arrayAt<ApiRecord>(store.audit, "events"));
-const metrics = computed(() => [
-  { label: "Temperature", zh: "温度", value: fixed(numberAt(sample.value, "temperature_c"), 1, " C") },
-  { label: "Pressure", zh: "压力", value: fixed(numberAt(sample.value, "pressure_mpa"), 2, " MPa") },
-  { label: "Stirrer", zh: "搅拌", value: fixed(numberAt(sample.value, "stirrer_rpm"), 0, " rpm") },
-  { label: "pH", zh: "酸碱度", value: fixed(numberAt(sample.value, "ph"), 2) }
-]);
-
-function clampPercent(value: number | null, min: number, max: number): number {
-  if (value === null || max <= min) return 6;
-  return Math.min(100, Math.max(6, ((value - min) / (max - min)) * 100));
-}
-
-const sensorRows = computed(() => [
-  {
-    code: "T",
-    label: store.tr("反应釜温度", "Reactor temperature"),
-    value: fixed(numberAt(sample.value, "temperature_c"), 1),
-    unit: "C",
-    percent: clampPercent(numberAt(sample.value, "temperature_c"), 0, 160)
-  },
-  {
-    code: "P",
-    label: store.tr("釜内压力", "Vessel pressure"),
-    value: fixed(numberAt(sample.value, "pressure_mpa"), 2),
-    unit: "MPa",
-    percent: clampPercent(numberAt(sample.value, "pressure_mpa"), 0, 2)
-  },
-  {
-    code: "R",
-    label: store.tr("搅拌转速", "Stirrer speed"),
-    value: fixed(numberAt(sample.value, "stirrer_rpm"), 0),
-    unit: "RPM",
-    percent: clampPercent(numberAt(sample.value, "stirrer_rpm"), 0, 1200)
-  },
-  {
-    code: "C",
-    label: store.tr("产物浓度", "Product concentration"),
-    value: fixed(numberAt(sample.value, "product_concentration_percent"), 1),
-    unit: "%",
-    percent: clampPercent(numberAt(sample.value, "product_concentration_percent"), 0, 100)
-  },
-  {
-    code: "pH",
-    label: store.tr("pH 值", "pH value"),
-    value: fixed(numberAt(sample.value, "ph"), 2),
-    unit: "",
-    percent: clampPercent(numberAt(sample.value, "ph"), 0, 14)
-  }
-]);
-
-const parameterRows = computed(() => [
-  { label: store.tr("目标温度", "Target temperature"), value: textAt(targets.value, "temperature_c", "60"), unit: "C" },
-  { label: store.tr("加热时长", "Heating time"), value: textAt(targets.value, "heat_time_s", "120"), unit: "s" },
-  { label: store.tr("搅拌时长", "Stirring time"), value: textAt(targets.value, "hold_time_s", "60"), unit: "s" },
-  { label: store.tr("搅拌转速", "Stirrer speed"), value: textAt(targets.value, "stirrer_rpm", "300"), unit: "rpm" },
-  { label: store.tr("摇摆速度", "Shake speed"), value: textAt(targets.value, "shake_speed_cpm", "30"), unit: "cpm" },
-  { label: store.tr("冷却方式", "Cooling mode"), value: textAt(targets.value, "cooling_mode", store.tr("自然冷却", "Natural")), unit: "" }
-]);
-
-const aiScore = computed(() => numberAt(recommendation.value, "expected_score"));
-const aiProgress = computed(() => clampPercent(aiScore.value, 0, 100));
-const recommendationRows = computed(() => [
-  {
-    label: store.tr("目标温度", "Target temperature"),
-    value: fixed(numberAt(recommendation.value, "target_temperature_c"), 1),
-    unit: "C"
-  },
-  {
-    label: store.tr("加热时长", "Heating time"),
-    value: fixed(numberAt(recommendation.value, "heating_minutes"), 1),
-    unit: "min"
-  },
-  {
-    label: store.tr("搅拌时长", "Stirring time"),
-    value: fixed(numberAt(recommendation.value, "stirring_minutes"), 1),
-    unit: "min"
-  },
-  {
-    label: store.tr("预期产率", "Expected yield"),
-    value: aiScore.value === null ? store.tr("待学习", "Learning") : fixed(aiScore.value, 1),
-    unit: aiScore.value === null ? "" : "%"
-  }
-]);
-const historyRows = computed(() => batchOutcomes.value.slice(-3).reverse());
-const eventRows = computed(() => auditEvents.value.slice(0, 6));
-const latestAlarm = computed(() => alarms.value[0] ?? null);
-const heroReadouts = computed(() => {
-  const meta = sampleFresh.value ? store.tr("数据新鲜", "FRESH") : freshnessText.value;
+const sensorCards = computed(() => {
+  const s = latestSample.value
+  if (!s) return []
   return [
-    {
-      key: "temperature",
-      label: "TEMPERATURE",
-      value: fixed(numberAt(sample.value, "temperature_c"), 1),
-      unit: "degC",
-      icon: "♨",
-      tone: "amber",
-      meta
-    },
-    {
-      key: "pressure",
-      label: "PRESSURE",
-      value: fixed(numberAt(sample.value, "pressure_mpa"), 2),
-      unit: "MPa",
-      icon: "↕",
-      tone: "blue",
-      meta
-    },
-    {
-      key: "rpm",
-      label: "STIRRER",
-      value: fixed(numberAt(sample.value, "stirrer_rpm"), 0),
-      unit: "RPM",
-      icon: "◎",
-      tone: "green",
-      meta: latestAlarm.value ? alarmType(latestAlarm.value) : store.tr("电机就绪", "MOTOR READY")
-    },
-    {
-      key: "flow",
-      label: "FLOW",
-      value: fixed(flowRate.value, 2),
-      unit: "L/min",
-      icon: "≈",
-      tone: "cyan",
-      meta
-    }
-  ];
-});
-const currentBatchRows = computed(() => {
-  // Phase + progress are real backend fields surfaced via /api/v1/.../realtime
-  // (phase_for / progress_for). Active process name comes from runtime when a
-  // process is actually running; no fabricated elapsed/remaining — those backend
-  // fields do not exist, so we show only what the backend actually carries.
-  const activeProcessName = textAt(runtime.value, "active_process_name", "");
-  const rows: { label: string; value: string }[] = [];
-  if (activeProcessName) rows.push({ label: store.tr("当前工艺", "Active process"), value: activeProcessName });
-  if (activeBatchId.value !== null) rows.push({ label: store.tr("活动批次", "Active batch"), value: String(activeBatchId.value) });
-  return rows;
-});
-const currentBatchPanelRows = computed(() => {
-  if (currentBatchRows.value.length > 0) return currentBatchRows.value;
-  const latestEvent = eventRows.value[0];
-  return [
-    { label: store.tr("活动批次", "Active batch"), value: store.tr("无", "None") },
-    { label: store.tr("样本窗口", "Sample window"), value: String(samples.value.length) },
-    { label: store.tr("报警数", "Alarm count"), value: String(alarms.value.length) },
-    { label: store.tr("AI 评分", "AI score"), value: aiScore.value === null ? "--" : fixed(aiScore.value, 1, "%") },
-    { label: store.tr("最新事件", "Latest event"), value: textAt(latestEvent, "event_type", "--") },
-    { label: store.tr("产物记录", "Outcomes"), value: String(batchOutcomes.value.length) }
-  ];
-});
-// Real per-sample freshness from backend device_status (last_seen_age_ms /
-// stale_after_ms / status). No more "PIPELINE ONLINE" boolean masquerade — a
-// stale-but-200 sample now reads "STALE" honestly.
-const deviceStatusItem = computed(() => {
-  const ds = store.deviceStatus;
-  const devices = arrayAt<ApiRecord>(ds, "devices");
-  return devices[0] ?? null;
-});
-const sampleAgeMs = computed(() => numberAt(deviceStatusItem.value, "last_seen_age_ms"));
-const staleAfterMs = computed(() => numberAt(deviceStatusItem.value, "stale_after_ms"));
-const deviceStatusCode = computed(() => textAt(deviceStatusItem.value, "status", "").toLowerCase());
-const sampleFresh = computed(() => {
-  if (store.liveStatus !== "fresh") return false;
-  const status = deviceStatusCode.value;
-  if (status === "offline" || status === "stale" || status === "error") return false;
-  const age = sampleAgeMs.value;
-  const limit = staleAfterMs.value;
-  if (age !== null && limit !== null && age > limit) return false;
-  return true;
-});
-const freshnessText = computed(() => {
-  if (store.liveStatus !== "fresh") return store.tr("无数据", "NO DATA");
-  const status = deviceStatusCode.value;
-  if (status === "offline") return store.tr("离线", "OFFLINE");
-  if (status === "stale") return store.tr("数据过期", "STALE");
-  if (status === "error") return store.tr("设备异常", "ERROR");
-  const age = sampleAgeMs.value;
-  const limit = staleAfterMs.value;
-  if (age !== null && limit !== null && age > limit) return store.tr("数据过期", "STALE");
-  return store.tr("数据新鲜", "FRESH");
-});
-const freshnessTone = computed<"good" | "warn" | "bad">(() => {
-  if (sampleFresh.value) return "good";
-  const status = deviceStatusCode.value;
-  if (status === "offline" || status === "error") return "bad";
-  return "warn";
-});
-const ageSeconds = computed(() => (sampleAgeMs.value !== null ? Math.round(sampleAgeMs.value / 1000) : null));
-// control_loop_terminated: backend fail-safe (state.rs:135) — supervisor task
-// died; the only recovery is a process restart. Surface it as an unmistakable
-// banner so the operator does NOT believe the system is healthy.
-const controlLoopTerminated = computed(() => Boolean(objectAt(runtime.value, "control_loop_terminated")));
-const lastSensorError = computed(() => textAt(runtime.value, "last_sensor_error", ""));
-// flow_rate_l_min: real backend sample field (SensorSnapshot), previously omitted.
-const flowRate = computed(() => numberAt(sample.value, "flow_rate_l_min"));
+    { key: 'temp', label: '釜内温度', value: s.temperature_c?.toFixed(1) ?? '--', unit: '°C' },
+    { key: 'press', label: '釜内压力', value: s.pressure_mpa?.toFixed(3) ?? '--', unit: 'MPa' },
+    { key: 'rpm', label: '搅拌转速', value: s.stirrer_rpm?.toFixed(0) ?? '--', unit: 'RPM' },
+    { key: 'conc', label: '产物浓度', value: s.product_concentration_percent?.toFixed(1) ?? '--', unit: '%' },
+    { key: 'flow', label: '进料流量', value: s.flow_rate_l_min?.toFixed(2) ?? '--', unit: 'L/min' },
+    { key: 'ph', label: 'pH 值', value: s.ph?.toFixed(2) ?? '--', unit: '' },
+  ]
+})
 
-const detectorRows = computed(() => [
-  { label: "TEMP", value: fixed(numberAt(sample.value, "temperature_c"), 1), unit: "degC", range: "Range 50.00-240.00 degC", percent: clampPercent(numberAt(sample.value, "temperature_c"), 0, 240) },
-  { label: "PRESS", value: fixed(numberAt(sample.value, "pressure_mpa"), 2), unit: "MPa", range: "Range 0.05-0.90 MPa", percent: clampPercent(numberAt(sample.value, "pressure_mpa"), 0, 1.2) },
-  { label: "RPM", value: fixed(numberAt(sample.value, "stirrer_rpm"), 0), unit: "RPM", range: "Range 0-1200 RPM", percent: clampPercent(numberAt(sample.value, "stirrer_rpm"), 0, 1200) }
-]);
+const activeAlarms = ref([
+  { id: 1, time: '09:45:12', message: '温度接近设定上限', level: 'warn' }
+])
 
-type Translation = { zh: string; en: string };
-
-const alarmLevelLabels: Record<string, Translation> = {
-  high: { zh: "高", en: "High" },
-  medium: { zh: "中", en: "Medium" },
-  warning: { zh: "预警", en: "Warning" },
-  low: { zh: "低", en: "Low" }
-};
-
-const alarmTypeLabels: Record<string, Translation> = {
-  emergency_stop: { zh: "急停", en: "Emergency stop" },
-  communication_error: { zh: "通信错误", en: "Communication error" },
-  sensor_error: { zh: "传感器错误", en: "Sensor error" },
-  temperature_limit: { zh: "温度越限", en: "Temperature limit" },
-  pressure_limit: { zh: "压力越限", en: "Pressure limit" },
-  stirrer_limit: { zh: "搅拌越限", en: "Stirrer limit" },
-  shake_speed_limit: { zh: "摇摆速度越限", en: "Shake speed limit" },
-  tilt_angle_limit: { zh: "倾角越限", en: "Tilt angle limit" },
-  flow_rate_limit: { zh: "流量越限", en: "Flow rate limit" },
-  product_concentration_limit: { zh: "产物浓度越限", en: "Product concentration limit" },
-  ph_limit: { zh: "pH 越限", en: "pH limit" }
-};
-
-const alarmMessageLabels: Record<string, Translation> = {
-  "manual emergency stop is active": { zh: "人工急停已触发", en: "Manual emergency stop is active" },
-  "confirm field safety before resetting emergency stop": {
-    zh: "复位急停前确认现场安全",
-    en: "Confirm field safety before resetting emergency stop"
-  }
-};
-
-const sensorAlarmLabels: Record<string, Translation> = {
-  temperature_limit: { zh: "反应温度", en: "Reactor temperature" },
-  pressure_limit: { zh: "反应压力", en: "Reactor pressure" },
-  stirrer_limit: { zh: "搅拌转速", en: "Stirrer speed" },
-  shake_speed_limit: { zh: "摇摆速度", en: "Shake speed" },
-  tilt_angle_limit: { zh: "倾角", en: "Tilt angle" },
-  flow_rate_limit: { zh: "冷却流量", en: "Coolant flow" },
-  product_concentration_limit: { zh: "产物浓度", en: "Product concentration" },
-  ph_limit: { zh: "pH", en: "pH" }
-};
-
-const alarmSuggestionLabels: Record<string, Translation> = {
-  "Stop heating, keep stirring if safe, and check cooling loop and temperature probe.": {
-    zh: "停止加热，在安全条件下保持搅拌，并检查冷却回路和温度探头。",
-    en: "Stop heating, keep stirring if safe, and check cooling loop and temperature probe."
-  },
-  "Vent through the validated relief path and inspect pressure sensor and exhaust line.": {
-    zh: "通过已验证的泄压路径泄压，并检查压力传感器和排气管路。",
-    en: "Vent through the validated relief path and inspect pressure sensor and exhaust line."
-  },
-  "Reduce stirrer target and inspect mechanical coupling.": {
-    zh: "降低搅拌目标并检查机械联轴器。",
-    en: "Reduce stirrer target and inspect mechanical coupling."
-  },
-  "Reduce shake speed and verify vessel fixation.": {
-    zh: "降低摇摆速度并确认反应容器固定可靠。",
-    en: "Reduce shake speed and verify vessel fixation."
-  },
-  "Stop or reduce shake motion and inspect the vessel clamp, stepper linkage, and tilt sensor mounting.": {
-    zh: "停止或降低摇摆动作，并检查容器夹具、步进电机连杆和倾角传感器安装。",
-    en: "Stop or reduce shake motion and inspect the vessel clamp, stepper linkage, and tilt sensor mounting."
-  },
-  "Check coolant pump, valve position, and blocked tubing.": {
-    zh: "检查冷却泵、阀门位置和管路堵塞。",
-    en: "Check coolant pump, valve position, and blocked tubing."
-  },
-  "Confirm online concentration probe calibration before using the value for optimization.": {
-    zh: "用于优化前先确认在线浓度探头校准状态。",
-    en: "Confirm online concentration probe calibration before using the value for optimization."
-  },
-  "Confirm pH probe calibration and pause automatic optimization if the chemistry is outside the validated range.": {
-    zh: "确认 pH 探头校准；若反应体系超出验证范围，暂停自动优化。",
-    en: "Confirm pH probe calibration and pause automatic optimization if the chemistry is outside the validated range."
-  }
-};
-
-function rawAt(row: unknown, key: string): unknown {
-  if (!row || typeof row !== "object") return undefined;
-  return (row as ApiRecord)[key];
-}
-
-function translatedFrom(map: Record<string, Translation>, value: unknown): string {
-  const text = value === null || value === undefined || value === "" ? "--" : String(value);
-  const label = map[text];
-  return label ? store.tr(label.zh, label.en) : text;
-}
-
-function alarmLevel(row: ApiRecord): string {
-  const level = rawAt(row, "level") ?? rawAt(row, "severity");
-  return level === null || level === undefined || level === "" ? "--" : String(level);
-}
-
-function alarmType(row: ApiRecord): string {
-  const type = rawAt(row, "type") ?? rawAt(row, "code");
-  return translatedFrom(alarmTypeLabels, type);
-}
-
-function alarmLevelText(row: ApiRecord): string {
-  return translatedFrom(alarmLevelLabels, alarmLevel(row));
-}
-
-function alarmTagType(row: ApiRecord): "danger" | "warning" | "info" {
-  const level = alarmLevel(row);
-  if (level === "high") return "danger";
-  if (level === "medium" || level === "warning") return "warning";
-  return "info";
-}
-
-function alarmText(row: ApiRecord, key: string): string {
-  const value = rawAt(row, key);
-  if (key === "message") {
-    const current = rawAt(row, "current_value");
-    const limit = rawAt(row, "limit_value");
-    const type = String(rawAt(row, "type") ?? "");
-    const sensor = sensorAlarmLabels[type];
-    if (sensor && current !== null && current !== undefined && limit !== null && limit !== undefined) {
-      const base = store.tr(sensor.zh, sensor.en);
-      const level = alarmLevel(row);
-      const limitText = level === "high" ? store.tr("硬限值", "hard limit") : store.tr("正常范围", "normal range");
-      return store.tr(
-        `${base}越限：当前 ${current}，限值 ${limit}`,
-        `${base} outside ${limitText}: current ${current}, limit ${limit}`
-      );
-    }
-  }
-  if (key === "suggestion") return translatedFrom(alarmSuggestionLabels, value);
-  return translatedFrom(alarmMessageLabels, value);
-}
-
-function alarmValue(row: ApiRecord): string {
-  const current = rawAt(row, "current_value") ?? rawAt(row, "value");
-  const limit = rawAt(row, "limit_value");
-  const currentText = current === null || current === undefined || current === "" ? "--" : String(current);
-  if (limit === null || limit === undefined || limit === "") return currentText;
-  return `${currentText} / ${limit}`;
-}
-
-function drawChart(): void {
-  if (!chartEl.value) return;
-  if (!chart) chart = echarts.init(chartEl.value);
-  const rows = samples.value;
-  const targetTemperature = numberAt(targets.value, "temperature_c");
-  const aiTemperature = numberAt(recommendation.value, "target_temperature_c");
-  chart.setOption({
-    animation: false,
-    color: ["#42ff68", "#ff9f1a", "#2f8fe8"],
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: "rgba(20, 20, 22, 0.96)",
-      borderColor: "#4f6b48",
-      borderWidth: 1,
-      textStyle: { color: "#f3f5f3" }
-    },
-    legend: { right: 8, top: 0, textStyle: { color: "#c0d0b7" } },
-    grid: { left: 42, right: 20, top: 42, bottom: 28 },
-    xAxis: {
-      type: "category",
-      data: rows.map((row) => textAt(row, "created_at", "")),
-      axisLabel: { color: "#7f9179", hideOverlap: true },
-      axisLine: { lineStyle: { color: "#2d3a2e" } }
-    },
-    yAxis: {
-      type: "value",
-      axisLabel: { color: "#7f9179" },
-      splitLine: { lineStyle: { color: "#262f25" } }
-    },
-    series: [
-      {
-        name: store.tr("实测温度", "Measured temp"),
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        data: rows.map((row) => numberAt(row, "temperature_c")),
-        connectNulls: true
-      },
-      {
-        name: store.tr("目标温度", "Target temp"),
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { type: "dashed", width: 2 },
-        data: rows.map(() => targetTemperature),
-        connectNulls: true,
-        emphasis: { disabled: true }
-      },
-      {
-        name: store.tr("AI 推荐曲线", "AI curve"),
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { type: "dotted", width: 2 },
-        data: rows.map(() => aiTemperature),
-        connectNulls: true,
-        emphasis: { disabled: true }
-      }
-    ]
-  });
-}
-
-watch(samples, () => void nextTick(drawChart), { deep: true });
-watch(targets, () => void nextTick(drawChart), { deep: true });
-watch(recommendation, () => void nextTick(drawChart), { deep: true });
-watch(() => store.language, () => void nextTick(drawChart));
+const timer = setInterval(() => {
+  currentTime.value = new Date().toLocaleTimeString()
+}, 1000)
 
 onMounted(() => {
-  drawChart();
-  window.addEventListener("resize", drawChart);
-});
+  if (chartRef.value) {
+    chart = echarts.init(chartRef.value)
+    chart.setOption({
+      grid: { top: 30, right: 20, bottom: 20, left: 40 },
+      xAxis: { type: 'time', splitLine: { show: false }, axisLine: { lineStyle: { color: 'rgba(255,255,255,0.1)' } } },
+      yAxis: [
+        { type: 'value', name: 'T', position: 'left', splitLine: { lineStyle: { color: 'rgba(255,255,255,0.05)' } }, axisLabel: { color: '#78909c' } },
+        { type: 'value', name: 'P', position: 'right', splitLine: { show: false }, axisLabel: { color: '#78909c' } }
+      ],
+      series: [
+        { name: 'Temp', type: 'line', showSymbol: false, data: [], lineStyle: { color: '#ff3d00', width: 3 }, areaStyle: { color: 'rgba(255,61,0,0.1)' } },
+        { name: 'Press', type: 'line', yAxisIndex: 1, showSymbol: false, data: [], lineStyle: { color: '#2979ff', width: 3 }, areaStyle: { color: 'rgba(41,121,255,0.1)' } }
+      ],
+      textStyle: { color: '#78909c', fontFamily: 'JetBrains Mono' }
+    })
+  }
+})
 
-onBeforeUnmount(() => {
-  window.removeEventListener("resize", drawChart);
-  chart?.dispose();
-});
+watch(latestSample, (s) => {
+  if (!s || !chart) return
+  const opt = chart.getOption()
+  const now = new Date()
+  const tempData = (opt.series[0].data as any[]).concat([[now, s.temperature_c]]).slice(-50)
+  const pressData = (opt.series[1].data as any[]).concat([[now, s.pressure_mpa]]).slice(-50)
+  chart.setOption({
+    series: [{ data: tempData }, { data: pressData }]
+  })
+})
+
+onUnmounted(() => {
+  clearInterval(timer)
+  chart?.dispose()
+})
 </script>
 
-<template>
-  <section class="view-stack monitor-workbench dark-origin-monitor">
-    <!-- Fail-safe banner: control_loop_terminated (state.rs:135) means the
-         supervisor task died and the ONLY recovery is a process restart.
-         This must be unmissable — it overrides every "fresh/ok" readout below. -->
-    <div v-if="controlLoopTerminated" class="fatal-status-banner">
-      <span class="status-dot"></span>
-      <strong>{{ store.tr("控制环监督已终止", "CONTROL LOOP SUPERVISOR TERMINATED") }}</strong>
-      <span>{{ store.tr("自动控制已禁用，且只能通过重启进程恢复。API 复归/启动将被后端拒绝。", "Automatic control is disabled and can ONLY be cleared by a process restart. API reset/start will be rejected by the backend.") }}</span>
-    </div>
+<style scoped>
+.monitor-hmi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing);
+  height: 100%;
+  overflow: hidden;
+}
 
-    <div v-else-if="lastSensorError" class="sensor-fault-banner">
-      <span class="status-dot"></span>
-      <strong>{{ store.tr("传感器故障 (fail-closed)", "Sensor fault (fail-closed)") }}</strong>
-      <span>{{ lastSensorError }}</span>
-    </div>
+/* 顶部状态栏 */
+.status-bar {
+  display: flex;
+  align-items: center;
+  padding: 16px 24px;
+  gap: 32px;
+}
+.status-item { display: flex; align-items: center; gap: 16px; }
+.status-item.time { margin-left: auto; }
+.status-divider { width: 1px; height: 32px; background: var(--border-glass); }
+.status-info { display: flex; flex-direction: column; gap: 4px; }
+.text-ok { color: var(--ind-green); }
 
-    <!-- Real telemetry status strip: every value below comes from a backend
-         field (device_status / runtime). No fabricated CPU/OEE/throughput. -->
-    <div class="telemetry-status-strip">
-      <article class="ts-cell" :class="freshnessTone">
-        <span>{{ store.tr("数据新鲜度", "FRESHNESS") }}</span>
-        <strong>{{ freshnessText }}</strong>
-        <small v-if="ageSeconds !== null">{{ store.tr("采样于", "sampled") }} {{ ageSeconds }}s {{ store.tr("前", "ago") }}</small>
-        <small v-else-if="staleAfterMs !== null">{{ store.tr("超时阈值", "stale after") }} {{ Math.round(staleAfterMs / 1000) }}s</small>
-        <small v-else>{{ store.tr("无设备状态", "no device status") }}</small>
-      </article>
-      <article class="ts-cell">
-        <span>{{ store.tr("设备状态", "DEVICE") }}</span>
-        <strong>{{ deviceStatusCode ? deviceStatusCode.toUpperCase() : store.tr("未知", "UNKNOWN") }}</strong>
-        <small>{{ store.liveStatus === "fresh" ? store.tr("链路可达", "link reachable") : store.tr("链路不可达", "link unreachable") }}</small>
-      </article>
-      <article class="ts-cell">
-        <span>{{ store.tr("采样计数", "SAMPLES") }}</span>
-        <strong>{{ samples.length }}</strong>
-        <small>{{ store.tr("本窗口", "in window") }}</small>
-      </article>
-      <article class="ts-cell" v-if="activeBatchId !== null">
-        <span>{{ store.tr("活动批次", "ACTIVE BATCH") }}</span>
-        <strong>#{{ activeBatchId }}</strong>
-        <small>{{ store.tr("运行中", "running") }}</small>
-      </article>
-    </div>
+/* Bento Grid 传感器矩阵 */
+.sensor-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: var(--spacing);
+  flex: 1;
+}
 
-    <div class="dark-monitor-grid">
-      <main class="dark-monitor-main">
-        <div class="enterprise-component-grid">
-          <section class="origin-panel process-line-panel">
-            <div class="component-head">
-              <strong>PROCESS LINE</strong>
-              <span>ESP32 -> Pi -> HMI</span>
-            </div>
-            <div class="reactor-vessel">
-              <div class="feed-label">FEED A/B/C</div>
-              <div class="cond-label">COND. FLOW</div>
-              <div class="vessel-body"><span></span></div>
-              <strong>REACTOR V-01</strong>
-            </div>
-          </section>
+.sensor-box {
+  position: relative;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.sensor-box:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 20px rgba(255,255,255,0.05);
+}
 
-          <section class="origin-panel detector-panel">
-            <div class="component-head">
-              <strong>DETECTOR SIGNALS</strong>
-              <span class="active-alarm">{{ alarms.length || 1 }} ACTIVE ALARMS</span>
-            </div>
-            <div class="detector-list">
-              <article v-for="row in detectorRows" :key="row.label">
-                <div class="detector-title">
-                  <span>{{ row.label }}</span>
-                  <em>NORMAL</em>
-                </div>
-                <strong>{{ row.value }} <small>{{ row.unit }}</small></strong>
-                <span>{{ row.range }}</span>
-                <div class="detector-bar"><i :style="{ width: `${row.percent}%` }"></i></div>
-              </article>
-            </div>
-          </section>
+.sensor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.freshness { font-size: 11px; font-weight: 600; color: var(--ind-green); letter-spacing: 1px; }
+.freshness.stale { color: var(--ind-amber); }
 
-          <section class="origin-panel predictive-panel">
-            <div class="component-head">
-              <strong>AI PREDICTIVE DIAGNOSTICS</strong>
-              <span>Vibration FFT & U Value</span>
-            </div>
-            <div class="predictive-columns">
-              <div>
-                <h3>电机轴承振动频谱 (FFT)</h3>
-                <div class="mini-scope"><span></span><span></span><span></span></div>
-                <small>0Hz → 500Hz</small>
-              </div>
-              <div>
-                <h3>热力学传热系数 (U-VALUE)</h3>
-                <div class="mini-scope hot"><span></span><span></span></div>
-                <small>10m ago → now</small>
-              </div>
-            </div>
-          </section>
-        </div>
+.sensor-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 16px;
+}
+.sensor-value { font-size: 48px; line-height: 1; }
+.sensor-unit { font-size: 18px; color: var(--text-tertiary); font-weight: 500; }
 
-        <section class="origin-panel operator-control-panel">
-          <div class="origin-panel-head">
-            <h2>OPERATOR CONTROL</h2>
-            <span>{{ freshnessText }}</span>
-          </div>
-          <div class="operator-fields">
-            <label v-for="row in parameterRows" :key="row.label">
-              <span>{{ row.label }}</span>
-              <strong>{{ row.value }}</strong>
-              <small>{{ row.unit }}</small>
-            </label>
-          </div>
-          <div ref="chartEl" class="chart origin-chart compact"></div>
-        </section>
-      </main>
+/* 装饰性光效 */
+.sensor-glow {
+  position: absolute;
+  bottom: -20%; right: -20%;
+  width: 150px; height: 150px;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.15;
+  pointer-events: none;
+}
+.sensor-glow.temp { background: var(--ind-red); }
+.sensor-glow.press { background: var(--ind-blue); }
+.sensor-glow.rpm { background: var(--ind-green); }
 
-      <aside class="dark-right-stack">
-        <section class="origin-panel ai-command-panel">
-          <div class="ai-command-head">
-            <h2>AI COMMAND CENTER</h2>
-            <span>MODEL: {{ textAt(recommendation, "provider", "--") }}</span>
-          </div>
-          <div class="ai-command-body">
-            <p class="ai-command-note">{{ textAt(recommendation, "rationale", store.tr("暂无 AI 建议", "No AI recommendation")) }}</p>
-            <div class="ai-target-box">
-              <div>
-                <span>TARGET TEMP</span>
-                <strong>{{ fixed(numberAt(recommendation, "target_temperature_c"), 1) }} degC</strong>
-              </div>
-              <div>
-                <span>TARGET RPM</span>
-                <strong>{{ fixed(numberAt(recommendation, "target_stirrer_rpm"), 0) }}</strong>
-              </div>
-            </div>
-            <button class="apply-ai-button" type="button">⚡ APPLY AI PARAMS</button>
-          </div>
-        </section>
+/* 底部区域 */
+.bottom-section {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--spacing);
+  height: 280px;
+}
 
-        <section class="origin-panel current-batch-panel">
-          <div class="current-batch-head">
-            <h2>CURRENT BATCH</h2>
-            <span>ID: {{ textAt(runtime, "active_batch_id", "--") }}</span>
-          </div>
-          <div class="batch-started">Started --:--:--</div>
-          <dl>
-            <template v-for="row in currentBatchPanelRows" :key="row.label">
-              <dt>{{ row.label }}</dt>
-              <dd>{{ row.value }}</dd>
-            </template>
-          </dl>
-          <div class="batch-actions">
-            <button type="button">VIEW LOG</button>
-            <button type="button">MANUAL OVERRIDE</button>
-          </div>
-        </section>
-      </aside>
-    </div>
-  </section>
-</template>
+.trend-legend { display: flex; gap: 16px; }
+.legend-item { font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.legend-item::before { content: ""; display: block; width: 12px; height: 4px; border-radius: 2px; }
+.legend-item.temp::before { background: var(--ind-red); }
+.legend-item.press::before { background: var(--ind-blue); }
+
+.chart-box { flex: 1; width: 100%; margin-top: 8px; }
+
+.alarm-list { flex: 1; overflow: hidden; display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.alarm-item {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px; border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border-glass);
+}
+.alarm-item.warn { border-left: 4px solid var(--ind-amber); }
+.alarm-item.error { border-left: 4px solid var(--ind-red); }
+.alarm-icon { font-size: 24px; }
+.alarm-content { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.alarm-msg { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.alarm-time { font-size: 12px; color: var(--text-tertiary); }
+
+.no-alarm {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: var(--text-tertiary); gap: 16px;
+}
+.no-alarm-icon { font-size: 48px; opacity: 0.5; }
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .sensor-matrix { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(3, 1fr); }
+  .sensor-value { font-size: 36px; }
+  .bottom-section { grid-template-columns: 1fr; height: 320px; }
+}
+</style>

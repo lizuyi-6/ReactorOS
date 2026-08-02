@@ -1,214 +1,212 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { usePlantStore } from "../stores/plant";
-import { arrayAt, numberAt, objectAt, textAt } from "./view-utils";
+import PageHeader from "../components/PageHeader.vue";
+import EmptyState from "../components/EmptyState.vue";
+import HmiButton from "../components/HmiButton.vue";
+import { auditApi } from "../api";
+import { errorMessage } from "../api/errors";
+import { useAuthStore } from "../stores/auth";
+import { useLanguage } from "../i18n";
+import { formatTimestamp, text } from "../utils/format";
+import type { AuditEventItem, AuditChainStatus } from "../api/types";
 
-const store = usePlantStore();
+const auth = useAuthStore();
+const { tr } = useLanguage();
+
+const loading = ref(false);
 const exporting = ref(false);
-const loadingAudit = ref(false);
-const auditFilters = reactive({
-  eventType: "",
-  pageSize: 20
+const events = ref<AuditEventItem[]>([]);
+const chainStatus = ref<AuditChainStatus | null>(null);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
+
+const filters = reactive({
+  event_type: "",
+  username: "",
+  result: "",
+  start_time: "",
+  end_time: ""
 });
 
-const events = computed(() => arrayAt(store.audit, "events"));
-const chain = computed(() => objectAt(store.audit, "chain"));
-const total = computed(() => numberAt(store.audit, "total") ?? events.value.length);
-const page = computed(() => numberAt(store.audit, "page") ?? 1);
-const pageSize = computed(() => numberAt(store.audit, "page_size") ?? auditFilters.pageSize);
-const chainValid = computed(() => textAt(chain.value, "valid", "false") === "true");
-const windowValid = computed(() => textAt(chain.value, "window_valid", "false") === "true");
-const truncated = computed(() => textAt(chain.value, "verification_truncated", "false") === "true");
+const chainOk = computed(() => chainStatus.value?.valid === true);
 
-const eventTypeOptions = [
-  { labelZh: "全部事件", labelEn: "All events", value: "" },
-  { labelZh: "目标写入", labelEn: "Target writes", value: "operator_targets_updated" },
-  { labelZh: "设备写入", labelEn: "Device writes", value: "device_write" },
-  { labelZh: "设备写失败", labelEn: "Device write failed", value: "device_write_failed" },
-  { labelZh: "组件控制", labelEn: "Component control", value: "component_control" },
-  { labelZh: "Modbus 写入", labelEn: "Modbus writes", value: "modbus_register_write" },
-  { labelZh: "AI 决策", labelEn: "AI decisions", value: "ai_master_decision" },
-  { labelZh: "AI 目标更新", labelEn: "AI targets", value: "ai_targets_updated" },
-  { labelZh: "工艺创建", labelEn: "Process created", value: "process_created" },
-  { labelZh: "工艺应用", labelEn: "Process applied", value: "process_applied" },
-  { labelZh: "工艺启动", labelEn: "Process started", value: "process_started" },
-  { labelZh: "工艺启动失败", labelEn: "Process start failed", value: "process_start_failed" },
-  { labelZh: "工艺停止", labelEn: "Process stopped", value: "process_stopped" },
-  { labelZh: "批次启动", labelEn: "Batch started", value: "batch_started" },
-  { labelZh: "批次完成", labelEn: "Batch finished", value: "batch_finished" },
-  { labelZh: "急停", labelEn: "Emergency stop", value: "emergency_stop" },
-  { labelZh: "急停复位", labelEn: "Emergency stop reset", value: "emergency_stop_reset" },
-  { labelZh: "人工锁定", labelEn: "Manual lock", value: "manual_lock_on" },
-  { labelZh: "人工解锁", labelEn: "Manual unlock", value: "manual_lock_off" },
-  { labelZh: "控制故障自动禁用", labelEn: "Control fault auto-disabled", value: "control_fault_auto_disabled" },
-  { labelZh: "控制故障复归", labelEn: "Control fault reset", value: "control_fault_reset" },
-  { labelZh: "控制环终止", labelEn: "Control loop terminated", value: "control_loop_terminated" }
-];
-
-const chainMetrics = computed(() => [
-  {
-    label: store.tr("哈希事件总数", "Hashed events"),
-    value: textAt(chain.value, "total_hashed_events", "0"),
-    helper: store.tr("已写入防篡改链的事件数", "Events persisted in the tamper-evident chain")
-  },
-  {
-    label: store.tr("本次校验", "Checked window"),
-    value: textAt(chain.value, "checked_events", "0"),
-    helper: `${textAt(chain.value, "checked_from_event_id")} -> ${textAt(chain.value, "checked_to_event_id")}`
-  },
-  {
-    label: store.tr("链式事件", "Chained events"),
-    value: textAt(chain.value, "chained_events", "0"),
-    helper: store.tr("具有 previous_hash 的连续事件", "Continuous events carrying previous_hash")
-  },
-  {
-    label: store.tr("断链事件", "Broken events"),
-    value: textAt(chain.value, "broken_events", "0"),
-    helper: store.tr("校验窗口内发现的断链数量", "Broken links found in the verification window")
-  }
-]);
-
-async function loadAudit(pageNumber = 1): Promise<void> {
-  loadingAudit.value = true;
-  store.error = null;
+async function load(): Promise<void> {
+  loading.value = true;
   try {
-    await store.loadAudit({
-      page: pageNumber,
-      pageSize: auditFilters.pageSize,
-      eventType: auditFilters.eventType
-    });
+    const [eventsPayload, chainPayload] = await Promise.all([
+      auditApi.list({
+        page: page.value,
+        page_size: pageSize.value,
+        event_type: filters.event_type || undefined,
+        username: filters.username || undefined,
+        result: filters.result || undefined,
+        start_time: filters.start_time || undefined,
+        end_time: filters.end_time || undefined
+      }),
+      auditApi.chainStatus()
+    ]);
+    events.value = eventsPayload?.events ?? [];
+    total.value = eventsPayload?.total ?? 0;
+    chainStatus.value = chainPayload ?? null;
   } catch (error) {
-    store.error = error instanceof Error ? error.message : String(error);
+    ElMessage.error(errorMessage(error));
   } finally {
-    loadingAudit.value = false;
+    loading.value = false;
   }
 }
 
 async function exportCsv(): Promise<void> {
   exporting.value = true;
-  store.error = null;
   try {
-    const blob = await store.exportAuditCsv(auditFilters.eventType);
+    const blob = await auditApi.exportCsv({
+      event_type: filters.event_type || undefined,
+      username: filters.username || undefined,
+      result: filters.result || undefined,
+      start_time: filters.start_time || undefined,
+      end_time: filters.end_time || undefined
+    });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "reactor-audit-log.csv";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
     URL.revokeObjectURL(url);
-    ElMessage.success(store.tr("审计 CSV 已导出", "Audit CSV exported"));
+    ElMessage.success(tr("导出成功", "Export succeeded"));
   } catch (error) {
-    store.error = error instanceof Error ? error.message : String(error);
+    ElMessage.error(errorMessage(error));
   } finally {
     exporting.value = false;
   }
 }
+
+function resultType(result: string): "success" | "warning" | "info" | "danger" {
+  if (result === "success") return "success";
+  if (result === "failure" || result === "error") return "danger";
+  if (result === "blocked") return "warning";
+  return "info";
+}
+
+onMounted(load);
 </script>
 
 <template>
-  <section class="view-stack">
-    <div class="view-heading">
-      <div>
-        <p class="eyebrow">{{ store.tr("防篡改链", "Tamper-evident Chain") }}</p>
-        <h1>{{ store.tr("审计日志", "Audit Log") }}</h1>
-        <span>{{ store.tr("操作事件、哈希链校验和 CSV 导出权限", "Operation events, hash-chain verification, and CSV export permissions") }}</span>
-      </div>
-      <div class="heading-actions">
-        <el-tag :type="chainValid ? 'success' : 'danger'">
-          {{ chainValid ? store.tr("链校验通过", "Chain valid") : store.tr("链校验异常", "Chain warning") }}
-        </el-tag>
-        <el-tag :type="windowValid ? 'success' : 'warning'">
-          {{ windowValid ? store.tr("窗口通过", "Window valid") : store.tr("窗口异常", "Window warning") }}
-        </el-tag>
-      </div>
-    </div>
+  <div class="page-stack">
+    <PageHeader :title="tr('审计日志', 'Audit Log')" :subtitle="tr('事件追踪、哈希链验证与导出', 'Event tracking, hash chain verification and export')">
+      <template #actions>
+        <HmiButton type="manual" :disabled="exporting" @click="exportCsv">
+          {{ tr("导出 CSV", "Export CSV") }}
+        </HmiButton>
+      </template>
+    </PageHeader>
 
-    <section class="metric-grid">
-      <div v-for="metric in chainMetrics" :key="metric.label" class="metric">
-        <span>{{ metric.label }}</span>
-        <strong>{{ metric.value }}</strong>
-        <small>{{ metric.helper }}</small>
+    <!-- 哈希链状态 -->
+    <section class="hmi-panel">
+      <div class="hmi-panel-header">
+        <span>{{ tr("哈希链状态", "Hash chain status") }}</span>
+        <el-tag size="small" :type="chainOk ? 'success' : 'danger'">{{ chainOk ? tr("完整", "Valid") : tr("异常", "Invalid") }}</el-tag>
+      </div>
+      <div class="hmi-panel-body">
+        <dl class="kv-list">
+          <dt>{{ tr("总事件数", "Total events") }}</dt>
+          <dd>{{ chainStatus?.total_events ?? 0 }}</dd>
+          <dt>{{ tr("链起始哈希", "Genesis hash") }}</dt>
+          <dd class="mono">{{ text(chainStatus?.genesis_hash) }}</dd>
+          <dt>{{ tr("最新哈希", "Latest hash") }}</dt>
+          <dd class="mono">{{ text(chainStatus?.latest_hash) }}</dd>
+          <dt>{{ tr("验证时间", "Verified at") }}</dt>
+          <dd>{{ formatTimestamp(chainStatus?.verified_at) }}</dd>
+        </dl>
       </div>
     </section>
 
-    <section class="panel audit-toolbar">
-      <el-form label-position="top" class="audit-filter-form">
-        <el-form-item :label="store.tr('事件类型', 'Event type')">
-          <el-select v-model="auditFilters.eventType" filterable :placeholder="store.tr('全部事件', 'All events')">
-            <el-option
-              v-for="option in eventTypeOptions"
-              :key="option.value || 'all'"
-              :label="store.tr(option.labelZh, option.labelEn)"
-              :value="option.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="store.tr('每页条数', 'Page size')">
-          <el-input-number v-model="auditFilters.pageSize" :min="5" :max="100" :step="5" controls-position="right" />
-        </el-form-item>
-        <div class="control-actions">
-          <el-button :loading="loadingAudit" :disabled="!store.isAuthenticated" @click="loadAudit(1)">
-            {{ store.tr("查询审计", "Query Audit") }}
-          </el-button>
-          <el-button type="primary" :loading="exporting" :disabled="!store.isAuthenticated" @click="exportCsv">
-            {{ store.tr("导出 CSV", "Export CSV") }}
-          </el-button>
-        </div>
-      </el-form>
-      <div class="audit-window-note">
-        <strong>{{ store.tr("校验窗口", "Verification window") }}</strong>
-        <span>
-          {{ store.tr("上限", "Limit") }} {{ textAt(chain, "verification_limit", "0") }}
-          · {{ store.tr("已截断", "Truncated") }} {{ truncated ? store.tr("是", "yes") : store.tr("否", "no") }}
-        </span>
-        <small>{{ store.tr("最后事件哈希", "Last event hash") }} {{ textAt(chain, "last_event_hash") }}</small>
+    <!-- 筛选器 -->
+    <section class="hmi-panel">
+      <div class="hmi-panel-header">{{ tr("筛选", "Filters") }}</div>
+      <div class="hmi-panel-body">
+        <el-form :inline="true" class="filter-form">
+          <el-form-item :label="tr('事件类型', 'Event type')">
+            <el-select v-model="filters.event_type" clearable :placeholder="tr('全部', 'All')">
+              <el-option value="auth" :label="tr('认证', 'Auth')" />
+              <el-option value="control" :label="tr('控制', 'Control')" />
+              <el-option value="process" :label="tr('工艺', 'Process')" />
+              <el-option value="batch" :label="tr('批次', 'Batch')" />
+              <el-option value="config" :label="tr('配置', 'Config')" />
+              <el-option value="integration" :label="tr('集成', 'Integration')" />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="tr('用户', 'User')">
+            <el-input v-model="filters.username" clearable :placeholder="tr('用户名', 'Username')" />
+          </el-form-item>
+          <el-form-item :label="tr('结果', 'Result')">
+            <el-select v-model="filters.result" clearable :placeholder="tr('全部', 'All')">
+              <el-option value="success" :label="tr('成功', 'Success')" />
+              <el-option value="failure" :label="tr('失败', 'Failure')" />
+              <el-option value="blocked" :label="tr('已阻止', 'Blocked')" />
+            </el-select>
+          </el-form-item>
+          <el-form-item>
+            <HmiButton type="manual" :disabled="loading" @click="load">{{ tr("查询", "Query") }}</HmiButton>
+          </el-form-item>
+        </el-form>
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-title">
-        <h2>{{ store.tr("事件列表", "Event List") }}</h2>
-        <span>{{ store.tr(`第 ${page} 页，共 ${total} 条`, `Page ${page}, ${total} total`) }}</span>
+    <!-- 事件表格 -->
+    <section class="hmi-panel">
+      <div class="hmi-panel-header">
+        <span>{{ tr("事件列表", "Events") }}</span>
+        <span class="muted">{{ total }}</span>
       </div>
-      <el-table :data="events" class="data-table">
-        <el-table-column prop="id" label="#" width="80" />
-        <el-table-column prop="created_at" :label="store.tr('时间', 'Time')" width="190" />
-        <el-table-column prop="event_type" :label="store.tr('事件', 'Event')" width="190" />
-        <el-table-column :label="store.tr('目标', 'Target')" width="170">
-          <template #default="{ row }">
-            {{ textAt(row, "target_temperature_c") }} C /
-            {{ textAt(row, "target_stirrer_rpm") }} rpm
-          </template>
-        </el-table-column>
-        <el-table-column prop="reason" :label="store.tr('原因', 'Reason')" />
-        <el-table-column :label="store.tr('批次', 'Batch')" width="90">
-          <template #default="{ row }">
-            <span v-if="textAt(row, 'batch_id')" :title="store.tr('事件归属批次', 'Batch this event belongs to')">#{{ textAt(row, "batch_id") }}</span>
-            <span v-else class="muted">--</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="store.tr('哈希', 'Hash')" width="150">
-          <template #default="{ row }">
-            <span class="hash-cell" :title="textAt(row, 'event_hash')">{{ textAt(row, "event_hash") }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="store.tr('前环哈希', 'Previous hash')" width="150">
-          <template #default="{ row }">
-            <span v-if="textAt(row, 'previous_hash')" class="hash-cell" :title="store.tr('哈希链前一环（首事件为空）', 'Hash-chain previous link (empty for genesis)')">{{ textAt(row, "previous_hash") }}</span>
-            <span v-else class="muted">{{ store.tr("（创世）", "(genesis)") }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div class="table-footer">
-        <el-button :disabled="!store.isAuthenticated || page <= 1" @click="loadAudit(page - 1)">
-          {{ store.tr("上一页", "Previous") }}
-        </el-button>
-        <el-button :disabled="!store.isAuthenticated || page * pageSize >= total" @click="loadAudit(page + 1)">
-          {{ store.tr("下一页", "Next") }}
-        </el-button>
+      <div class="hmi-panel-body flush">
+        <el-table v-if="events.length > 0" v-loading="loading" :data="events" size="small">
+          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="created_at" :label="tr('时间', 'Time')" min-width="150">
+            <template #default="{ row }">{{ formatTimestamp(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column prop="event_type" :label="tr('类型', 'Type')" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">{{ row.event_type }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="username" :label="tr('用户', 'User')" width="100" />
+          <el-table-column prop="action" :label="tr('动作', 'Action')" min-width="140" />
+          <el-table-column prop="result" :label="tr('结果', 'Result')" width="90">
+            <template #default="{ row }">
+              <el-tag size="small" :type="resultType(String(row.result ?? ''))">{{ row.result }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="detail" :label="tr('详情', 'Detail')" min-width="200">
+            <template #default="{ row }">{{ text(row.detail) }}</template>
+          </el-table-column>
+        </el-table>
+        <EmptyState v-else icon="📋" :title="tr('暂无事件', 'No events')" />
+      </div>
+      <div class="hmi-panel-body" style="border-top: 1px solid var(--border-glass);">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
+          @current-change="load"
+          @size-change="load"
+        />
       </div>
     </section>
-  </section>
+  </div>
 </template>
+
+<style scoped>
+.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing);
+}
+
+.filter-form :deep(.el-form-item) {
+  margin-bottom: 0;
+  margin-right: 0;
+}
+</style>

@@ -199,11 +199,11 @@ pub fn is_forbidden_control_zone(
         .any(|zone| zone.contains(temperature_c, stirrer_rpm))
 }
 
-pub fn forbidden_control_zone<'a>(
-    safety: &'a SafetyConfig,
+pub fn forbidden_control_zone(
+    safety: &SafetyConfig,
     temperature_c: f64,
     stirrer_rpm: f64,
-) -> Option<&'a crate::config::ForbiddenControlZone> {
+) -> Option<&crate::config::ForbiddenControlZone> {
     safety
         .forbidden_control_zones
         .iter()

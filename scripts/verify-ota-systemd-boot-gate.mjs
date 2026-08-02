@@ -15,8 +15,8 @@ const failures = [];
 if (!backend.includes("Requires=reactor-edge-ota-boot-check.service")) {
   failures.push("backend service must require OTA boot-check unit at boot");
 }
-if (!backend.includes("ExecStartPre=/opt/reactor-edge/ota-boot-check.sh")) {
-  failures.push("backend service must run OTA boot-check before every service start/restart");
+if (!backend.includes("ExecStartPre=+/opt/reactor-edge/ota-boot-check.sh")) {
+  failures.push("backend service must run OTA boot-check as root before every service start/restart");
 }
 if (!backend.includes("Restart=on-failure")) {
   failures.push("backend service must restart only on failure, not after intentional maintenance stops");
@@ -35,6 +35,12 @@ if (!kiosk.includes("Requires=reactor-edge-ota-boot-check.service")) {
 }
 if (!kiosk.includes("WorkingDirectory=/opt/reactor-edge/current")) {
   failures.push("kiosk service must run from the active current slot");
+}
+if (!kiosk.includes("After=display-manager.service") || !kiosk.includes("Wants=display-manager.service")) {
+  failures.push("kiosk service must wait for the display manager without pulling graphical.target");
+}
+if (kiosk.includes("After=graphical.target") || kiosk.includes("Wants=graphical.target")) {
+  failures.push("kiosk service must not block on the graphical target/time-sync transaction");
 }
 if (!kiosk.includes("StartLimitIntervalSec=600") || !kiosk.includes("StartLimitBurst=5")) {
   failures.push("kiosk service must rate-limit display crash loops");

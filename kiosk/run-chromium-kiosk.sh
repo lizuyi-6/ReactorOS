@@ -10,6 +10,18 @@ LOW_LOAD="${REACTOR_OS_LOW_LOAD:-1}"
 
 export DISPLAY="${DISPLAY:-:0}"
 
+# Reuse the display user's real session bus when it exists. Vendor images often
+# leave a stale/unsupported DBUS_SESSION_BUS_ADDRESS in the system service
+# environment, which makes Chromium log an error on every probe. Do not invent
+# a bus address when the socket is absent; Chromium remains functional without
+# session D-Bus in kiosk mode.
+runtime_dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [[ -S "${runtime_dir}/bus" ]]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${runtime_dir}/bus"
+else
+  unset DBUS_SESSION_BUS_ADDRESS || true
+fi
+
 find_chromium() {
   if [[ -n "${CHROMIUM_BIN:-}" ]]; then
     printf '%s\n' "$CHROMIUM_BIN"

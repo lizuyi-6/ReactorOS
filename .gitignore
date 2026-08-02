@@ -8,6 +8,8 @@
 /.env
 /node_modules/
 /frontend/dist/
+# workshop/ is a large (136M+) standalone workspace; keep it out of the main repo.
+/workshop/
 /test-results/
 /playwright-report/
 dist/
@@ -56,3 +58,16 @@ config/reactor-edge.env
 /output/xingshu_prd_pdf.txt
 /output/index-script-check.js
 /output/frame-*.jpg
+
+# IDEA-generated local SQLite (regenerated each IDE session, machine-local)
+/identifier.sqlite
+# Output-root screenshots; subdirs like /output/playwright/ already ignored above
+/output/*.png
+
+# Claude Code local provenance hook (depends on machine-local
+# .claude/settings.local.json + IDEA built-in server on 63342;
+# not a shared project asset — script is reusable if team adopts it)
+/.claude/hooks/
+
+# WorkBuddy local tool memory dir (machine-local, like .claude/)
+/.workbuddy/

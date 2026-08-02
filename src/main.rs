@@ -49,7 +49,7 @@ struct Args {
     enable_test_reset: bool,
     #[arg(long)]
     safety_guard: Option<PathBuf>,
-    #[arg(long, default_value_t = false)]
+    #[arg(long, env = "XINGSHU_SEED_DEMO_CONTEXT", default_value_t = false)]
     seed_demo_context: bool,
 }
 
@@ -132,6 +132,20 @@ async fn main() -> Result<()> {
         tracing::warn!(
             "recovered unfinished batch {batch_id} at daemon startup; automatic control remains disabled until operator closes the batch"
         );
+    }
+    // 堆积告警:除 active 外,还有遗留的未完成批次(daemon 多次异常退出会堆积)。
+    // 只加日志,不改控制流 —— operator 看到 extra > 0 应排查/关闭遗留批次。
+    if let Ok(unfinished) = db.unfinished_batches_sqlx(100).await {
+        let active_present = recovered_runtime.active_batch_id.is_some();
+        let extra = unfinished
+            .len()
+            .saturating_sub(if active_present { 1 } else { 0 });
+        if extra > 0 {
+            tracing::warn!(
+                "found {extra} stale unfinished batch(es) besides the active one; \
+                 these were left unfinished by prior daemon exits — operator should close or investigate"
+            );
+        }
     }
     let runtime: SharedState = Arc::new(RwLock::new(recovered_runtime));
 
@@ -1292,7 +1306,7 @@ mod tests {
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &emergency, None, &command),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::EmergencyStop
+                ControlBlockReason::EmergencyStop
             ))
         );
 
@@ -1302,7 +1316,7 @@ mod tests {
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &stale_sample, None, &command),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::SensorStale
+                ControlBlockReason::SensorStale
             ))
         );
 
@@ -1403,7 +1417,7 @@ mod tests {
                 &fallback_command
             ),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::MissingDeviceStatus
+                ControlBlockReason::MissingDeviceStatus
             ))
         );
     }
