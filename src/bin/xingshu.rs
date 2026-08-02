@@ -1083,7 +1083,7 @@ async fn data(
                 last =
                     request_json(client, Method::POST, api, &path, token, Some(body), &[]).await?;
                 if index + 1 < count {
-                    tokio::time::sleep(std::time::Duration::from_millis(interval_ms)).await;
+                    tokio::time::sleep(Duration::from_millis(interval_ms)).await;
                 }
             }
             Ok(CommandOutput {
@@ -2225,7 +2225,7 @@ fn safety_guard_check(args: &SafetyArgs) -> Result<CommandOutput> {
             let response = evaluate_with_process(
                 &guard_path,
                 &request,
-                std::time::Duration::from_millis(safety_guard_timeout_ms),
+                Duration::from_millis(safety_guard_timeout_ms),
             )?;
             let SafetyGuardResponse::ClampedTargets(targets) = response else {
                 return Err(anyhow!(
@@ -2363,7 +2363,7 @@ async fn perf(client: &Client, api: &str, args: &PerfArgs) -> Result<CommandOutp
                 let response = evaluate_with_process(
                     &guard_path,
                     &guard_request,
-                    std::time::Duration::from_millis(safety_guard_timeout_ms),
+                    Duration::from_millis(safety_guard_timeout_ms),
                 )?;
                 let elapsed_ms = started.elapsed().as_millis() as u64;
                 let SafetyGuardResponse::ClampedTargets(_) = response else {
@@ -3897,7 +3897,7 @@ fn overwrite_file_with_random(
 ) -> Result<u64> {
     if size == 0 {
         // Truncate to zero so the filesystem releases the inode.
-        std::fs::OpenOptions::new()
+        fs::OpenOptions::new()
             .write(true)
             .truncate(true)
             .open(path)
@@ -4223,9 +4223,9 @@ fn load_cli_key(
 ) -> Result<[u8; 32]> {
     match (direct, file) {
         (Some(_), Some(_)) => {
-            return Err(anyhow!(
+            Err(anyhow!(
                 "provide either --{label}-key or --{label}-key-file, not both"
-            ));
+            ))
         }
         (Some(value), None) => parse_encryption_key(value)
             .with_context(|| format!("--{label}-key must be 32 bytes, 64 hex chars, or base64")),

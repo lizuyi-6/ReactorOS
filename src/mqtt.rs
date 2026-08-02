@@ -190,7 +190,7 @@ pub fn load_integration_config(path: impl AsRef<Path>) -> Result<IntegrationConf
     if !path.exists() {
         return Ok(IntegrationConfig::default());
     }
-    let raw = std::fs::read_to_string(path)
+    let raw = fs::read_to_string(path)
         .with_context(|| format!("failed to read integration config {}", path.display()))?;
     let config: IntegrationConfig = toml::from_str(&raw)
         .with_context(|| format!("failed to parse integration config {}", path.display()))?;

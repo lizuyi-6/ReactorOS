@@ -68,3 +68,6 @@ config/reactor-edge.env
 # .claude/settings.local.json + IDEA built-in server on 63342;
 # not a shared project asset — script is reusable if team adopts it)
 /.claude/hooks/
+
+# WorkBuddy local tool memory dir (machine-local, like .claude/)
+/.workbuddy/

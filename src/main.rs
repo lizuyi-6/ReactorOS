@@ -1306,7 +1306,7 @@ mod tests {
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &emergency, None, &command),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::EmergencyStop
+                ControlBlockReason::EmergencyStop
             ))
         );
 
@@ -1316,7 +1316,7 @@ mod tests {
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &stale_sample, None, &command),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::SensorStale
+                ControlBlockReason::SensorStale
             ))
         );
 
@@ -1417,7 +1417,7 @@ mod tests {
                 &fallback_command
             ),
             Err(ControlDecision::Blocked(
-                reactor_edge_daemon::control::ControlBlockReason::MissingDeviceStatus
+                ControlBlockReason::MissingDeviceStatus
             ))
         );
     }
