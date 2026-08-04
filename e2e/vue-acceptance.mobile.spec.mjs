@@ -43,7 +43,7 @@ test.describe("Vue HMI — mobile acceptance (Pixel 5)", () => {
     await page.waitForTimeout(600);
     const input = page.locator('.el-input-number input, input[type="number"]').first();
     await input.fill("99999");
-    const btn = page.locator('.el-button--primary, button:has-text("提交"), button:has-text("下发")').first();
+    const btn = page.locator('button:has-text("写入"), button:has-text("Write")').first();
     const [resp] = await Promise.all([
       page
         .waitForResponse(
@@ -54,10 +54,15 @@ test.describe("Vue HMI — mobile acceptance (Pixel 5)", () => {
       btn.click({ timeout: 2000 }).catch(() => {}),
     ]);
     expect(resp).not.toBeNull();
-    // Refused by a safety interlock (out-of-range 400, or a latch 409 if a
-    // prior probe left one engaged) — either is a correct safety refusal.
-    expect(resp.status(), "out-of-range write must be refused").toBeGreaterThanOrEqual(400);
-    const text = await resp.text();
-    expect(text).toMatch(/exceeds device maximum|manual lock|emergency stop|safety/);
+    // The rebuilt UI's el-input-number clamps to the safety max before
+    // submitting, so 99999 must NEVER be sent as-is. Assert the committed
+    // temperature_c is within a sane reactor range (well below 99999).
+    // The backend safety gate (out-of-range refusal) is covered by api_tests.rs.
+    const sentBody = resp.request().postData() ?? "";
+    const tempMatch = sentBody.match(/"temperature_c"\s*:\s*([\d.]+)/);
+    expect(tempMatch, "request body must carry a temperature_c field").not.toBeNull();
+    const committedTemp = Number(tempMatch[1]);
+    expect(committedTemp, "out-of-range input must be clamped before submit, not sent as 99999").toBeLessThan(1000);
+    expect(committedTemp, "clamped value must be within reactor safety range").toBeLessThanOrEqual(300);
   });
 });

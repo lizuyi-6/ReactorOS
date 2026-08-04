@@ -18,3 +18,4 @@ pub mod runtime_recovery;
 pub mod safety_guard;
 pub mod state;
 pub mod tls;
+pub mod virtual_sensor;

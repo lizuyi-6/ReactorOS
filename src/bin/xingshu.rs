@@ -4222,11 +4222,9 @@ fn load_cli_key(
     allow_env: bool,
 ) -> Result<[u8; 32]> {
     match (direct, file) {
-        (Some(_), Some(_)) => {
-            Err(anyhow!(
-                "provide either --{label}-key or --{label}-key-file, not both"
-            ))
-        }
+        (Some(_), Some(_)) => Err(anyhow!(
+            "provide either --{label}-key or --{label}-key-file, not both"
+        )),
         (Some(value), None) => parse_encryption_key(value)
             .with_context(|| format!("--{label}-key must be 32 bytes, 64 hex chars, or base64")),
         (None, Some(path)) => {

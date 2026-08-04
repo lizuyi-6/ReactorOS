@@ -6,6 +6,7 @@ import { useAuthStore } from "./stores/auth";
 import { useLiveStore, HMI_REFRESH_INTERVAL_MS } from "./stores/live";
 import { useLanguage } from "./i18n";
 import { boolText } from "./utils/format";
+import { DEVICE_ID } from "./api";
 
 const auth = useAuthStore();
 const live = useLiveStore();
@@ -22,7 +23,7 @@ const activePath = computed(() => route.path);
 const isLoginPage = computed(() => activePath.value === "/login");
 
 const clockText = computed(() =>
-  now.value.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  now.value.toLocaleTimeString(language.value === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
 );
 
 const runtime = computed(() => live.runtime);
@@ -112,25 +113,25 @@ onBeforeUnmount(() => {
         </div>
         <div class="brand-info">
           <h1 class="brand-title">ReactorOS</h1>
-          <span class="brand-subtitle">星宿智能反应釜控制系统</span>
+          <span class="brand-subtitle">{{ tr("星宿智能反应釜控制系统", "Xingshu Smart Reactor Control") }}</span>
         </div>
       </div>
 
       <div class="topbar-center">
         <div class="status-pill" :class="live.liveStatus === 'fresh' ? 'ok' : 'bad'">
           <span class="status-light" :class="live.liveStatus === 'fresh' ? 'ok' : 'error'"></span>
-          <span class="status-text">{{ live.liveStatus === "fresh" ? "实时数据" : "数据中断" }}</span>
+          <span class="status-text">{{ live.liveStatus === "fresh" ? tr("实时数据", "Live data") : tr("数据中断", "Data interrupted") }}</span>
         </div>
         <div class="status-pill" :class="alarmTone">
-          <span class="status-label">报警</span>
+          <span class="status-label">{{ tr("报警", "Alarms") }}</span>
           <span class="status-value">{{ alarmCounts.high }}/{{ alarmCounts.warning }}/{{ alarmCounts.info }}</span>
         </div>
         <div class="status-pill" :class="safetyState.tone">
-          <span class="status-label">联锁</span>
+          <span class="status-label">{{ tr("联锁", "Safety") }}</span>
           <span class="status-value">{{ safetyState.label }}</span>
         </div>
         <div v-if="activeBatchId !== null" class="status-pill ok">
-          <span class="status-label">批次</span>
+          <span class="status-label">{{ tr("批次", "Batch") }}</span>
           <span class="status-value mono">#{{ activeBatchId }}</span>
         </div>
       </div>
@@ -154,10 +155,10 @@ onBeforeUnmount(() => {
           <div class="user-avatar">
             {{ auth.user?.username?.charAt(0).toUpperCase() }}
           </div>
-          <el-button size="small" class="logout-btn" @click="handleLogout">退出</el-button>
+          <el-button size="small" class="logout-btn" @click="handleLogout">{{ tr("退出", "Logout") }}</el-button>
         </div>
         <el-button v-else size="small" type="primary" class="login-btn" @click="router.push('/login')">
-          登录系统
+          {{ tr("登录系统", "Sign in") }}
         </el-button>
       </div>
     </header>
@@ -182,8 +183,8 @@ onBeforeUnmount(() => {
       </nav>
       <div class="sidebar-footer">
         <div class="device-tag">
-          <span class="device-label">当前设备</span>
-          <span class="device-id mono">reactor_001</span>
+          <span class="device-label">{{ tr("当前设备", "Device") }}</span>
+          <span class="device-id mono">{{ DEVICE_ID }}</span>
         </div>
       </div>
     </aside>

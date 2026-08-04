@@ -112,6 +112,7 @@ pub struct AppState {
     pub ai_memory: Arc<AiMemory>,
     pub ai_provider: Option<Arc<AiProvider>>,
     pub test_reset_enabled: bool,
+    pub simulation_session: Option<crate::virtual_sensor::SharedSimulationSession>,
 }
 
 #[derive(Debug, Clone)]
@@ -673,6 +674,10 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
         )
         .route("/api/test/reset", post(test_reset))
         .route("/api/test/pipeline-sample", post(test_pipeline_sample))
+        .route("/api/simulation/status", get(simulation_status))
+        .route("/api/simulation/start", post(simulation_start))
+        .route("/api/simulation/stop", post(simulation_stop))
+        .route("/api/simulation/scenario", post(simulation_scenario))
         .route(
             "/api/recommendations/latest",
             get(latest_recommendation).post(generate_latest_recommendation),
@@ -954,13 +959,8 @@ async fn modbus_register_write(
     ApiJson(payload): ApiJson<ModbusWriteRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     require_admin(&headers)?;
-    let response = apply_modbus_register_write(
-        &state,
-        &register,
-        payload.value,
-        payload.reason,
-    )
-    .await?;
+    let response =
+        apply_modbus_register_write(&state, &register, payload.value, payload.reason).await?;
     Ok(Json(success(response)))
 }
 
@@ -4348,13 +4348,42 @@ async fn emergency_stop(
         let mut runtime = state.runtime.write().await;
         runtime.engage_emergency_stop();
     }
+    // Explicitly deliver fail-safe targets to the downstream device. Industrial
+    // standard: a software e-stop must not rely on the host merely stopping new
+    // commands — downstream controllers typically hold the last target, so we
+    // must drive temperature/stirrer down to safe values. If the downstream has
+    // a heartbeat watchdog this is still the faster, more deterministic path.
+    let stop_targets = process_stop_targets(&state);
+    let stop_command =
+        safe_command_from_runtime_targets(&stop_targets, "emergency stop fail-safe targets");
+    if let Err(err) = state.device.write_targets(&stop_command).await {
+        let write_err_msg = err.to_string();
+        latch_control_write_fault(&state, &err).await;
+        if let Err(audit_err) = state
+            .db
+            .insert_control_event_sqlx(
+                None,
+                "emergency_stop",
+                Some(&stop_command),
+                &format!(
+                    "operator triggered emergency stop; fail-safe target write FAILED, downstream may still hold previous targets: {write_err_msg}; activate hardware e-stop"
+                ),
+            )
+            .await
+        {
+            tracing::error!("failed to audit emergency_stop write failure: {audit_err}");
+        }
+        return Err(AppError::service_unavailable(format!(
+            "emergency stop engaged but fail-safe targets could not be delivered to downstream device: {write_err_msg}; activate hardware e-stop immediately"
+        )));
+    }
     if let Err(err) = state
         .db
         .insert_control_event_sqlx(
             None,
             "emergency_stop",
-            None,
-            "operator triggered emergency stop; automatic control disabled",
+            Some(&stop_command),
+            "operator triggered emergency stop; fail-safe targets delivered to downstream device; automatic control disabled",
         )
         .await
     {
@@ -5775,6 +5804,7 @@ fn device_mode_label(mode: &DeviceMode) -> &'static str {
         DeviceMode::Modbus => "modbus",
         DeviceMode::Esp32Serial => "esp32_serial",
         DeviceMode::JsonBridge => "json_bridge",
+        DeviceMode::Simulation => "simulation",
     }
 }
 
@@ -6008,4 +6038,124 @@ fn push_sensor_alarm(
         "limit_value": alarm.limit_value,
         "suggestion": alarm.suggestion
     }));
+}
+
+#[derive(Debug, Deserialize)]
+struct SimulationScenarioRequest {
+    scenario: String,
+    #[serde(default)]
+    seed: Option<u64>,
+    #[serde(default)]
+    parameters: Option<crate::virtual_sensor::ScenarioParameters>,
+}
+
+async fn simulation_status(
+    State(state): State<AppState>,
+) -> Result<Json<V1Envelope<crate::virtual_sensor::SimulationStatus>>, AppError> {
+    match &state.simulation_session {
+        Some(session) => {
+            let status = session.read().await.status();
+            Ok(Json(success(status)))
+        }
+        None => {
+            // Not in simulation mode: return a dormant status (active: false)
+            // instead of an HTTP 4xx so read-only polling/health checks are
+            // not mistaken for client errors.
+            Ok(Json(success(
+                crate::virtual_sensor::SimulationStatus::dormant(),
+            )))
+        }
+    }
+}
+
+async fn simulation_start(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<V1Envelope<crate::virtual_sensor::SimulationStatus>>, AppError> {
+    require_admin(&headers)?;
+    let session = state.simulation_session.as_ref().ok_or_else(|| {
+        AppError::bad_request(format!(
+            "simulation mode is not active; current device mode is {:?}",
+            state.device_mode
+        ))
+    })?;
+    {
+        let mut s = session.write().await;
+        if s.active {
+            return Err(AppError::bad_request(format!(
+                "simulation session {} is already active",
+                s.session_id
+            )));
+        }
+        let session_id = s.session_id.clone();
+        let scenario = s.config.scenario.clone();
+        let seed = s.config.seed;
+        s.restart();
+        tracing::info!(
+            "simulation session {} started via API (scenario={}, seed={})",
+            session_id,
+            scenario,
+            seed
+        );
+    }
+    let status = session.read().await.status();
+    Ok(Json(success(status)))
+}
+
+async fn simulation_stop(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<V1Envelope<crate::virtual_sensor::SimulationStatus>>, AppError> {
+    require_admin(&headers)?;
+    let session = state.simulation_session.as_ref().ok_or_else(|| {
+        AppError::bad_request(format!(
+            "simulation mode is not active; current device mode is {:?}",
+            state.device_mode
+        ))
+    })?;
+    {
+        let mut s = session.write().await;
+        let session_id = s.session_id.clone();
+        let tick = s.tick;
+        s.stop();
+        tracing::info!(
+            "simulation session {} stopped via API after {} ticks",
+            session_id,
+            tick
+        );
+    }
+    let status = session.read().await.status();
+    Ok(Json(success(status)))
+}
+
+async fn simulation_scenario(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(payload): ApiJson<SimulationScenarioRequest>,
+) -> Result<Json<V1Envelope<crate::virtual_sensor::SimulationStatus>>, AppError> {
+    require_admin(&headers)?;
+    crate::virtual_sensor::validate_scenario_name(&payload.scenario)
+        .map_err(|e| AppError::bad_request(e.to_string()))?;
+    let session = state.simulation_session.as_ref().ok_or_else(|| {
+        AppError::bad_request(format!(
+            "simulation mode is not active; current device mode is {:?}",
+            state.device_mode
+        ))
+    })?;
+    {
+        let mut s = session.write().await;
+        let old_scenario = s.config.scenario.clone();
+        let new_scenario = payload.scenario.clone();
+        let session_id = s.session_id.clone();
+        s.switch_scenario(payload.scenario, payload.seed, payload.parameters);
+        tracing::info!(
+            "simulation session {} switched scenario from {} to {} (seed={})",
+            session_id,
+            old_scenario,
+            new_scenario,
+            s.config.seed
+        );
+    }
+    let status = session.read().await.status();
+    Ok(Json(success(status)))
 }

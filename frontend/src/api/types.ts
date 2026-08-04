@@ -456,8 +456,8 @@ export interface ConfigSummary {
   device?: Record<string, unknown>;
   safety?: {
     control?: Record<string, unknown>;
-    temperature?: { min?: number; max?: number; max_step?: number; default?: number };
-    stirrer?: { min?: number; max?: number; max_step?: number; default?: number };
+    temperature?: { min_c?: number; max_c?: number; max_step_c?: number; default_target_c?: number };
+    stirrer?: { min_rpm?: number; max_rpm?: number; max_step_rpm?: number; default_target_rpm?: number };
     optimizer?: Record<string, unknown>;
     forbidden_control_zones?: ForbiddenZone[];
     [key: string]: unknown;

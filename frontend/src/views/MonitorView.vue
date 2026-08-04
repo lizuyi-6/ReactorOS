@@ -1,34 +1,34 @@
 <template>
   <div class="monitor-hmi">
-    <!-- 顶部全局状态栏：玻璃拟态，一眼看清 -->
+    <!-- 顶部全局状态栏 -->
     <div class="status-bar hmi-panel">
       <div class="status-item">
-        <div class="status-icon-wrapper ok">
-          <span class="status-light ok"></span>
+        <div class="status-icon-wrapper" :class="systemTone">
+          <span class="status-light" :class="systemTone"></span>
         </div>
         <div class="status-info">
-          <span class="data-label">系统状态</span>
-          <span class="data-value text-ok">自动运行中</span>
-        </div>
-      </div>
-      <div class="status-divider"></div>
-      <div class="status-item">
-        <div class="status-info">
-          <span class="data-label">当前批次</span>
-          <span class="data-value mono">{{ activeBatchId || '待机' }}</span>
+          <span class="data-label">{{ tr("系统状态", "System") }}</span>
+          <span class="data-value" :class="systemTextClass">{{ modeLabel }}</span>
         </div>
       </div>
       <div class="status-divider"></div>
       <div class="status-item">
         <div class="status-info">
-          <span class="data-label">安全联锁</span>
-          <span class="data-value text-ok">已解除</span>
+          <span class="data-label">{{ tr("当前批次", "Batch") }}</span>
+          <span class="data-value mono">{{ activeBatchLabel }}</span>
+        </div>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-item">
+        <div class="status-info">
+          <span class="data-label">{{ tr("安全联锁", "Safety") }}</span>
+          <span class="data-value" :class="safetyClass">{{ safetyLabel }}</span>
         </div>
       </div>
       <div class="status-divider"></div>
       <div class="status-item time">
         <div class="status-info">
-          <span class="data-label">系统时间</span>
+          <span class="data-label">{{ tr("系统时间", "Time") }}</span>
           <span class="data-value mono">{{ currentTime }}</span>
         </div>
       </div>
@@ -39,8 +39,8 @@
       <div v-for="card in sensorCards" :key="card.key" class="sensor-box hmi-panel">
         <div class="sensor-header">
           <span class="data-label">{{ card.label }}</span>
-          <span class="freshness" :class="{ stale: !sampleFresh }">
-            {{ sampleFresh ? '● LIVE' : '○ STALE' }}
+          <span class="freshness" :class="{ stale: !isFresh }">
+            {{ isFresh ? '● LIVE' : '○ STALE' }}
           </span>
         </div>
         <div class="sensor-main">
@@ -56,27 +56,27 @@
     <div class="bottom-section">
       <div class="trend-container hmi-panel">
         <div class="hmi-panel-header">
-          <span>过程趋势分析 (TEMP / PRESSURE)</span>
+          <span>{{ tr("过程趋势分析", "Trend Analysis") }} (TEMP / PRESSURE)</span>
           <div class="trend-legend">
-            <span class="legend-item temp">温度</span>
-            <span class="legend-item press">压力</span>
+            <span class="legend-item temp">{{ tr("温度", "Temp") }}</span>
+            <span class="legend-item press">{{ tr("压力", "Press") }}</span>
           </div>
         </div>
         <div ref="chartRef" class="chart-box"></div>
       </div>
       <div class="alarm-container hmi-panel">
-        <div class="hmi-panel-header">实时报警中心</div>
+        <div class="hmi-panel-header">{{ tr("实时报警中心", "Alarm Center") }}</div>
         <div class="alarm-list">
-          <div v-for="alarm in activeAlarms" :key="alarm.id" class="alarm-item" :class="alarm.level">
+          <div v-for="(alarm, idx) in displayAlarms" :key="alarm.code || idx" class="alarm-item" :class="alarm.level">
             <div class="alarm-icon">{{ alarm.level === 'warn' ? '⚠️' : '🚨' }}</div>
             <div class="alarm-content">
               <span class="alarm-msg">{{ alarm.message }}</span>
-              <span class="alarm-time mono">{{ alarm.time }}</span>
+              <span class="alarm-time mono">{{ alarm.detail }}</span>
             </div>
           </div>
-          <div v-if="activeAlarms.length === 0" class="no-alarm">
+          <div v-if="displayAlarms.length === 0" class="no-alarm">
             <div class="no-alarm-icon">🛡️</div>
-            <span>系统运行正常，无活动报警</span>
+            <span>{{ tr("系统运行正常，无活动报警", "All normal, no active alarms") }}</span>
           </div>
         </div>
       </div>
@@ -86,33 +86,90 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+// Tree-shake ECharts: this view only uses a time-axis line chart, so register
+// just LineChart + GridComponent + the canvas renderer instead of pulling in
+// the full `echarts` bundle (~1 MB -> ~250 KB). Missing a component would log
+// to the console and is caught by the e2e `assertNoVueConsoleErrors` check.
+echarts.use([LineChart, GridComponent, CanvasRenderer])
 import { useLiveStore } from '../stores/live'
+import { useLanguage } from '../i18n'
 import { storeToRefs } from 'pinia'
 
 const liveStore = useLiveStore()
-const { latestSample, sampleFresh, activeBatchId } = storeToRefs(liveStore)
+const { latestSample, runtime, liveStatus, alarms } = storeToRefs(liveStore)
+const { tr } = useLanguage()
 
 const currentTime = ref(new Date().toLocaleTimeString())
 const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
 
+const isFresh = computed(() => liveStatus.value === 'fresh')
+
+const activeBatchId = computed(() => {
+  const id = runtime.value?.active_batch_id
+  if (id === null || id === undefined) return null
+  const n = Number(id)
+  return Number.isFinite(n) ? n : null
+})
+const activeBatchLabel = computed(() =>
+  activeBatchId.value === null ? tr("待机", "Idle") : `#${activeBatchId.value}`
+)
+
+const modeLabel = computed(() => {
+  if (runtime.value?.emergency_stop) return tr("急停", "E-STOP")
+  if (runtime.value?.manual_lock) return tr("人工锁", "M-LOCK")
+  if (runtime.value?.auto_enabled) return tr("自动运行中", "AUTO")
+  return tr("手动", "MANUAL")
+})
+const systemTone = computed<'ok' | 'warn' | 'bad'>(() => {
+  if (runtime.value?.emergency_stop || runtime.value?.manual_lock || runtime.value?.control_loop_terminated) return 'bad'
+  if (runtime.value?.last_control_error || runtime.value?.last_sensor_error) return 'warn'
+  return 'ok'
+})
+const systemTextClass = computed(() => `text-${systemTone.value === 'bad' ? 'red' : systemTone.value === 'warn' ? 'yellow' : 'green'}`)
+
+const safetyLabel = computed(() => {
+  if (runtime.value?.control_loop_terminated) return tr("控制环终止", "LOOP STOP")
+  if (runtime.value?.emergency_stop) return tr("急停中", "E-STOP")
+  if (runtime.value?.last_sensor_error) return tr("传感器故障", "SENSOR")
+  if (runtime.value?.last_control_error) return tr("控制故障", "CTRL FLT")
+  if (runtime.value?.manual_lock) return tr("人工锁定", "M-LOCK")
+  return tr("正常", "OK")
+})
+const safetyClass = computed(() => {
+  if (runtime.value?.control_loop_terminated || runtime.value?.emergency_stop || runtime.value?.last_sensor_error) return 'text-red'
+  if (runtime.value?.last_control_error || runtime.value?.manual_lock) return 'text-yellow'
+  return 'text-green'
+})
+
+const displayAlarms = computed(() =>
+  (alarms.value ?? []).map((a) => ({
+    code: a.code ?? a.type ?? '',
+    message: a.message ?? a.type ?? tr("报警", "Alarm"),
+    level: a.level === 'error' || a.severity === 'critical' ? 'error' : 'warn',
+    detail: a.current_value != null
+      ? `${tr("当前值", "Current")}: ${a.current_value}${a.limit_value != null ? ' / ' + tr("限值", "Limit") + ': ' + a.limit_value : ''}`
+      : ''
+  }))
+)
+
 const sensorCards = computed(() => {
   const s = latestSample.value
   if (!s) return []
   return [
-    { key: 'temp', label: '釜内温度', value: s.temperature_c?.toFixed(1) ?? '--', unit: '°C' },
-    { key: 'press', label: '釜内压力', value: s.pressure_mpa?.toFixed(3) ?? '--', unit: 'MPa' },
-    { key: 'rpm', label: '搅拌转速', value: s.stirrer_rpm?.toFixed(0) ?? '--', unit: 'RPM' },
-    { key: 'conc', label: '产物浓度', value: s.product_concentration_percent?.toFixed(1) ?? '--', unit: '%' },
-    { key: 'flow', label: '进料流量', value: s.flow_rate_l_min?.toFixed(2) ?? '--', unit: 'L/min' },
-    { key: 'ph', label: 'pH 值', value: s.ph?.toFixed(2) ?? '--', unit: '' },
+    { key: 'temp', label: tr("釜内温度", "Temperature"), value: s.temperature_c?.toFixed(1) ?? '--', unit: '°C' },
+    { key: 'press', label: tr("釜内压力", "Pressure"), value: s.pressure_mpa?.toFixed(3) ?? '--', unit: 'MPa' },
+    { key: 'rpm', label: tr("搅拌转速", "Stirrer"), value: s.stirrer_rpm?.toFixed(0) ?? '--', unit: 'RPM' },
+    { key: 'conc', label: tr("产物浓度", "Concentration"), value: s.product_concentration_percent?.toFixed(1) ?? '--', unit: '%' },
+    { key: 'flow', label: tr("进料流量", "Flow Rate"), value: s.flow_rate_l_min?.toFixed(2) ?? '--', unit: 'L/min' },
+    { key: 'ph', label: tr("pH 值", "pH"), value: s.ph?.toFixed(2) ?? '--', unit: '' },
   ]
 })
-
-const activeAlarms = ref([
-  { id: 1, time: '09:45:12', message: '温度接近设定上限', level: 'warn' }
-])
 
 const timer = setInterval(() => {
   currentTime.value = new Date().toLocaleTimeString()
@@ -175,6 +232,17 @@ onUnmounted(() => {
 .status-divider { width: 1px; height: 32px; background: var(--border-glass); }
 .status-info { display: flex; flex-direction: column; gap: 4px; }
 .text-ok { color: var(--ind-green); }
+.text-green { color: var(--ind-green); }
+.text-red { color: var(--ind-red); }
+.text-yellow { color: var(--ind-amber); }
+
+/* 状态灯动态色彩 */
+.status-icon-wrapper.ok, .status-light.ok { color: var(--ind-green); }
+.status-light.ok { background: var(--ind-green); box-shadow: 0 0 8px var(--ind-green-glow); }
+.status-icon-wrapper.warn, .status-light.warn { color: var(--ind-amber); }
+.status-light.warn { background: var(--ind-amber); box-shadow: 0 0 8px var(--ind-amber-glow); }
+.status-icon-wrapper.bad, .status-light.bad { color: var(--ind-red); }
+.status-light.bad { background: var(--ind-red); box-shadow: 0 0 8px var(--ind-red-glow); }
 
 /* Bento Grid 传感器矩阵 */
 .sensor-matrix {
