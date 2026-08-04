@@ -14,6 +14,8 @@ pub struct DeviceConfig {
     pub esp32: Esp32Config,
     #[serde(default)]
     pub json_bridge: JsonBridgeConfig,
+    #[serde(default)]
+    pub simulation: crate::virtual_sensor::SimulationConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -23,6 +25,7 @@ pub enum DeviceMode {
     Modbus,
     Esp32Serial,
     JsonBridge,
+    Simulation,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

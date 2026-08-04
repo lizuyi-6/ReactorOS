@@ -136,6 +136,8 @@ pub struct RuntimeState {
     #[serde(default, skip_serializing)]
     pub control_fault_generation: u64,
     pub device_status: Option<DeviceStatusSnapshot>,
+    #[serde(default)]
+    pub source_type: crate::virtual_sensor::SensorSourceType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,6 +195,7 @@ impl RuntimeState {
             control_loop_terminated: false,
             control_fault_generation: 0,
             device_status: None,
+            source_type: Default::default(),
         }
     }
 

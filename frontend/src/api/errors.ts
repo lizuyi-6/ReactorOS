@@ -1,3 +1,5 @@
+import { tr } from "../i18n";
+
 export interface ApiError {
   status: number;
   message: string;
@@ -14,6 +16,6 @@ export function toApiError(error: unknown): ApiError {
   return { status: 0, message: String(error) };
 }
 
-export function errorMessage(error: unknown, fallback = "请求失败"): string {
+export function errorMessage(error: unknown, fallback = tr("请求失败", "Request failed")): string {
   return toApiError(error).message || fallback;
 }

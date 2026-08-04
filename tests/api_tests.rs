@@ -613,6 +613,7 @@ async fn modbus_tcp_test_state() -> AppState {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     }
 }
 
@@ -637,6 +638,7 @@ async fn demo_context_seeds_ai_and_process_data_without_sensor_samples() {
             ai_memory,
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -695,6 +697,7 @@ async fn health_endpoint_works() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -748,6 +751,7 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -795,6 +799,7 @@ async fn live_endpoint_surfaces_unfinished_batch_recovery_alarm() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -844,6 +849,7 @@ async fn devices_status_marks_unfinished_batch_recovery_as_error() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -894,6 +900,7 @@ async fn live_endpoint_surfaces_missing_persisted_active_batch_recovery_alarm() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -941,6 +948,7 @@ async fn live_endpoint_marks_unproven_downstream_status_as_alarm_in_strict_mode(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -995,6 +1003,7 @@ async fn live_endpoint_marks_downstream_command_fault_as_unhealthy_device_status
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1048,6 +1057,7 @@ async fn live_endpoint_supports_lightweight_limits_for_low_power_clients() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1087,6 +1097,7 @@ async fn live_endpoint_returns_service_unavailable_until_pipeline_has_sample() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1196,6 +1207,7 @@ async fn live_endpoint_returns_service_unavailable_when_current_device_read_has_
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1255,6 +1267,7 @@ async fn devices_status_counts_online_json_bridge_even_when_sample_is_incomplete
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1311,6 +1324,7 @@ async fn devices_status_does_not_report_online_when_required_device_status_is_mi
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1365,6 +1379,7 @@ async fn devices_status_marks_downstream_command_fault_unhealthy() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1409,6 +1424,7 @@ async fn device_capabilities_endpoint_lists_components_and_blocks_unknown_compon
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1488,6 +1504,7 @@ async fn device_status_groups_sensors_and_controllable_components_by_device() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1539,6 +1556,7 @@ async fn unknown_api_routes_return_json_error_code() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1576,6 +1594,7 @@ async fn v1_pipeline_sample_endpoint_is_the_external_data_source() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1704,6 +1723,7 @@ async fn v1_pipeline_sample_rejects_physically_invalid_values_fail_closed() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1802,6 +1822,7 @@ async fn v1_pipeline_sample_rejects_malformed_payloads_fail_closed() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -1901,6 +1922,7 @@ async fn v1_reactor_routes_reject_unknown_device_id_without_mutating_runtime() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2060,6 +2082,7 @@ async fn v1_pipeline_sample_requires_engineering_ingest_permission() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2142,6 +2165,7 @@ async fn v1_pipeline_sample_does_not_become_field_proof_when_persistence_fails()
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2206,6 +2230,7 @@ async fn malformed_pipeline_sample_returns_json_error_code() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2274,6 +2299,7 @@ async fn test_pipeline_sample_endpoint_is_not_available_without_test_flag() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2319,6 +2345,7 @@ async fn test_pipeline_sample_endpoint_wraps_the_v1_pipeline_for_e2e() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2395,6 +2422,7 @@ async fn test_reset_endpoint_requires_explicit_local_confirmation() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2444,6 +2472,7 @@ async fn test_reset_endpoint_refuses_unsafe_runtime_states() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2522,6 +2551,7 @@ async fn test_reset_endpoint_refuses_unfinished_db_batch_when_runtime_is_idle() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2592,6 +2622,7 @@ async fn pipeline_high_sensor_alarm_disables_auto_control_and_audits() {
             }),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2669,6 +2700,7 @@ async fn pipeline_warning_sensor_alarm_does_not_disable_auto_control() {
             }),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2729,6 +2761,7 @@ async fn recovered_pipeline_sample_clears_old_sensor_error_before_alarm_evaluati
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2814,6 +2847,7 @@ async fn live_endpoint_rejects_stale_pipeline_samples() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2907,6 +2941,7 @@ async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
             ai_memory,
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2948,6 +2983,7 @@ async fn latest_recommendation_waits_for_real_product_results() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -2988,6 +3024,7 @@ async fn latest_recommendation_get_is_read_only_when_cache_is_empty() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3041,6 +3078,7 @@ async fn recommendation_generation_rejects_unfinished_batch_recovery_state_but_g
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3115,6 +3153,7 @@ async fn cached_local_recommendation_is_marked_stale_when_stepfun_is_configured(
             ai_memory: memory(),
             ai_provider,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3163,6 +3202,7 @@ async fn ai_experiment_plan_drafts_safety_gated_sop_without_control_write() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3251,6 +3291,7 @@ async fn operator_target_update_is_audited_after_safety_validation() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3324,6 +3365,7 @@ async fn operator_target_update_rejects_out_of_range_values_without_clamping() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3384,6 +3426,7 @@ async fn operator_target_update_rejects_explicit_null_shake_speed_instead_of_inh
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3443,6 +3486,7 @@ async fn operator_target_update_rejects_invalid_existing_runtime_targets_without
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3500,6 +3544,7 @@ async fn operator_target_update_rejects_forbidden_temperature_stirrer_zone() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3560,6 +3605,7 @@ async fn batch_start_rejects_invalid_targets_before_creating_batch_or_writing_de
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3753,6 +3799,7 @@ async fn batch_start_rejects_requests_without_explicit_targets_before_runtime_ch
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3819,6 +3866,7 @@ async fn target_update_requires_downstream_status_when_configured() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3874,6 +3922,7 @@ async fn target_update_failure_forces_auto_disabled_before_returning_error() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3926,6 +3975,7 @@ async fn v1_control_failure_forces_auto_disabled_before_returning_error() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -3978,6 +4028,7 @@ async fn target_updates_fail_closed_when_field_state_is_not_proven_safe() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
     let app = router(app_state.clone(), PathBuf::from("static"));
 
@@ -4104,6 +4155,7 @@ async fn target_intent_updates_do_not_commit_runtime_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4242,6 +4294,7 @@ async fn v1_process_rejects_phase_duration_that_would_have_been_clamped() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4304,6 +4357,7 @@ async fn v1_process_rejects_unknown_phase_instead_of_ignoring_it() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4382,6 +4436,7 @@ async fn v1_process_rejects_wrong_typed_phase_params_instead_of_defaulting() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4460,6 +4515,7 @@ async fn v1_process_rejects_phases_without_recognized_control_params() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4535,6 +4591,7 @@ async fn target_intent_updates_recheck_interlocks_after_audit_before_runtime_com
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4612,6 +4669,7 @@ async fn target_intent_update_rejects_stale_runtime_targets_after_audit_before_c
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4670,6 +4728,7 @@ async fn component_control_fails_closed_but_still_allows_stop_actions() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4781,6 +4840,7 @@ async fn component_control_blocks_dangerous_actions_during_unfinished_batch_reco
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4860,6 +4920,7 @@ async fn component_control_rejects_invalid_action_values_before_device_write() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -4944,6 +5005,7 @@ async fn component_control_rejects_null_reason_for_risk_increasing_actions_only(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5043,6 +5105,7 @@ async fn unhealthy_device_status_blocks_new_targets_but_not_stop_actions() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5114,6 +5177,7 @@ async fn component_write_failure_latches_control_fault() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5168,6 +5232,7 @@ async fn component_control_audit_failure_latches_fault_without_committing_runtim
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5240,6 +5305,7 @@ async fn component_control_rechecks_interlocks_after_audit_before_runtime_commit
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5326,6 +5392,7 @@ async fn component_control_rejects_stale_runtime_targets_after_audit_before_comm
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5396,6 +5463,7 @@ async fn process_start_fails_closed_when_control_fault_is_uncleared() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5450,6 +5518,7 @@ async fn control_fault_reset_refuses_to_clear_a_terminated_control_loop_supervis
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5511,6 +5580,7 @@ async fn control_fault_requires_explicit_reset_and_keeps_auto_disabled() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5614,6 +5684,7 @@ async fn pipeline_sample_forces_auto_disabled_when_control_fault_is_latched() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5676,6 +5747,7 @@ async fn control_fault_reset_does_not_clear_fault_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5728,6 +5800,7 @@ async fn control_fault_reset_rejects_unclosed_active_batch_tail() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5830,6 +5903,7 @@ async fn control_fault_reset_rechecks_fault_identity_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5892,6 +5966,7 @@ async fn control_fault_reset_rechecks_fault_generation_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -5954,6 +6029,7 @@ async fn control_fault_reset_rejects_uncleared_downstream_command_failure() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6008,6 +6084,7 @@ async fn control_fault_reset_rejects_unfinished_db_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6062,6 +6139,7 @@ async fn emergency_reset_requires_fresh_sample_and_does_not_clear_control_fault(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6129,6 +6207,7 @@ async fn emergency_reset_does_not_clear_emergency_stop_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6189,6 +6268,7 @@ async fn emergency_reset_rechecks_field_state_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6249,6 +6329,7 @@ async fn emergency_reset_rejects_stop_generation_change_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6309,6 +6390,7 @@ async fn emergency_reset_rejects_unhealthy_downstream_status_and_command_faults(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6396,6 +6478,7 @@ async fn emergency_reset_rejects_open_active_batch_until_stop_or_finish_closes_i
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6454,6 +6537,7 @@ async fn emergency_reset_rejects_unfinished_db_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6504,6 +6588,7 @@ async fn manual_lock_disables_auto_and_unlock_does_not_resume_it() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6573,6 +6658,7 @@ async fn manual_lock_unlock_rejects_unfinished_db_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6624,6 +6710,7 @@ async fn manual_lock_unlock_requires_proven_safe_field_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6810,6 +6897,7 @@ async fn manual_lock_unlock_rejects_lock_generation_change_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6888,6 +6976,7 @@ async fn risk_increasing_switches_do_not_commit_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -6956,6 +7045,7 @@ async fn risk_reducing_switches_keep_conservative_state_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7068,6 +7158,7 @@ async fn new_production_rejects_unfinished_db_batch_even_when_runtime_is_idle() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7175,6 +7266,7 @@ async fn new_production_rejects_missing_persisted_active_batch_before_creating_b
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7283,6 +7375,7 @@ async fn new_production_rejects_older_unfinished_batch_after_latest_is_closed() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7344,6 +7437,7 @@ async fn finish_batch_disables_auto_control() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7427,6 +7521,7 @@ async fn finish_batch_rejects_active_batch_change_after_stop_before_finish() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7502,6 +7597,7 @@ async fn finish_batch_keeps_runtime_stopped_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7598,6 +7694,7 @@ async fn finish_active_batch_does_not_mark_finished_when_device_stop_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7653,6 +7750,7 @@ async fn finish_batch_rejects_non_active_batch_while_another_batch_is_running() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7704,6 +7802,7 @@ async fn finish_batch_rejects_missing_or_already_finished_batch_without_audit() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7768,6 +7867,7 @@ async fn finish_active_batch_writes_stop_when_batch_record_is_missing() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7848,6 +7948,7 @@ async fn finish_active_missing_batch_keeps_retry_state_when_recovery_audit_fails
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -7933,6 +8034,7 @@ async fn deferred_auto_paths_fail_closed_without_proven_safe_field_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8096,6 +8198,7 @@ async fn auto_enable_failure_forces_auto_disabled_before_returning_error() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8140,6 +8243,7 @@ async fn auto_enable_rejects_missing_persisted_active_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8197,6 +8301,7 @@ async fn auto_enable_rechecks_batch_recovery_state_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8255,6 +8360,7 @@ async fn auto_enable_rejects_safety_generation_change_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8321,6 +8427,7 @@ async fn set_targets_rejects_safety_generation_change_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8396,6 +8503,7 @@ async fn batch_start_rejects_safety_generation_change_after_audit() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8486,6 +8594,7 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8878,6 +8987,7 @@ async fn modbus_status_map_does_not_mark_device_connected_without_required_devic
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8930,6 +9040,7 @@ async fn modbus_status_map_does_not_mark_device_connected_from_stale_lab_sample(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -8984,6 +9095,7 @@ async fn modbus_status_map_does_not_mark_device_connected_from_future_lab_sample
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9045,6 +9157,7 @@ async fn modbus_status_map_does_not_mark_device_connected_with_downstream_comman
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9103,6 +9216,7 @@ async fn modbus_status_map_surfaces_unfinished_db_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9179,6 +9293,7 @@ async fn modbus_register_write_rejects_unfinished_db_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9240,6 +9355,7 @@ async fn modbus_register_write_failure_forces_auto_disabled_before_returning_err
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9304,6 +9420,7 @@ async fn modbus_register_write_rejects_invalid_existing_runtime_targets_without_
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9364,6 +9481,7 @@ async fn rbac_login_and_role_permissions_gate_sensitive_upper_computer_actions()
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -9671,6 +9789,7 @@ async fn mqtt_alert_snapshot_reports_runtime_alarm_state() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let snapshot = mqtt_alert_snapshot(&app_state).await.unwrap();
@@ -9706,6 +9825,7 @@ async fn mqtt_alert_snapshot_marks_missing_or_stale_sensor_data_as_high_alarm() 
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let missing = mqtt_alert_snapshot(&app_state).await.unwrap();
@@ -9774,6 +9894,7 @@ async fn mqtt_alert_snapshot_surfaces_unfinished_batch_recovery_alarm() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let snapshot = mqtt_alert_snapshot(&app_state).await.unwrap();
@@ -9804,6 +9925,7 @@ async fn mqtt_task_payload_executes_targets_and_persists_receipt() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     for payload in [
@@ -9916,6 +10038,7 @@ async fn integration_set_targets_rejects_out_of_range_remote_values_without_side
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     for (payload, expected_message) in [
@@ -10005,6 +10128,7 @@ async fn integration_set_targets_rejects_invalid_existing_runtime_targets_withou
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let receipt = execute_mqtt_task_payload(
@@ -10063,6 +10187,7 @@ async fn integration_set_targets_failure_forces_auto_disabled_before_returning_e
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let receipt = execute_mqtt_task_payload(
@@ -10113,6 +10238,7 @@ async fn integration_tasks_are_idempotent_by_external_task_id() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let payload = json!({
@@ -10226,6 +10352,7 @@ async fn integration_task_replay_while_executing_does_not_execute_again() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let receipt = execute_mqtt_task_payload(&app_state, payload.to_string().as_bytes()).await;
@@ -10257,6 +10384,7 @@ async fn integration_task_replay_with_legacy_invalid_task_fails_closed_without_d
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
     let now = Utc::now().to_rfc3339();
     let invalid_task_id = {
@@ -10320,6 +10448,7 @@ async fn integration_set_targets_does_not_commit_runtime_when_audit_fails() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
     let app = router(app_state.clone(), PathBuf::from("static"));
     db.break_control_events_for_tests().unwrap();
@@ -10400,6 +10529,7 @@ async fn integration_set_targets_rechecks_interlocks_after_audit_before_runtime_
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let mqtt_receipt = execute_mqtt_task_payload(
@@ -10466,6 +10596,7 @@ async fn modbus_tcp_pdu_reads_and_writes_safety_gated_map() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let holding = handle_modbus_tcp_pdu(&app_state, &[0x03, 0x00, 0x00, 0x00, 0x03]).await;
@@ -10518,6 +10649,7 @@ async fn modbus_tcp_write_rejects_out_of_range_value_without_runtime_or_audit_si
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let write_pressure = handle_modbus_tcp_pdu(&app_state, &[0x06, 0x00, 0x0D, 0x04, 0x4C]).await;
@@ -10558,6 +10690,7 @@ async fn modbus_tcp_write_rejects_invalid_existing_runtime_targets_without_clamp
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let write_temperature =
@@ -10595,6 +10728,7 @@ async fn modbus_tcp_discrete_inputs_do_not_mark_device_connected_without_require
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0x00, 0x00, 0x00, 0x02]).await;
@@ -10622,6 +10756,7 @@ async fn modbus_tcp_discrete_inputs_do_not_mark_device_connected_from_stale_lab_
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0x00, 0x00, 0x00, 0x03]).await;
@@ -10646,6 +10781,7 @@ async fn modbus_tcp_discrete_inputs_do_not_mark_device_connected_from_future_lab
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0x00, 0x00, 0x00, 0x03]).await;
@@ -10677,6 +10813,7 @@ async fn modbus_tcp_discrete_inputs_do_not_mark_device_connected_with_command_fa
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0x00, 0x00, 0x00, 0x03]).await;
@@ -10706,6 +10843,7 @@ async fn modbus_tcp_bits_surface_unfinished_db_batch_recovery_state() {
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
 
     let coils = handle_modbus_tcp_pdu(&app_state, &[0x01, 0x00, 0x03, 0x00, 0x01]).await;
@@ -10862,6 +11000,7 @@ async fn ainas_task_api_requires_auth_executes_targets_and_persists_task() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11022,6 +11161,7 @@ async fn ainas_task_api_replays_existing_external_task_without_reexecution() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11169,6 +11309,7 @@ async fn ainas_task_api_replay_while_executing_does_not_execute_again() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11213,6 +11354,7 @@ async fn ainas_task_api_can_start_and_stop_process_through_safety_lifecycle() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11329,6 +11471,7 @@ async fn integration_process_actions_reject_null_process_id_without_starting_dev
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
     let app = router(app_state.clone(), PathBuf::from("static"));
 
@@ -11454,6 +11597,7 @@ async fn ainas_process_action_latches_fault_when_receipt_update_fails_after_devi
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11506,6 +11650,7 @@ async fn integration_set_targets_latches_fault_when_receipt_update_fails_after_r
         ai_memory: memory(),
         ai_provider: None,
         test_reset_enabled: false,
+        simulation_session: None,
     };
     db.after_control_event_success_for_tests(Arc::new({
         let db = db.clone();
@@ -11580,6 +11725,7 @@ async fn v1_control_realtime_and_history_match_interface_document_shape() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11711,6 +11857,7 @@ async fn v1_realtime_marks_unproven_downstream_status_offline_in_strict_mode() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11766,6 +11913,7 @@ async fn v1_realtime_surfaces_unfinished_batch_recovery_offline_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11818,6 +11966,7 @@ async fn v1_realtime_rejects_stale_sample_instead_of_fabricating_timestamp() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11861,6 +12010,7 @@ async fn v1_realtime_rejects_future_timestamp_sample() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11900,6 +12050,7 @@ async fn v1_control_rejects_values_outside_interface_document_ranges() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -11959,6 +12110,7 @@ async fn v1_control_rejects_explicit_null_params_instead_of_defaulting() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12106,6 +12258,7 @@ async fn v1_control_rejects_params_without_recognized_control_fields() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12171,6 +12324,7 @@ async fn v1_control_accepts_optimizer_duration_bounds_used_by_ai_recommendations
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12225,6 +12379,7 @@ async fn v1_control_auto_start_rolls_back_runtime_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12316,6 +12471,7 @@ async fn v1_control_auto_start_rejects_active_batch_before_runtime_changes() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12384,6 +12540,7 @@ async fn process_start_rechecks_interlocks_after_device_write_before_committing_
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12462,6 +12619,7 @@ async fn batch_start_keeps_runtime_inactive_until_audit_then_final_interlock() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12526,6 +12684,7 @@ async fn batch_start_rechecks_unfinished_db_state_after_device_write_before_acti
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12599,6 +12758,7 @@ async fn v1_auto_start_rechecks_interlocks_after_device_write_before_committing_
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12669,6 +12829,7 @@ async fn batch_start_rolls_back_device_and_runtime_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12734,6 +12895,7 @@ async fn start_failures_before_activation_are_audited_without_arming_runtime() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12848,6 +13010,7 @@ async fn v1_auto_start_does_not_send_stop_write_when_device_start_write_fails() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -12943,6 +13106,7 @@ async fn non_ai_api_complex_normal_and_error_chain_is_audited() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13116,6 +13280,7 @@ async fn product_result_requires_finished_non_active_batch() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13192,6 +13357,7 @@ async fn product_result_rejects_explicit_null_notes_without_persisting_or_recomm
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13259,6 +13425,7 @@ async fn product_result_rejects_while_any_batch_is_active() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13321,6 +13488,7 @@ async fn product_result_rejects_unfinished_batch_recovery_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13385,6 +13553,7 @@ async fn product_result_does_not_commit_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13447,6 +13616,7 @@ async fn product_result_does_not_commit_recommendation_when_recommendation_audit
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13504,6 +13674,7 @@ async fn batch_export_and_report_are_generated_from_backend_data() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: true,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13729,6 +13900,7 @@ async fn process_definition_create_rejects_explicit_null_name_without_persisting
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -13799,6 +13971,7 @@ async fn process_configuration_persists_steps_and_applies_to_batch_history() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14046,6 +14219,7 @@ async fn process_definition_writes_reject_active_or_unfinished_batch_state() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14188,6 +14362,7 @@ async fn process_start_and_stop_manage_active_batch_and_auto_control() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14363,6 +14538,7 @@ async fn process_start_revalidates_persisted_steps_before_creating_batch_or_writ
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14440,6 +14616,7 @@ async fn process_start_rejects_role_duration_that_would_have_been_clamped() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14501,6 +14678,7 @@ async fn process_start_rejects_missing_or_empty_process_before_runtime_changes()
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14564,6 +14742,7 @@ async fn process_start_rolls_back_runtime_when_audit_fails_after_activation() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14624,6 +14803,7 @@ async fn process_start_preserves_active_recovery_state_when_rollback_stop_fails(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14713,6 +14893,7 @@ async fn process_start_keeps_runtime_inactive_until_audit_and_process_state_comm
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14766,6 +14947,7 @@ async fn process_stop_keeps_runtime_stopped_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14875,6 +15057,7 @@ async fn process_stop_retries_stop_write_when_finished_batch_is_still_runtime_ac
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -14952,6 +15135,7 @@ async fn process_stop_rejects_active_batch_change_after_stop_before_finish() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15024,6 +15208,7 @@ async fn current_process_stop_writes_stop_when_runtime_active_batch_record_is_mi
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15095,6 +15280,7 @@ async fn process_stop_by_id_still_rejects_when_active_batch_record_is_missing() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15153,6 +15339,7 @@ async fn process_stop_without_active_batch_returns_json_error_code() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15191,6 +15378,7 @@ async fn ai_master_control_rejects_missing_sensor_sample_with_json_error_code() 
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15240,6 +15428,7 @@ async fn ai_control_execute_failure_forces_auto_disabled_before_returning_error(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15307,6 +15496,7 @@ async fn ai_control_rejects_explicit_null_control_flags_before_side_effects() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15397,6 +15587,7 @@ async fn ai_target_adjustment_does_not_commit_runtime_when_audit_fails() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15485,6 +15676,7 @@ async fn ai_target_adjustment_rejects_invalid_existing_runtime_targets_without_c
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15546,6 +15738,7 @@ async fn ai_master_control_dry_run_does_not_persist_generated_recommendation() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15606,6 +15799,7 @@ async fn ai_master_control_latches_fault_when_final_audit_fails_after_target_wri
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15683,6 +15877,7 @@ async fn ai_master_control_dry_run_plans_process_and_shake_without_side_effects(
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15753,6 +15948,7 @@ async fn ai_master_control_dry_run_blocks_process_start_when_db_has_unfinished_b
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15840,6 +16036,7 @@ async fn ai_master_control_execute_starts_process_and_audits_decision() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -15942,6 +16139,7 @@ async fn ai_master_control_latches_fault_when_final_audit_fails_after_action() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -16020,6 +16218,7 @@ async fn ai_master_control_stops_active_process_when_product_concentration_is_hi
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -16120,6 +16319,7 @@ async fn ai_master_control_respects_configured_product_stop_threshold() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -16184,6 +16384,7 @@ async fn persisted_process_and_batch_lists_do_not_require_live_sample() {
             ai_memory: memory(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );
@@ -16329,6 +16530,7 @@ async fn ai_api_decision_and_execution_respect_memory_constraints_under_complex_
             ai_memory: ai_memory.clone(),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         },
         PathBuf::from("static"),
     );

@@ -64,6 +64,11 @@ config/reactor-edge.env
 # Output-root screenshots; subdirs like /output/playwright/ already ignored above
 /output/*.png
 
+# Ad-hoc dev scripts that landed in output/ (simulate-inject + screenshot helpers);
+# reusable team scripts live in scripts/ instead
+/output/inject_samples.py
+/output/screenshot_pages.mjs
+
 # Claude Code local provenance hook (depends on machine-local
 # .claude/settings.local.json + IDEA built-in server on 63342;
 # not a shared project asset — script is reusable if team adopts it)

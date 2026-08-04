@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
 import PageHeader from "../components/PageHeader.vue";
 import EmptyState from "../components/EmptyState.vue";
 import HmiButton from "../components/HmiButton.vue";
@@ -358,9 +357,9 @@ onMounted(async () => {
       <div class="hmi-panel-body">
         <dl class="kv-list">
           <dt>{{ tr("温度范围", "Temperature") }}</dt>
-          <dd>{{ text(safety?.temperature?.min) }} – {{ text(safety?.temperature?.max) }} °C（step {{ text(safety?.temperature?.max_step) }}）</dd>
+          <dd>{{ text(safety?.temperature?.min_c) }} – {{ text(safety?.temperature?.max_c) }} °C（step {{ text(safety?.temperature?.max_step_c) }}）</dd>
           <dt>{{ tr("搅拌范围", "Stirrer") }}</dt>
-          <dd>{{ text(safety?.stirrer?.min) }} – {{ text(safety?.stirrer?.max) }} rpm（step {{ text(safety?.stirrer?.max_step) }}）</dd>
+          <dd>{{ text(safety?.stirrer?.min_rpm) }} – {{ text(safety?.stirrer?.max_rpm) }} rpm（step {{ text(safety?.stirrer?.max_step_rpm) }}）</dd>
           <dt>{{ tr("控制间隔", "Control interval") }}</dt>
           <dd>{{ text((safety?.control as Record<string, unknown> | undefined)?.control_interval_ms) }} ms</dd>
           <dt>{{ tr("传感器超时", "Sensor timeout") }}</dt>

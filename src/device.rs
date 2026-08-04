@@ -168,6 +168,9 @@ pub fn build_device(config: &DeviceConfig) -> Result<SharedDevice> {
         DeviceMode::Modbus => Ok(Arc::new(ModbusRtuDevice::new(config.clone())?)),
         DeviceMode::Esp32Serial => Ok(Arc::new(Esp32SerialDevice::new(config.clone())?)),
         DeviceMode::JsonBridge => Ok(Arc::new(JsonBridgeDevice::new(config.json_bridge.clone()))),
+        DeviceMode::Simulation => Ok(Arc::new(crate::virtual_sensor::VirtualSensorDevice::new(
+            config.simulation.clone(),
+        ))),
     }
 }
 

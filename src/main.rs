@@ -19,7 +19,7 @@ use reactor_edge_daemon::{
     safety_guard::evaluate_with_process,
     state::{
         device_status_field_fault_reason, downstream_command_fault_reason, timestamp_age_ms,
-        validate_sensor_snapshot, RuntimeState, SharedState,
+        validate_sensor_snapshot, DeviceStatusSnapshot, RuntimeState, SensorSnapshot, SharedState,
     },
 };
 use tokio::{sync::RwLock, time::sleep};
@@ -126,8 +126,23 @@ async fn main() -> Result<()> {
             return Err(err);
         }
     }
-    let device = build_device(&device_config)?;
-    let recovered_runtime = recover_runtime_from_db(&db, &safety).await?;
+    let (device, simulation_session) = match &device_mode {
+        DeviceMode::Simulation => {
+            tracing::info!(
+                "starting in SIMULATION mode — virtual sensor data will flow through the normal pipeline; \
+                 persist_data={}",
+                device_config.simulation.persist_data
+            );
+            let sim = reactor_edge_daemon::virtual_sensor::VirtualSensorDevice::new(
+                device_config.simulation.clone(),
+            );
+            let session = sim.shared_session();
+            let shared: reactor_edge_daemon::device::SharedDevice = Arc::new(sim);
+            (shared, Some(session))
+        }
+        _ => (build_device(&device_config)?, None),
+    };
+    let mut recovered_runtime = recover_runtime_from_db(&db, &safety).await?;
     if let Some(batch_id) = recovered_runtime.active_batch_id {
         tracing::warn!(
             "recovered unfinished batch {batch_id} at daemon startup; automatic control remains disabled until operator closes the batch"
@@ -147,6 +162,10 @@ async fn main() -> Result<()> {
             );
         }
     }
+    if matches!(device_mode, DeviceMode::Simulation) {
+        recovered_runtime.source_type =
+            reactor_edge_daemon::virtual_sensor::SensorSourceType::Simulation;
+    }
     let runtime: SharedState = Arc::new(RwLock::new(recovered_runtime));
 
     let loop_state = Arc::clone(&runtime);
@@ -155,6 +174,8 @@ async fn main() -> Result<()> {
     let loop_device = Arc::clone(&device);
     let loop_device_mode = device_mode.clone();
     let loop_safety_guard = args.safety_guard.clone();
+    let loop_persist =
+        !matches!(device_mode, DeviceMode::Simulation) || device_config.simulation.persist_data;
     let control_task = tokio::spawn(async move {
         control_loop(
             loop_device,
@@ -163,6 +184,7 @@ async fn main() -> Result<()> {
             loop_safety,
             loop_device_mode,
             loop_safety_guard,
+            loop_persist,
         )
         .await;
     });
@@ -224,11 +246,56 @@ async fn main() -> Result<()> {
         ai_memory,
         ai_provider,
         test_reset_enabled: args.enable_test_reset,
+        simulation_session,
     };
     start_mqtt_bridge(integration.mqtt, app_state.clone());
     start_modbus_tcp_server(integration.modbus_tcp, app_state.clone());
 
     serve(app_state, args.assets, args.bind, tls).await
+}
+
+/// Accept a valid sensor sample into runtime state and audit any device-status
+/// faults (field fault disables auto; downstream command fault latches a
+/// control fault). Shared by the `!persist_samples` path (simulation mode
+/// without persistence) and the DB-insert success path, so the two cannot
+/// drift apart.
+async fn accept_sample_and_audit_faults(
+    db: &Db,
+    runtime: &SharedState,
+    sample: &SensorSnapshot,
+    status: &Option<DeviceStatusSnapshot>,
+    safety: &reactor_edge_daemon::config::SafetyConfig,
+) {
+    let fault = {
+        let mut state = runtime.write().await;
+        state.latest_sample = Some(sample.clone());
+        state.last_sensor_error = None;
+        state.device_status = status.clone();
+        let active_batch_id = state.active_batch_id;
+        match status.as_ref() {
+            Some(status) => {
+                if let Some(reason) =
+                    device_status_field_fault_reason(status, safety.control.sensor_timeout_ms)
+                {
+                    let auto_was_disabled = state.disable_auto_for_field_fault(reason.clone());
+                    Some((active_batch_id, auto_was_disabled, reason, false))
+                } else if let Some(reason) = downstream_command_fault_reason(status) {
+                    let should_audit = state.latch_control_fault(reason.clone());
+                    Some((active_batch_id, should_audit, reason, true))
+                } else {
+                    None
+                }
+            }
+            None => None,
+        }
+    };
+    if let Some((active_batch_id, should_audit, reason, control_fault)) = fault {
+        if control_fault {
+            audit_downstream_control_fault(db, active_batch_id, should_audit, &reason).await;
+        } else {
+            audit_field_input_auto_disable(db, active_batch_id, should_audit, &reason).await;
+        }
+    }
 }
 
 async fn control_loop(
@@ -238,6 +305,7 @@ async fn control_loop(
     safety: Arc<reactor_edge_daemon::config::SafetyConfig>,
     device_mode: DeviceMode,
     safety_guard: Option<PathBuf>,
+    persist_samples: bool,
 ) {
     let interval = Duration::from_millis(safety.control.control_interval_ms);
     let mut last_written_command: Option<LastWrittenCommand> = None;
@@ -319,6 +387,15 @@ async fn control_loop(
                             )
                             .await;
                         }
+                    } else if !persist_samples {
+                        accept_sample_and_audit_faults(
+                            &db,
+                            &runtime,
+                            &sample,
+                            &status,
+                            safety.as_ref(),
+                        )
+                        .await;
                     } else if let Err(err) = db.insert_sample_sqlx(active_batch_id, &sample).await {
                         tracing::warn!("failed to persist sensor sample: {err}");
                         let reason = format!("sensor sample persistence failed: {err:#}");
@@ -355,55 +432,14 @@ async fn control_loop(
                             .await;
                         }
                     } else {
-                        let fault = {
-                            let mut state = runtime.write().await;
-                            state.latest_sample = Some(sample.clone());
-                            state.last_sensor_error = None;
-                            state.device_status = status.clone();
-                            let active_batch_id = state.active_batch_id;
-                            let fault = match status.as_ref() {
-                                Some(status) => {
-                                    if let Some(reason) = device_status_field_fault_reason(
-                                        status,
-                                        safety.control.sensor_timeout_ms,
-                                    ) {
-                                        let auto_was_disabled =
-                                            state.disable_auto_for_field_fault(reason.clone());
-                                        Some((active_batch_id, auto_was_disabled, reason, false))
-                                    } else if let Some(reason) =
-                                        downstream_command_fault_reason(status)
-                                    {
-                                        let should_audit =
-                                            state.latch_control_fault(reason.clone());
-                                        Some((active_batch_id, should_audit, reason, true))
-                                    } else {
-                                        None
-                                    }
-                                }
-                                None => None,
-                            };
-                            fault
-                        };
-                        if let Some((active_batch_id, should_audit, reason, control_fault)) = fault
-                        {
-                            if control_fault {
-                                audit_downstream_control_fault(
-                                    &db,
-                                    active_batch_id,
-                                    should_audit,
-                                    &reason,
-                                )
-                                .await;
-                            } else {
-                                audit_field_input_auto_disable(
-                                    &db,
-                                    active_batch_id,
-                                    should_audit,
-                                    &reason,
-                                )
-                                .await;
-                            }
-                        }
+                        accept_sample_and_audit_faults(
+                            &db,
+                            &runtime,
+                            &sample,
+                            &status,
+                            safety.as_ref(),
+                        )
+                        .await;
                     }
                 }
                 Err(err) => {
@@ -1305,9 +1341,7 @@ mod tests {
         emergency.emergency_stop = true;
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &emergency, None, &command),
-            Err(ControlDecision::Blocked(
-                ControlBlockReason::EmergencyStop
-            ))
+            Err(ControlDecision::Blocked(ControlBlockReason::EmergencyStop))
         );
 
         let mut stale_sample = runtime.clone();
@@ -1315,9 +1349,7 @@ mod tests {
             Utc::now() - chrono::Duration::seconds(30);
         assert_eq!(
             ensure_automatic_control_write_still_current(&safety, &stale_sample, None, &command),
-            Err(ControlDecision::Blocked(
-                ControlBlockReason::SensorStale
-            ))
+            Err(ControlDecision::Blocked(ControlBlockReason::SensorStale))
         );
 
         let mut changed_targets = runtime.clone();
