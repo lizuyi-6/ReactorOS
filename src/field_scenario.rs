@@ -564,6 +564,7 @@ fn device_mode_label(mode: &DeviceMode) -> &'static str {
         DeviceMode::Modbus => "modbus",
         DeviceMode::Esp32Serial => "esp32_serial",
         DeviceMode::JsonBridge => "json_bridge",
+        DeviceMode::Simulation => "simulation",
     }
 }
 

@@ -630,6 +630,7 @@ mod tests {
             ai_memory: Arc::new(AiMemory::default()),
             ai_provider: None,
             test_reset_enabled: false,
+            simulation_session: None,
         }
     }
 

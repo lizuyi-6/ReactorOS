@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
 import PageHeader from "../components/PageHeader.vue";
 import EmptyState from "../components/EmptyState.vue";
 import HmiButton from "../components/HmiButton.vue";
@@ -21,7 +20,10 @@ const submitting = ref(false);
 const selectedBatch = ref<BatchItem | null>(null);
 const samples = ref<BatchSampleItem[]>([]);
 
-const batches = computed(() => plant.batches);
+// plant.batches is BatchListResponse | null; the template needs the inner
+// Batch[] array (for el-table :data and .length). Return [] before the first
+// fetch resolves so `batches.length` never dereferences null.
+const batches = computed(() => plant.batches?.batches ?? []);
 
 const productForm = reactive({
   product_mass_g: 0,

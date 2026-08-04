@@ -8,6 +8,10 @@ const LANGUAGE_KEY = "reactoros.vue.language";
 
 const language = ref<UiLanguage>(localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "zh");
 
+export function tr(zh: string, en: string): string {
+  return language.value === "zh" ? zh : en;
+}
+
 export function useLanguage() {
   function setLanguage(next: UiLanguage): void {
     language.value = next;
@@ -16,10 +20,6 @@ export function useLanguage() {
 
   function toggleLanguage(): void {
     setLanguage(language.value === "zh" ? "en" : "zh");
-  }
-
-  function tr(zh: string, en: string): string {
-    return language.value === "zh" ? zh : en;
   }
 
   return {
