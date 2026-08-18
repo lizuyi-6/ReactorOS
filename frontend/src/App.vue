@@ -7,6 +7,7 @@ import { useLiveStore, HMI_REFRESH_INTERVAL_MS } from "./stores/live";
 import { useLanguage } from "./i18n";
 import { boolText } from "./utils/format";
 import { DEVICE_ID } from "./api";
+import AppIcon from "./components/AppIcon.vue";
 
 const auth = useAuthStore();
 const live = useLiveStore();
@@ -22,14 +23,30 @@ const navItems = computed(() => routes.filter((item) => item.path !== "/" && ite
 const activePath = computed(() => route.path);
 const isLoginPage = computed(() => activePath.value === "/login");
 
-const clockText = computed(() =>
-  now.value.toLocaleTimeString(language.value === "zh" ? "zh-CN" : "en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+const clockTime = computed(() =>
+  now.value.toLocaleTimeString(language.value === "zh" ? "zh-CN" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  })
 );
+const clockDate = computed(() => {
+  const locale = language.value === "zh" ? "zh-CN" : "en-US";
+  const date = now.value.toLocaleDateString(locale, { year: "numeric", month: "2-digit", day: "2-digit" });
+  const weekday = now.value.toLocaleDateString(locale, { weekday: "short" });
+  return date + " " + weekday;
+});
 
 const runtime = computed(() => live.runtime);
 const activeBatchId = computed(() => {
   const id = runtime.value?.active_batch_id;
   return id === null || id === undefined ? null : Number(id);
+});
+const activeBatchName = computed(() => {
+  const batches = live.live?.recent_batches;
+  const hit = Array.isArray(batches) ? batches.find((b) => b.id === activeBatchId.value) : null;
+  return hit?.name ?? (activeBatchId.value !== null ? "#" + activeBatchId.value : "—");
 });
 
 const alarmCounts = computed(() => {
@@ -42,7 +59,7 @@ const alarmCounts = computed(() => {
   }
   return counts;
 });
-
+const alarmTotal = computed(() => alarmCounts.value.high + alarmCounts.value.warning + alarmCounts.value.info);
 const alarmTone = computed<"ok" | "warn" | "bad">(() => {
   if (alarmCounts.value.high > 0) return "bad";
   if (alarmCounts.value.warning > 0) return "warn";
@@ -51,25 +68,15 @@ const alarmTone = computed<"ok" | "warn" | "bad">(() => {
 
 const safetyState = computed<{ tone: "ok" | "warn" | "bad"; label: string }>(() => {
   const rt = runtime.value;
-  if (boolText(rt?.control_loop_terminated)) return { tone: "bad", label: tr("控制环终止", "LOOP STOP") };
-  if (boolText(rt?.emergency_stop)) return { tone: "bad", label: tr("急停中", "E-STOP") };
+  if (boolText(rt?.control_loop_terminated)) return { tone: "bad", label: tr("环终止", "LOOP STOP") };
+  if (boolText(rt?.emergency_stop)) return { tone: "bad", label: tr("急停", "E-STOP") };
   if (rt?.last_sensor_error) return { tone: "bad", label: tr("传感器故障", "SENSOR") };
   if (rt?.last_control_error) return { tone: "warn", label: tr("控制故障", "CTRL FLT") };
   if (boolText(rt?.manual_lock)) return { tone: "warn", label: tr("人工锁定", "M-LOCK") };
-  return { tone: "ok", label: tr("联锁正常", "OK") };
+  return { tone: "ok", label: "OK" };
 });
 
-const roleLabel = computed(() => {
-  const role = auth.user?.role;
-  if (!role) return tr("未登录", "Guest");
-  const labels: Record<string, { zh: string; en: string }> = {
-    operator: { zh: "操作员", en: "Operator" },
-    engineer: { zh: "工程师", en: "Engineer" },
-    admin: { zh: "管理员", en: "Admin" }
-  };
-  const label = labels[role];
-  return label ? tr(label.zh, label.en) : role;
-});
+const operatorName = computed(() => auth.user?.username ?? tr("未登录", "Guest"));
 
 async function handleLogout(): Promise<void> {
   auth.logout();
@@ -109,57 +116,73 @@ onBeforeUnmount(() => {
     <header class="app-header">
       <div class="brand">
         <div class="brand-logo">
-          <span class="logo-icon">R</span>
+          <svg viewBox="0 0 32 32" width="26" height="26" fill="none">
+            <path d="M16 2l12 7v14l-12 7-12-7V9z" stroke="#57b4ff" stroke-width="2" />
+            <path d="M16 9l6 3.5v7L16 23l-6-3.5v-7z" fill="rgba(47,155,255,0.35)" stroke="#2f9bff" stroke-width="1.5" />
+          </svg>
         </div>
         <div class="brand-info">
           <h1 class="brand-title">ReactorOS</h1>
-          <span class="brand-subtitle">{{ tr("星宿智能反应釜控制系统", "Xingshu Smart Reactor Control") }}</span>
+          <span class="brand-subtitle">Smart Reactor Control</span>
         </div>
       </div>
 
-      <div class="topbar-center">
-        <div class="status-pill" :class="live.liveStatus === 'fresh' ? 'ok' : 'bad'">
-          <span class="status-light" :class="live.liveStatus === 'fresh' ? 'ok' : 'error'"></span>
-          <span class="status-text">{{ live.liveStatus === "fresh" ? tr("实时数据", "Live data") : tr("数据中断", "Data interrupted") }}</span>
+      <div class="topbar-cards">
+        <div class="tb-card" :class="live.liveStatus === 'fresh' ? 'ok' : 'bad'">
+          <span class="tb-icon"><AppIcon name="live" :size="17" /></span>
+          <span class="tb-text">
+            <span class="tb-label">Live Data</span>
+            <span class="tb-sub">{{ tr("实时数据", "Real-time") }}</span>
+          </span>
+          <span v-if="live.liveStatus !== 'fresh'" class="tb-badge bad">!</span>
         </div>
-        <div class="status-pill" :class="alarmTone">
-          <span class="status-label">{{ tr("报警", "Alarms") }}</span>
-          <span class="status-value">{{ alarmCounts.high }}/{{ alarmCounts.warning }}/{{ alarmCounts.info }}</span>
+
+        <div class="tb-card" :class="alarmTone">
+          <span class="tb-icon"><AppIcon name="alarm" :size="17" /></span>
+          <span class="tb-text">
+            <span class="tb-label">Alarms</span>
+            <span class="tb-sub">{{ tr("报警", "Alarms") }}</span>
+          </span>
+          <span v-if="alarmTotal > 0" class="tb-badge" :class="alarmTone">{{ alarmTotal }}</span>
         </div>
-        <div class="status-pill" :class="safetyState.tone">
-          <span class="status-label">{{ tr("联锁", "Safety") }}</span>
-          <span class="status-value">{{ safetyState.label }}</span>
+
+        <div class="tb-card" :class="safetyState.tone">
+          <span class="tb-icon"><AppIcon name="shield" :size="17" /></span>
+          <span class="tb-text">
+            <span class="tb-label">Safety Interlock</span>
+            <span class="tb-sub">{{ tr("安全联锁", "Interlock") }}</span>
+          </span>
+          <span class="tb-state" :class="safetyState.tone">{{ safetyState.label }}</span>
         </div>
-        <div v-if="activeBatchId !== null" class="status-pill ok">
-          <span class="status-label">{{ tr("批次", "Batch") }}</span>
-          <span class="status-value mono">#{{ activeBatchId }}</span>
+
+        <div class="tb-card neutral">
+          <span class="tb-text">
+            <span class="tb-label">Batch ID</span>
+            <span class="tb-sub">{{ tr("批次号", "Batch") }}</span>
+          </span>
+          <span class="tb-value mono">{{ activeBatchName }}</span>
+        </div>
+
+        <div class="tb-card neutral clickable" @click="auth.isAuthenticated ? handleLogout() : router.push('/login')">
+          <span class="tb-text">
+            <span class="tb-label">Operator</span>
+            <span class="tb-sub">{{ tr("操作员", "Operator") }}</span>
+          </span>
+          <span class="tb-value">{{ operatorName }}</span>
         </div>
       </div>
 
       <div class="topbar-right">
-        <div class="clock mono">{{ clockText }}</div>
-        <el-segmented
-          :model-value="language"
-          size="small"
-          :options="[
-            { label: '中', value: 'zh' },
-            { label: 'EN', value: 'en' }
-          ]"
-          @update:model-value="(value) => setLanguage(value as 'zh' | 'en')"
-        />
-        <div class="user-profile" v-if="auth.isAuthenticated">
-          <div class="user-info">
-            <span class="user-name">{{ auth.user?.username }}</span>
-            <span class="user-role">{{ roleLabel }}</span>
+        <button class="lang-toggle" :title="tr('切换语言', 'Switch language')" @click="setLanguage(language === 'zh' ? 'en' : 'zh')">
+          {{ language === "zh" ? "EN" : "中" }}
+        </button>
+        <div class="clock-box">
+          <AppIcon name="clock" :size="22" />
+          <div class="clock-text">
+            <span class="clock-time mono">{{ clockTime }}</span>
+            <span class="clock-date">{{ clockDate }}</span>
           </div>
-          <div class="user-avatar">
-            {{ auth.user?.username?.charAt(0).toUpperCase() }}
-          </div>
-          <el-button size="small" class="logout-btn" @click="handleLogout">{{ tr("退出", "Logout") }}</el-button>
         </div>
-        <el-button v-else size="small" type="primary" class="login-btn" @click="router.push('/login')">
-          {{ tr("登录系统", "Sign in") }}
-        </el-button>
       </div>
     </header>
 
@@ -173,18 +196,28 @@ onBeforeUnmount(() => {
           class="nav-item"
           :class="{ active: activePath === item.path }"
         >
-          <div class="nav-icon">{{ item.meta?.icon }}</div>
-          <div class="nav-content">
-            <span class="nav-title">{{ tr(String(item.meta?.zh ?? item.path), String(item.meta?.en ?? item.path)) }}</span>
-            <span class="nav-subtitle">{{ tr(String(item.meta?.subZh ?? ""), String(item.meta?.subEn ?? "")) }}</span>
-          </div>
-          <div class="nav-indicator"></div>
+          <span class="nav-icon"><AppIcon :name="String(item.meta?.icon ?? 'monitor')" :size="20" /></span>
+          <span class="nav-content">
+            <span class="nav-title">{{ item.meta?.en }}</span>
+            <span class="nav-subtitle">{{ item.meta?.zh }}</span>
+          </span>
         </RouterLink>
       </nav>
+
       <div class="sidebar-footer">
-        <div class="device-tag">
-          <span class="device-label">{{ tr("当前设备", "Device") }}</span>
-          <span class="device-id mono">{{ DEVICE_ID }}</span>
+        <div class="edge-info">
+          <div class="edge-row">
+            <span class="edge-label">Edge Node</span>
+            <span class="edge-value mono">RX-EDGE-01</span>
+          </div>
+          <div class="edge-row">
+            <span class="edge-label">Version</span>
+            <span class="edge-value mono">v2.4.1</span>
+          </div>
+        </div>
+        <div class="health-row" :class="live.liveStatus === 'fresh' ? 'ok' : 'bad'">
+          <span class="status-dot" :class="live.liveStatus === 'fresh' ? 'ok' : 'bad'"></span>
+          <span>{{ live.liveStatus === "fresh" ? "System Healthy" : tr("数据中断", "Data Lost") }}</span>
         </div>
       </div>
     </aside>
@@ -197,229 +230,194 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* 顶部状态栏 */
 .brand {
   display: flex;
   align-items: center;
-  gap: 16px;
-  min-width: 280px;
+  gap: 10px;
+  min-width: 210px;
+  flex: none;
 }
-
 .brand-logo {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, var(--ind-blue), #1e40af);
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 20px rgba(41, 121, 255, 0.3);
+  filter: drop-shadow(0 0 10px rgba(47, 155, 255, 0.35));
 }
-
-.logo-icon {
-  color: white;
-  font-weight: bold;
-  font-size: 20px;
-  font-family: var(--font-data);
-}
-
-.brand-info {
-  display: flex;
-  flex-direction: column;
-}
-
 .brand-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  background: linear-gradient(90deg, #fff, #94a3b8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+  line-height: 1.1;
 }
-
 .brand-subtitle {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
-  letter-spacing: 1px;
+  letter-spacing: 0.4px;
 }
 
-.topbar-center {
+.topbar-cards {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
   justify-content: center;
+  min-width: 0;
+  overflow: hidden;
 }
-
-.status-pill {
+.tb-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  border-radius: 20px;
-  background: rgba(255,255,255,0.03);
+  gap: 9px;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
   border: 1px solid var(--border-glass);
-  font-size: 13px;
-  font-weight: 600;
+  min-width: 0;
+  white-space: nowrap;
 }
-
-.status-pill.ok { border-color: rgba(0, 200, 83, 0.3); color: var(--ind-green); }
-.status-pill.warn { border-color: rgba(255, 171, 0, 0.3); color: var(--ind-amber); }
-.status-pill.bad { border-color: rgba(255, 61, 0, 0.3); color: var(--ind-red); }
-
-.status-label { color: var(--text-tertiary); font-weight: 400; }
-.status-value { font-family: var(--font-data); }
+.tb-card.clickable { cursor: pointer; }
+.tb-card.clickable:hover { border-color: var(--border-strong); }
+.tb-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-dim);
+  color: var(--accent-strong);
+  flex: none;
+}
+.tb-card.ok .tb-icon { background: rgba(47, 212, 123, 0.12); color: var(--ind-green); }
+.tb-card.warn .tb-icon { background: rgba(245, 166, 35, 0.12); color: var(--ind-amber); }
+.tb-card.bad .tb-icon { background: rgba(255, 82, 82, 0.12); color: var(--ind-red); }
+.tb-text { display: flex; flex-direction: column; line-height: 1.25; }
+.tb-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.tb-sub { font-size: 11px; color: var(--text-tertiary); }
+.tb-badge {
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 5px;
+  background: var(--ind-red);
+  color: #fff;
+}
+.tb-badge.ok { background: var(--ind-green); color: #06130c; }
+.tb-badge.warn { background: var(--ind-amber); color: #1a1206; }
+.tb-state { font-size: 12px; font-weight: 700; }
+.tb-state.ok { color: var(--ind-green); }
+.tb-state.warn { color: var(--ind-amber); }
+.tb-state.bad { color: var(--ind-red); }
+.tb-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 
 .topbar-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 14px;
+  flex: none;
 }
-
-.clock {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  letter-spacing: 1px;
-}
-
-.user-profile {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-left: 20px;
-  border-left: 1px solid var(--border-glass);
-}
-
-.user-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.user-name { font-size: 14px; font-weight: 600; }
-.user-role { font-size: 12px; color: var(--text-tertiary); }
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
+.lang-toggle {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--border-glass);
   background: var(--bg-inset);
-  border: 1px solid var(--border-glass);
-  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.lang-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.clock-box {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  color: var(--ind-blue);
-}
-
-.logout-btn {
-  background: transparent;
-  border: 1px solid var(--border-glass);
+  gap: 10px;
   color: var(--text-secondary);
 }
-.logout-btn:hover {
-  border-color: var(--ind-red);
-  color: var(--ind-red);
-}
+.clock-text { display: flex; flex-direction: column; line-height: 1.2; }
+.clock-time { font-size: 18px; font-weight: 700; color: var(--text-primary); letter-spacing: 1px; }
+.clock-date { font-size: 11px; color: var(--text-tertiary); }
 
-/* 侧边导航 */
 .side-nav {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
-
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 11px 12px;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;
-  position: relative;
-  transition: all 0.2s;
   border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s;
 }
-
-.nav-item:hover {
-  background: rgba(255,255,255,0.03);
-  color: var(--text-primary);
-}
-
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .nav-item.active {
-  background: linear-gradient(90deg, rgba(41, 121, 255, 0.1), transparent);
-  border-color: rgba(41, 121, 255, 0.2);
-  color: var(--ind-blue);
+  background: linear-gradient(90deg, rgba(47, 155, 255, 0.18), rgba(47, 155, 255, 0.05));
+  border-color: rgba(47, 155, 255, 0.35);
+  color: var(--accent-strong);
 }
-
-.nav-icon {
-  font-size: 20px;
-  width: 24px;
-  text-align: center;
-  opacity: 0.8;
-}
-
-.nav-content {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.nav-title {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-}
-
-.nav-subtitle {
-  font-size: 12px;
-  color: var(--text-tertiary);
-  margin-top: 2px;
-}
-
-.nav-indicator {
-  width: 4px;
-  height: 24px;
-  border-radius: 2px;
-  background: transparent;
-  transition: all 0.2s;
-}
-
-.nav-item.active .nav-indicator {
-  background: var(--ind-blue);
-  box-shadow: 0 0 10px var(--ind-blue);
-}
+.nav-icon { flex: none; display: flex; opacity: 0.9; }
+.nav-content { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.nav-title { font-size: 14px; font-weight: 600; }
+.nav-subtitle { font-size: 11px; color: var(--text-tertiary); }
+.nav-item.active .nav-subtitle { color: rgba(87, 180, 255, 0.75); }
 
 .sidebar-footer {
-  margin-top: auto;
-  padding-top: 20px;
+  flex: none;
+  padding-top: 12px;
   border-top: 1px solid var(--border-glass);
-}
-
-.device-tag {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px;
-  background: var(--bg-inset);
+  gap: 10px;
+}
+.edge-info { display: flex; flex-direction: column; gap: 5px; padding: 0 4px; }
+.edge-row { display: flex; flex-direction: column; gap: 1px; }
+.edge-label { font-size: 11px; color: var(--text-tertiary); }
+.edge-value { font-size: 13px; font-weight: 600; color: var(--accent-strong); }
+.health-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
+  background: var(--bg-inset);
   border: 1px solid var(--border-glass);
 }
+.health-row.ok { color: var(--ind-green); }
+.health-row.bad { color: var(--ind-red); }
 
-.device-label { font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 1px; }
-.device-id { font-size: 14px; font-weight: 700; color: var(--ind-blue); }
-
-/* 响应式 */
-@media (max-width: 1200px) {
-  .brand { min-width: auto; }
+@media (max-width: 1400px) {
+  .tb-card { padding: 5px 10px; gap: 7px; }
+  .tb-icon { width: 26px; height: 26px; }
+}
+@media (max-width: 1100px) {
   .brand-info { display: none; }
+  .brand { min-width: auto; }
   .nav-content { display: none; }
-  .nav-item { justify-content: center; padding: 16px; }
-  .device-label { display: none; }
-  .device-tag { padding: 8px; text-align: center; }
+  .nav-item { justify-content: center; padding: 13px; }
+  .edge-row .edge-label { display: none; }
+  .health-row span:last-child { display: none; }
+  .health-row { justify-content: center; }
+}
+@media (max-width: 900px) {
+  .topbar-cards .tb-card:nth-child(n + 4) { display: none; }
 }
 </style>

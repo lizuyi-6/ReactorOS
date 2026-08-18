@@ -9,6 +9,7 @@ import ModbusView from "./views/ModbusView.vue";
 import MonitorView from "./views/MonitorView.vue";
 import SettingsView from "./views/SettingsView.vue";
 
+// meta: en/zh 为侧栏双语标签；icon 对应 components/AppIcon.vue 的 name。
 export const routes = [
   { path: "/", redirect: "/monitor" },
   {
@@ -19,37 +20,37 @@ export const routes = [
   {
     path: "/monitor",
     component: MonitorView,
-    meta: { zh: "实时监控", en: "Monitor", subZh: "传感器与趋势", subEn: "Sensors & trends", icon: "▦" }
+    meta: { zh: "监控", en: "Monitor", titleZh: "反应釜总览", titleEn: "Reactor Overview", icon: "monitor" }
   },
   {
     path: "/control",
     component: ControlView,
-    meta: { zh: "参数配置", en: "Control", subZh: "工艺与安全", subEn: "Process & safety", icon: "≋" }
+    meta: { zh: "控制", en: "Control", titleZh: "工艺控制中心", titleEn: "Process Control", icon: "control" }
   },
   {
     path: "/ai",
     component: AiView,
-    meta: { zh: "AI 决策", en: "AI Lab", subZh: "推荐与复核", subEn: "Advice & review", icon: "AI" }
+    meta: { zh: "智能决策", en: "AI Decision", titleZh: "AI 决策中心", titleEn: "AI Decision Center", icon: "ai" }
   },
   {
     path: "/history",
     component: HistoryView,
-    meta: { zh: "历史数据", en: "History", subZh: "批次与结果", subEn: "Batches & results", icon: "▤" }
+    meta: { zh: "历史数据", en: "History", titleZh: "历史数据与批次记录", titleEn: "History & Batch Records", icon: "history" }
   },
   {
     path: "/audit",
     component: AuditView,
-    meta: { zh: "审计日志", en: "Audit", subZh: "哈希链", subEn: "Hash chain", icon: "↺", requiresAuth: true }
+    meta: { zh: "审计追踪", en: "Audit", titleZh: "审计追踪", titleEn: "Audit Trail", icon: "audit", requiresAuth: true }
   },
   {
     path: "/modbus",
     component: ModbusView,
-    meta: { zh: "Modbus 调试", en: "Modbus", subZh: "寄存器映射", subEn: "Register map", icon: "MB" }
+    meta: { zh: "设备通信", en: "Modbus", titleZh: "设备通信调试", titleEn: "Modbus Debug", icon: "modbus" }
   },
   {
     path: "/settings",
     component: SettingsView,
-    meta: { zh: "系统配置", en: "Settings", subZh: "设备与集成", subEn: "Device & integrations", icon: "⚙" }
+    meta: { zh: "系统设置", en: "Settings", titleZh: "系统设置", titleEn: "System Settings", icon: "settings" }
   }
 ];
 
