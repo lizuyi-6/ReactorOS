@@ -34,7 +34,7 @@ The package contains:
 - `bin/reactor-safety-guard`: isolated safety guard binary used by `run.sh` and systemd.
 - `bin/xingshu`: CLI used for production maintenance tasks such as SQLite online backup.
 - `frontend/dist/`: default Vue production HMI.
-- `static/`: legacy HTML/CSS/JavaScript HMI fallback.
+- `static/`: placeholder page shown when the Vue build is missing (the legacy HMI was removed).
 - `config/`: device, safety, and AI memory config files.
 - `kiosk/`: Chromium kiosk launcher.
 - `backup.sh`: daily SQLite `VACUUM INTO` snapshot helper.
@@ -94,7 +94,7 @@ running service.
 
 This enables boot autostart for:
 
-- `reactor-edge`: backend, API, database, safety control loop with isolated safety guard, Vue HMI with legacy static fallback.
+- `reactor-edge`: backend, API, database, safety control loop with isolated safety guard, Vue HMI with placeholder fallback.
 - `reactor-edge-backup.timer`: daily online SQLite snapshot schedule writing `/var/lib/reactor-edge/backups`; snapshots are serialized with a lock, written through a temporary file, and verified before `latest.snapshot` is updated.
 - `reactor-os-chromium`: Chromium kiosk opening `http://127.0.0.1:8000/`.
 

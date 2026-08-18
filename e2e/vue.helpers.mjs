@@ -1,8 +1,7 @@
-// Shared helpers for the Vue 3 HMI acceptance suite. The legacy suite
-// (reactor-os.helpers.mjs) targets the old static single-page HMI; these drive
-// the migrated Vue app (hash routes /#/monitor … /#/settings, Pinia store,
-// token in localStorage). Mirrors the legacy prepare/login/inject flow but
-// against the Vue DOM and asserts the migration invariants.
+// Shared helpers for the Vue 3 HMI acceptance suite. These drive the
+// production Vue app (hash routes /#/monitor … /#/settings, Pinia store,
+// token in localStorage) and assert the migration invariants. (The legacy
+// static-HMI suite was removed together with the old static frontend.)
 import { expect } from "@playwright/test";
 
 export const VUE_ROUTES = ["monitor", "control", "ai", "history", "audit", "modbus", "settings"];

@@ -911,7 +911,7 @@ git rev-parse origin/codex/prd-tech-stack-migration
 1. 不要提交 `output/*`、截图、CSV、临时报告。
 2. 不要把未完成的本地 LoRA 写成已完成。
 3. 不要把 Vue 迁移切片写成生产 HMI 已替换。
-4. 不要删除或重写 `static/index.html`。
+4. ~~不要删除或重写 `static/index.html`。~~（已被取代：2026-08 前端按新参考图完整重做后，用户明确要求删除旧前端——legacy `static/index.html` 与 `workshop/` 实验前端已删除，`static/index.html` 现为构建缺失时的占位提示页，可维护但不再是可用 HMI。）
 5. 不要为了前端方便绕过后端 RBAC/safety/audit。
 6. 不要引入新的 UI 框架。
 7. 不要新增第八个路由来规避 PRD 七页面结构。

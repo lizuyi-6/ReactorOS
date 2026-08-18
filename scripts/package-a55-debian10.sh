@@ -263,7 +263,7 @@ error state.
 Default HMI assets:
 
 - \`frontend/dist/index.html\`: Vue 3 production HMI, built from \`${FRONTEND_SOURCE}\` (sha256 \`${FRONTEND_SHA256}\`).
-- \`static/index.html\`: legacy HMI fallback. The daemon is launched with \`--assets auto\` and prefers \`frontend/dist\` when present.
+- \`static/index.html\`: placeholder page shown only when the Vue build is missing. The daemon is launched with \`--assets auto\` and prefers \`frontend/dist\` when present.
 
 Default paths in \`config/device.json_bridge.toml\`:
 

@@ -8,9 +8,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const checks = [
   {
-    file: "workshop/frontend/dist/index.html",
+    file: "frontend/dist/index.html",
     mustContain: ['id="app"'],
-    label: "Workshop production single-file HMI exists",
+    label: "Vue production single-file HMI exists",
   },
   {
     file: "deploy/reactor-edge.service",
@@ -37,18 +37,18 @@ const checks = [
   {
     file: "scripts/build-lubancat2-debian10.ps1",
     mustContain: [
-      '[string]$FrontendProject = "workshop\\frontend"',
-      '"-e", "FRONTEND_DIST=$frontendRelative/dist"',
+      "npm run frontend:build",
+      '"-e", "FRONTEND_DIST=frontend/dist"',
     ],
-    label: "LubanCat Windows build selects Workshop HMI",
+    label: "LubanCat Windows build selects Vue HMI",
   },
   {
     file: "scripts/build-lubancat2-debian10.sh",
     mustContain: [
-      'FRONTEND_PROJECT="${FRONTEND_PROJECT:-workshop/frontend}"',
-      '-e "FRONTEND_DIST=${FRONTEND_PROJECT}/dist"',
+      "npm run frontend:build",
+      '-e "FRONTEND_DIST=frontend/dist"',
     ],
-    label: "LubanCat Unix build selects Workshop HMI",
+    label: "LubanCat Unix build selects Vue HMI",
   },
   {
     file: "scripts/run-lubancat2-qemu.sh",

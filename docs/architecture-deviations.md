@@ -37,7 +37,7 @@
 
 PRD v2.2 指定 Vue 3.4+、Vite、Element Plus、ECharts 和 Pinia。`codex/prd-tech-stack-migration` 分支已经把 `frontend/` 从占位 TypeScript 页面推进为真实 Vue 应用：`App.vue` 承载工业 HMI shell，`router.ts` 映射 PRD 七大页面，`stores/plant.ts` 集中访问 `/health`、`/api/config/summary`、`/api/audit/logs`、`/api/audit/export.csv`、`/api/modbus/registers` 和 `/api/recommendations/latest`，`MonitorView.vue` 使用 ECharts 绘制实时曲线，七个 Vue 页面已接入 Pinia 持久化中英切换，`ControlView.vue` 已接入 `/api/control/targets`、`/api/control/auto`、`/api/control/manual-lock`、`/api/control/emergency-stop` 和 reset 路径，`AuditView.vue` 已接入审计链指标、事件类型过滤、分页查询和 bearer 授权 CSV 导出，`ModbusView.vue` 已接入 `/api/modbus/registers/:name/read` 和 admin-only `/write` 路径，并要求非空审计原因。当前已用 `npm run frontend:build` 验证单文件构建，并用 Playwright/Chromium 对 `/#/monitor`、`/#/control`、`/#/ai`、`/#/history`、`/#/audit`、`/#/modbus`、`/#/settings` 做中文/英文 DOM 字块检查；控制写入验证通过 engineer 登录、目标写入、后端 200 返回和页面回显；审计导出验证通过 engineer 登录、事件过滤、CSV 下载和中英页面截图；Modbus 写入验证通过 admin 登录、写入 `target_temperature_c=67`、后端返回 raw `670` 和页面读回。截图证据位于 `output/playwright/vue-i18n-monitor-zh.png`、`output/playwright/vue-i18n-monitor-en.png`、`output/playwright/vue-i18n-modbus-zh.png`、`output/playwright/vue-i18n-modbus-en.png`、`output/playwright/vue-control-write-en.png`、`output/playwright/vue-audit-export-en.png` 和 `output/playwright/vue-modbus-write-en.png`。
 
-当前 release 路径已从“只托管 `static/index.html`”推进为 `--assets auto`：有 `frontend/dist/index.html` 时 daemon 默认托管 Vue 生产构建，缺少 Vue 构建时自动回退到 legacy `static/index.html`。对外应表述为“PRD 前端技术栈已进入生产资源默认路径，并有构建、DOM、截图、控制写入、审计导出、Modbus 写入、工艺生命周期、History 筛选与 CSV/XLSX 下载点击证据；完整功能 parity、多浏览器/移动端、release/RK 和用户验收仍需补齐”，不能表述为“已按 PRD 前端栈完成最终生产验收”。
+当前 release 路径已从“只托管 `static/index.html`”推进为 `--assets auto`：有 `frontend/dist/index.html` 时 daemon 默认托管 Vue 生产构建，缺少 Vue 构建时自动回退到 `static/index.html` 占位提示页（旧版 legacy HMI 与 workshop 实验前端已随前端重做删除）。对外应表述为“PRD 前端技术栈已进入生产资源默认路径，并有构建、DOM、截图、控制写入、审计导出、Modbus 写入、工艺生命周期、History 筛选与 CSV/XLSX 下载点击证据；完整功能 parity、多浏览器/移动端、release/RK 和用户验收仍需补齐”，不能表述为“已按 PRD 前端栈完成最终生产验收”。
 
 ### 3.2 数据库和 Modbus 技术栈
 
@@ -103,7 +103,7 @@ PRD 和团队分工写的是七大页面。当前 Vue 生产 HMI 已按 PRD 七�
 | Modbus 调试 | `/#/modbus` | 寄存器映射、读写、安全门控、集成状态 |
 | 系统配置 | `/#/settings` | 权限、端点、设备、组件、安全和集成摘要 |
 
-旧版 `static/index.html` fallback 曾把实时监控、历史和报警拆成 9 个 tab；这部分截图可以作为历史/回退证据保留，但正式验收应以 Vue 七路由截图和用例为准。
+旧版 `static/index.html` fallback 曾把实时监控、历史和报警拆成 9 个 tab（已随前端重做删除，`static/` 仅剩构建缺失提示占位页）；历史截图可作为证据保留，正式验收以 Vue 七路由截图和用例为准。
 
 ## 4. 非功能指标证据边界
 

@@ -4,19 +4,11 @@ set -euo pipefail
 IMAGE="${IMAGE:-reactor-os-lubancat2-debian10-builder}"
 RUST_VERSION="${RUST_VERSION:-1.90.0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FRONTEND_PROJECT="${FRONTEND_PROJECT:-workshop/frontend}"
 SKIP_BUILDER_IMAGE="${SKIP_BUILDER_IMAGE:-0}"
 
-case "${FRONTEND_PROJECT}" in
-  /*|../*|*/../*)
-    echo "FRONTEND_PROJECT must be a repository-relative path: ${FRONTEND_PROJECT}" >&2
-    exit 1
-    ;;
-esac
-
-echo "Building production Workshop HMI on this PC from ${FRONTEND_PROJECT}..."
-(cd "${ROOT}" && npm --prefix "${FRONTEND_PROJECT}" run build)
-test -f "${ROOT}/${FRONTEND_PROJECT}/dist/index.html"
+echo "Building production Vue HMI on this PC (frontend/)..."
+(cd "${ROOT}" && npm run frontend:build)
+test -f "${ROOT}/frontend/dist/index.html"
 
 if [[ "${SKIP_BUILDER_IMAGE}" == "1" ]]; then
   echo "Reusing existing offline builder image ${IMAGE}..."
@@ -46,8 +38,8 @@ docker run --rm \
   -e SERVICE_USER=cat \
   -e SERVICE_GROUP=cat \
   -e SERVICE_HOME=/home/cat \
-  -e "FRONTEND_DIST=${FRONTEND_PROJECT}/dist" \
-  -e "FRONTEND_SOURCE=${FRONTEND_PROJECT}" \
+  -e "FRONTEND_DIST=frontend/dist" \
+  -e "FRONTEND_SOURCE=frontend" \
   -e DIST_POINTER=latest-lubancat2-debian10-package.txt \
   -e PACKAGE_README=README-LUBANCAT2-CHROMIUM.md \
   "${docker_cargo_args[@]}" \

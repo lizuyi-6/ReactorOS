@@ -1,28 +1,21 @@
 param(
     [string]$Image = "reactor-os-lubancat2-debian10-builder",
     [string]$RustVersion = "1.90.0",
-    [string]$FrontendProject = "workshop\frontend",
     [switch]$SkipBuilderImage
 )
 
 $ErrorActionPreference = "Stop"
 $repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$frontend = (Resolve-Path (Join-Path $repo $FrontendProject)).Path
-$repoPrefix = $repo.TrimEnd("\") + "\"
-if (-not $frontend.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "FrontendProject must stay inside the repository: $FrontendProject"
-}
-$frontendRelative = $frontend.Substring($repoPrefix.Length).Replace("\", "/")
 
 Push-Location $repo
 try {
-    Write-Host "Building production Workshop HMI on this PC from $frontendRelative..."
-    & npm --prefix $frontend run build
+    Write-Host "Building production Vue HMI on this PC (frontend/)..."
+    npm run frontend:build
     if ($LASTEXITCODE -ne 0) {
-        throw "Workshop HMI build failed with exit code $LASTEXITCODE"
+        throw "Vue HMI build failed with exit code $LASTEXITCODE"
     }
-    if (-not (Test-Path (Join-Path $frontend "dist\index.html"))) {
-        throw "$frontendRelative/dist/index.html missing after Workshop HMI build"
+    if (-not (Test-Path (Join-Path $repo "frontend\dist\index.html"))) {
+        throw "frontend/dist/index.html missing after Vue HMI build"
     }
 }
 finally {
@@ -57,8 +50,8 @@ $dockerRunArgs = @(
     "-e", "SERVICE_USER=cat",
     "-e", "SERVICE_GROUP=cat",
     "-e", "SERVICE_HOME=/home/cat",
-    "-e", "FRONTEND_DIST=$frontendRelative/dist",
-    "-e", "FRONTEND_SOURCE=$frontendRelative",
+    "-e", "FRONTEND_DIST=frontend/dist",
+    "-e", "FRONTEND_SOURCE=frontend",
     "-e", "DIST_POINTER=latest-lubancat2-debian10-package.txt",
     "-e", "PACKAGE_README=README-LUBANCAT2-CHROMIUM.md",
     "-v", "${repo}:/work",
