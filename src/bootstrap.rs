@@ -84,9 +84,21 @@ fn auth_secret_is_exposure_safe(secret: &str) -> bool {
 mod tests {
     use super::enforce_network_auth_gate;
     use std::net::SocketAddr;
+    use std::sync::{Mutex, OnceLock};
+
+    /// The network gate reads login-password env vars on every call, and
+    /// `set_var`/`remove_var` mutate process-global state. All gate tests
+    /// therefore serialize on this lock for their entire body — otherwise two
+    /// parallel tests race each other's env writes and fail nondeterministically.
+    /// Same pattern as `local_ai::tests::env_lock`.
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn network_auth_gate_allows_loopback_regardless_of_secret() {
+        let _env = env_lock().lock().unwrap();
         let bind = "127.0.0.1:8000".parse::<SocketAddr>().unwrap();
         assert!(enforce_network_auth_gate(bind, None).is_ok());
         assert!(
@@ -97,6 +109,14 @@ mod tests {
 
     #[test]
     fn network_auth_gate_rejects_non_loopback_without_strong_secret() {
+        // Pin the password env: without strong passwords the gate fails closed
+        // even before the secret checks.
+        let _env = env_lock().lock().unwrap();
+        let _guard = PasswordEnvGuard::set(&[
+            ("XINGSHU_OPERATOR_PASSWORD", "op-secret-passphrase"),
+            ("XINGSHU_ENGINEER_PASSWORD", "eng-secret-passphrase"),
+            ("XINGSHU_ADMIN_PASSWORD", "adm-secret-passphrase"),
+        ]);
         let bind = "0.0.0.0:8443".parse::<SocketAddr>().unwrap();
         assert!(enforce_network_auth_gate(bind, None).is_err());
         assert!(
@@ -108,6 +128,14 @@ mod tests {
 
     #[test]
     fn network_auth_gate_accepts_non_loopback_with_strong_secret() {
+        // Pin the password env (see reject test): without strong passwords the
+        // gate now fails closed even with a strong signing secret.
+        let _env = env_lock().lock().unwrap();
+        let _guard = PasswordEnvGuard::set(&[
+            ("XINGSHU_OPERATOR_PASSWORD", "op-secret-passphrase"),
+            ("XINGSHU_ENGINEER_PASSWORD", "eng-secret-passphrase"),
+            ("XINGSHU_ADMIN_PASSWORD", "adm-secret-passphrase"),
+        ]);
         let bind = "0.0.0.0:8443".parse::<SocketAddr>().unwrap();
         let strong = "0123456789abcdef0123456789abcdef";
         assert_eq!(strong.len(), 32);
@@ -116,6 +144,7 @@ mod tests {
 
     #[test]
     fn network_auth_gate_rejects_default_login_passwords_on_non_loopback() {
+        let _env = env_lock().lock().unwrap();
         let bind = "0.0.0.0:8443".parse::<SocketAddr>().unwrap();
         let strong = "0123456789abcdef0123456789abcdef";
         // Env untouched -> all three login passwords fall back to the
@@ -134,6 +163,7 @@ mod tests {
 
     #[test]
     fn network_auth_gate_accepts_non_loopback_when_all_login_passwords_are_strong() {
+        let _env = env_lock().lock().unwrap();
         let bind = "0.0.0.0:8443".parse::<SocketAddr>().unwrap();
         let strong = "0123456789abcdef0123456789abcdef";
         let _guard = PasswordEnvGuard::set(&[
