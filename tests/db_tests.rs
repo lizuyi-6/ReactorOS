@@ -1,7 +1,7 @@
 use chrono::Utc;
 use reactor_edge_daemon::{
     control::SafeCommand,
-    db::{Db, NewProcessStep, ProductResult},
+    db::{AuditActor, Db, NewProcessStep, ProductResult},
     optimizer::{recommend, Recommendation},
     state::SensorSnapshot,
 };
@@ -143,6 +143,7 @@ fn rejects_invalid_product_result_before_audit_transaction() {
             },
             "product_result_recorded",
             "must not audit invalid product result",
+            &AuditActor::system(),
         )
         .unwrap_err();
     let message = format!("{err:#}");
@@ -251,6 +252,7 @@ fn product_result_with_audit_is_atomic_when_audit_insert_fails() {
             },
             "product_result_recorded",
             "product result saved; recommendation regeneration queued",
+            &AuditActor::system(),
         )
         .unwrap_err();
     assert!(
@@ -270,6 +272,7 @@ fn recommendation_with_audit_rolls_back_when_audit_fails() {
             &sample_recommendation("must roll back with audit"),
             "recommendation_generated",
             "operator regenerated latest AI recommendation",
+            &AuditActor::system(),
         )
         .unwrap_err();
 
@@ -307,6 +310,7 @@ fn rejects_invalid_recommendation_before_audit_transaction() {
             &recommendation,
             "recommendation_generated",
             "must not audit invalid recommendation",
+            &AuditActor::system(),
         )
         .unwrap_err();
     let message = format!("{err:#}");
@@ -371,6 +375,7 @@ fn rejects_invalid_process_step_before_sync_insert_or_update() {
             &invalid,
             "process_step_updated",
             "must not audit invalid step",
+            &AuditActor::system(),
         )
         .unwrap_err();
     let message = format!("{err:#}");
@@ -455,6 +460,7 @@ fn process_create_with_audit_rolls_back_when_audit_fails() {
             "must roll back with audit",
             "process_created",
             "operator created process",
+            &AuditActor::system(),
         )
         .unwrap_err();
 
@@ -481,6 +487,7 @@ fn process_update_with_audit_rolls_back_when_audit_fails() {
             "ready",
             "process_updated",
             "operator updated process",
+            &AuditActor::system(),
         )
         .unwrap_err();
 
@@ -509,6 +516,7 @@ fn process_step_add_with_audit_rolls_back_when_audit_fails() {
             &sample_process_step("Heat"),
             "process_step_added",
             "operator added process step",
+            &AuditActor::system(),
         )
         .unwrap_err();
 
@@ -539,6 +547,7 @@ fn process_step_update_with_audit_rolls_back_when_audit_fails() {
             &sample_process_step("Hold"),
             "process_step_updated",
             "operator updated process step",
+            &AuditActor::system(),
         )
         .unwrap_err();
 
@@ -562,6 +571,7 @@ async fn sqlx_process_writes_with_audit_roll_back_when_audit_fails() {
         "must roll back with audit",
         "process_created",
         "operator created process",
+        &AuditActor::system(),
     )
     .await
     .unwrap_err();
@@ -579,6 +589,7 @@ async fn sqlx_process_writes_with_audit_roll_back_when_audit_fails() {
         "ready",
         "process_updated",
         "operator updated process",
+        &AuditActor::system(),
     )
     .await
     .unwrap_err();
@@ -594,6 +605,7 @@ async fn sqlx_process_writes_with_audit_roll_back_when_audit_fails() {
         &sample_process_step("Heat"),
         "process_step_added",
         "operator added process step",
+        &AuditActor::system(),
     )
     .await
     .unwrap_err();
@@ -612,6 +624,7 @@ async fn sqlx_process_writes_with_audit_roll_back_when_audit_fails() {
         &sample_process_step("Hold"),
         "process_step_updated",
         "operator updated process step",
+        &AuditActor::system(),
     )
     .await
     .unwrap_err();
@@ -630,6 +643,7 @@ async fn sqlx_recommendation_with_audit_rolls_back_when_audit_fails() {
         &sample_recommendation("sqlx must roll back with audit"),
         "recommendation_generated",
         "operator regenerated latest AI recommendation",
+        &AuditActor::system(),
     )
     .await
     .unwrap_err();
@@ -935,6 +949,7 @@ fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
             "recent_window_probe",
             None,
             &format!("event {index}"),
+            &AuditActor::system(),
         )
         .unwrap();
         batch_ids.push(batch.id);
@@ -972,6 +987,7 @@ fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
         "recent_window_probe",
         None,
         "batch event 1",
+        &AuditActor::system(),
     )
     .unwrap();
     db.insert_control_event(
@@ -979,6 +995,7 @@ fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
         "recent_window_probe",
         None,
         "batch event 2",
+        &AuditActor::system(),
     )
     .unwrap();
     db.insert_control_event(
@@ -986,6 +1003,7 @@ fn recent_windows_return_oldest_to_newest_within_the_limited_window() {
         "recent_window_probe",
         None,
         "batch event 3",
+        &AuditActor::system(),
     )
     .unwrap();
     let batch_events = db.control_events_for_batch(batch_ids[3], 2).unwrap();
@@ -1046,7 +1064,13 @@ fn skips_legacy_invalid_finished_batches_but_errors_on_invalid_unfinished_or_by_
 fn audit_chain_status_uses_bounded_window_without_claiming_full_validity() {
     let db = Db::open_memory().unwrap();
     for index in 0..10_001 {
-        db.insert_control_event(None, "audit_window_probe", None, &format!("event {index}"))
+        db.insert_control_event(
+            None,
+            "audit_window_probe",
+            None,
+            &format!("event {index}"),
+            &AuditActor::system(),
+        )
             .unwrap();
     }
 
@@ -1081,6 +1105,7 @@ fn rejects_invalid_control_event_targets_before_sync_insert() {
             "invalid_control_event_target",
             Some(&command),
             "must reject impossible audit target",
+            &AuditActor::system(),
         )
         .unwrap_err();
     let message = format!("{err:#}");
@@ -1102,6 +1127,7 @@ fn skips_legacy_invalid_control_events_for_history_but_not_audit_chain_verificat
         "valid_control_event",
         Some(&sample_command("valid audit target")),
         "valid audit target",
+        &AuditActor::system(),
     )
     .unwrap();
     db.insert_control_event(
@@ -1109,6 +1135,7 @@ fn skips_legacy_invalid_control_events_for_history_but_not_audit_chain_verificat
         "legacy_invalid_control_event",
         Some(&sample_command("will be corrupted")),
         "legacy invalid audit target",
+        &AuditActor::system(),
     )
     .unwrap();
 
@@ -1137,11 +1164,11 @@ async fn async_file_database_audit_count_uses_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
 
-    db.insert_control_event(None, "sqlx_probe", None, "event 1")
+    db.insert_control_event(None, "sqlx_probe", None, "event 1", &AuditActor::system())
         .unwrap();
-    db.insert_control_event(None, "sqlx_probe", None, "event 2")
+    db.insert_control_event(None, "sqlx_probe", None, "event 2", &AuditActor::system())
         .unwrap();
-    db.insert_control_event(None, "manual_probe", None, "event 3")
+    db.insert_control_event(None, "manual_probe", None, "event 3", &AuditActor::system())
         .unwrap();
 
     assert_eq!(db.audit_event_count_sqlx(None).await.unwrap(), 3);
@@ -1168,7 +1195,13 @@ async fn async_file_database_audit_events_use_sqlx_pool() {
         } else {
             "other_probe"
         };
-        db.insert_control_event(None, event_type, None, &format!("event {index}"))
+        db.insert_control_event(
+            None,
+            event_type,
+            None,
+            &format!("event {index}"),
+            &AuditActor::system(),
+        )
             .unwrap();
     }
 
@@ -1204,12 +1237,100 @@ async fn async_file_database_audit_events_use_sqlx_pool() {
 }
 
 #[tokio::test]
+async fn audit_events_persist_actor_and_role() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
+
+    db.insert_control_event(
+        None,
+        "actor_probe",
+        None,
+        "operator action",
+        &AuditActor::new("engineer", "engineer"),
+    )
+    .unwrap();
+    db.insert_control_event_sqlx(
+        None,
+        "actor_probe_sqlx",
+        None,
+        "system action",
+        &AuditActor::system(),
+    )
+    .await
+    .unwrap();
+
+    // rusqlite read path
+    let events = db.audit_events(10, 0, None).unwrap();
+    let probe = events
+        .iter()
+        .find(|event| event.event_type == "actor_probe")
+        .unwrap();
+    assert_eq!(probe.actor, "engineer");
+    assert_eq!(probe.role, "engineer");
+
+    // SQLx read path
+    let events = db.audit_events_sqlx(10, 0, None).await.unwrap();
+    let probe = events
+        .iter()
+        .find(|event| event.event_type == "actor_probe")
+        .unwrap();
+    assert_eq!(probe.actor, "engineer");
+    assert_eq!(probe.role, "engineer");
+    let system = events
+        .iter()
+        .find(|event| event.event_type == "actor_probe_sqlx")
+        .unwrap();
+    assert_eq!(system.actor, "system");
+    assert_eq!(system.role, "system");
+}
+
+#[test]
+fn legacy_control_events_gain_system_actor_after_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legacy.sqlite3");
+    {
+        // Simulate a pre-migration database whose control_events table lacks
+        // the actor/role columns entirely.
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE control_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER,
+                event_type TEXT NOT NULL,
+                target_temperature_c REAL,
+                target_stirrer_rpm REAL,
+                reason TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO control_events (batch_id, event_type, reason, created_at)
+            VALUES (NULL, 'legacy_event', 'legacy reason', '2024-01-01T00:00:00+00:00');
+            "#,
+        )
+        .unwrap();
+    }
+
+    let db = Db::open(&path).unwrap();
+    let events = db.audit_events(10, 0, None).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event_type, "legacy_event");
+    assert_eq!(events[0].actor, "system");
+    assert_eq!(events[0].role, "system");
+}
+
+#[tokio::test]
 async fn async_file_database_audit_chain_status_uses_sqlx_pool() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("reactor.sqlite3")).unwrap();
 
     for index in 0..4 {
-        db.insert_control_event(None, "sqlx_chain_probe", None, &format!("event {index}"))
+        db.insert_control_event(
+            None,
+            "sqlx_chain_probe",
+            None,
+            &format!("event {index}"),
+            &AuditActor::system(),
+        )
             .unwrap();
     }
 
@@ -1238,6 +1359,7 @@ async fn async_file_database_rejects_invalid_control_event_targets_before_sqlx_i
             "invalid_sqlx_control_event_target",
             Some(&command),
             "must reject impossible audit target",
+            &AuditActor::system(),
         )
         .await
         .unwrap_err();
@@ -1261,6 +1383,7 @@ async fn async_file_database_skips_legacy_invalid_control_events_for_history_but
         "valid_sqlx_control_event",
         Some(&sample_command("valid sqlx audit target")),
         "valid sqlx audit target",
+        &AuditActor::system(),
     )
     .await
     .unwrap();
@@ -1269,6 +1392,7 @@ async fn async_file_database_skips_legacy_invalid_control_events_for_history_but
         "legacy_invalid_sqlx_control_event",
         Some(&sample_command("will be corrupted")),
         "legacy invalid sqlx audit target",
+        &AuditActor::system(),
     )
     .await
     .unwrap();
@@ -1306,6 +1430,7 @@ async fn async_file_database_audit_writes_use_sqlx_pool_without_breaking_chain()
                 "sqlx_audit_write_probe",
                 None,
                 &format!("event {index}"),
+                &AuditActor::system(),
             )
             .await
         }));
@@ -1489,6 +1614,7 @@ async fn async_file_database_batch_detail_reads_use_sqlx_pool() {
             "sqlx_batch_detail_probe",
             None,
             &format!("batch event {index}"),
+            &AuditActor::system(),
         )
         .await
         .unwrap();
@@ -1650,6 +1776,7 @@ async fn async_file_database_rejects_invalid_process_step_before_sqlx_insert_or_
             &invalid,
             "process_step_added",
             "must not audit invalid step",
+            &AuditActor::system(),
         )
         .await
         .unwrap_err();

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -13,6 +13,7 @@ use tokio_rustls::TlsAcceptor;
 use crate::{
     api::{alarms_for, apply_modbus_register_write, unfinished_batch_status, AppState},
     config::{RegistersConfig, WriteRegister},
+    db::{AuditActor, SYSTEM_AUDIT_ACTOR},
     state::{downstream_command_fault_reason, timestamp_is_fresh, RuntimeState},
 };
 
@@ -174,7 +175,16 @@ async fn run_modbus_tcp_server(
     })
     .await;
     loop {
-        let (stream, peer) = listener.accept().await?;
+        let (stream, peer) = match listener.accept().await {
+            Ok(accepted) => accepted,
+            // Transient accept failures (EMFILE, momentary fd pressure) must
+            // not kill the server: log, back off briefly, and keep accepting.
+            Err(err) => {
+                tracing::warn!("Modbus TCP accept failed (continuing): {err}");
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
+        };
         let state = state.clone();
         let max_pdu_bytes = config.max_pdu_bytes.max(1);
         let expected_unit_id = config.unit_id;
@@ -347,6 +357,7 @@ async fn write_single_register(state: &AppState, pdu: &[u8]) -> Result<Vec<u8>, 
         name,
         value,
         Some(format!("modbus tcp write register {name}")),
+        &AuditActor::new("modbus-tcp", SYSTEM_AUDIT_ACTOR),
     )
     .await
     .map_err(|err| {

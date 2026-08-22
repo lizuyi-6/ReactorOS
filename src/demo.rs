@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     config::SafetyConfig,
-    db::{Db, NewProcessStep, ProductResult},
+    db::{AuditActor, Db, NewProcessStep, ProductResult},
     memory::AiMemory,
     optimizer::recommend_with_memory,
 };
@@ -186,6 +186,7 @@ pub fn seed_demo_context(db: &Db, safety: &SafetyConfig, memory: &AiMemory) -> R
         "demo_seed_applied",
         None,
         "DEMO context seeded: processes, historical batch outcomes, AI recommendation, and non-sensor demo alarms only",
+        &AuditActor::system(),
     )?;
 
     Ok(true)

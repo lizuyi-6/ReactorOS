@@ -8,6 +8,7 @@ use super::{
 use crate::{
     config::{RegistersConfig, WriteRegister},
     control::SafeCommand,
+    db::AuditActor,
     modbus_tcp::ModbusTcpStatus,
     number::round2,
     state::{downstream_command_fault_reason, timestamp_is_fresh, ControlTargets, RuntimeState},
@@ -108,6 +109,7 @@ pub(crate) async fn apply_modbus_register_write(
     register: &str,
     value: f64,
     reason: Option<String>,
+    actor: &AuditActor,
 ) -> Result<Value, AppError> {
     if !value.is_finite() {
         return Err(AppError::bad_request("value must be finite"));
@@ -202,6 +204,7 @@ pub(crate) async fn apply_modbus_register_write(
                 reason: reason.clone(),
             }),
             &reason,
+            actor,
         )
         .await?;
     crate::api::commit_targets_after_final_interlock(

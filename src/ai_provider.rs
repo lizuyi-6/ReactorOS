@@ -575,6 +575,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn endpoint_url_accepts_step_plan_base_url() {
+        // step_plan 计划端点：base 已以 /v1 结尾，不得再追加一层 /v1
+        assert_eq!(
+            endpoint_url(
+                "https://api.stepfun.com/step_plan/v1",
+                StepFunApiType::ChatCompletions
+            ),
+            "https://api.stepfun.com/step_plan/v1/chat/completions"
+        );
+        // 不带 /v1 的写法也要归一化到同一路径
+        assert_eq!(
+            endpoint_url(
+                "https://api.stepfun.com/step_plan",
+                StepFunApiType::ChatCompletions
+            ),
+            "https://api.stepfun.com/step_plan/v1/chat/completions"
+        );
+    }
+
+    #[test]
     fn endpoint_url_accepts_base_url_with_or_without_v1() {
         assert_eq!(
             endpoint_url(

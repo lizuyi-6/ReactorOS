@@ -15,7 +15,7 @@ use tokio::time::{interval, MissedTickBehavior};
 
 use crate::{
     api::{execute_integration_task, live_alarms_for, AinasTaskRequest, AppError, AppState},
-    db::IntegrationTask,
+    db::{AuditActor, IntegrationTask, SYSTEM_AUDIT_ACTOR},
     modbus_tcp::{validate_modbus_tcp_config, ModbusTcpConfig},
     state::timestamp_is_fresh,
 };
@@ -230,12 +230,32 @@ pub fn start_mqtt_bridge(config: MqttBridgeConfig, state: AppState) {
             tracing::info!("MQTT bridge disabled");
             return;
         }
-        if let Err(err) = run_mqtt_bridge(config, state, status.clone()).await {
-            update_status(&status, |snapshot| {
-                snapshot.connected = false;
-                snapshot.last_error = Some(err.to_string());
-            });
-            tracing::warn!("MQTT bridge stopped: {err}");
+        // Supervising retry loop: a broker outage or a failed publish must not
+        // kill the bridge permanently. rumqttc's eventloop reconnects on its
+        // own when polling continues after an error (see rumqttc eventloop.rs
+        // poll() docs), so transient errors are logged and the poll loop keeps
+        // running; only a bridge that exits outright is restarted here with
+        // backoff, otherwise a broker blip would silently disable the AINAS
+        // integration until the daemon itself was restarted.
+        let mut restart_delay_s = 1_u64;
+        loop {
+            match run_mqtt_bridge(config.clone(), state.clone(), status.clone()).await {
+                Ok(()) => {
+                    tracing::info!("MQTT bridge stopped cleanly; exiting supervisor");
+                    return;
+                }
+                Err(err) => {
+                    update_status(&status, |snapshot| {
+                        snapshot.connected = false;
+                        snapshot.last_error = Some(err.to_string());
+                    });
+                    tracing::warn!(
+                        "MQTT bridge failed: {err}; restarting in {restart_delay_s}s"
+                    );
+                    tokio::time::sleep(Duration::from_secs(restart_delay_s)).await;
+                    restart_delay_s = (restart_delay_s * 2).min(60);
+                }
+            }
         }
     });
 }
@@ -293,28 +313,52 @@ async fn run_mqtt_bridge(
                                 )
                                 .await
                             {
+                                // The action already executed; latching the
+                                // fault keeps the audit trail honest. The
+                                // receipt itself is retried by the
+                                // supervising restart (QoS AtLeastOnce +
+                                // task replay by external_task_id), so the
+                                // poll loop must survive this failure.
                                 latch_mqtt_receipt_publish_failure(&state, &receipt, &err.to_string()).await;
-                                return Err(err.into());
                             }
                         }
                     }
                     Ok(_) => {}
                     Err(err) => {
+                        // Transient: rumqttc reconnects automatically as long
+                        // as we keep polling. Log and continue instead of
+                        // tearing the bridge down (broker restarts, WiFi
+                        // blips, keepalive timeouts are routine in the
+                        // field).
                         update_status(&status, |snapshot| {
                             snapshot.connected = false;
                             snapshot.last_error = Some(err.to_string());
                         });
-                        return Err(err.into());
+                        tracing::warn!(
+                            "MQTT eventloop error (will keep polling to reconnect): {err}"
+                        );
                     }
                 }
             }
             _ = alert_interval.tick() => {
-                let alert = publish_alert_snapshot(&client, &config, &state).await?;
-                update_status(&status, |snapshot| {
-                    snapshot.last_alert_active_count = alert.active_count;
-                    snapshot.last_alert_at = Some(alert.updated_at);
-                    snapshot.last_error = None;
-                });
+                // A failed alert publish is logged and retried on the next
+                // tick; it must not kill the bridge (the alert topic is
+                // observability, not a control path).
+                match publish_alert_snapshot(&client, &config, &state).await {
+                    Ok(alert) => {
+                        update_status(&status, |snapshot| {
+                            snapshot.last_alert_active_count = alert.active_count;
+                            snapshot.last_alert_at = Some(alert.updated_at);
+                            snapshot.last_error = None;
+                        });
+                    }
+                    Err(err) => {
+                        tracing::warn!("failed to publish MQTT alert snapshot: {err}");
+                        update_status(&status, |snapshot| {
+                            snapshot.last_error = Some(err.to_string());
+                        });
+                    }
+                }
             }
         }
     }
@@ -485,7 +529,15 @@ pub async fn execute_mqtt_task_payload(state: &AppState, payload: &[u8]) -> Mqtt
             }
         }
     };
-    receipt_from_result(execute_integration_task(state, "mqtt", request).await)
+    receipt_from_result(
+        execute_integration_task(
+            state,
+            "mqtt",
+            request,
+            &AuditActor::new("mqtt", SYSTEM_AUDIT_ACTOR),
+        )
+        .await,
+    )
 }
 
 fn receipt_from_result(result: Result<IntegrationTask, AppError>) -> MqttTaskReceipt {

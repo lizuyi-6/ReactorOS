@@ -175,6 +175,8 @@ CREATE TABLE IF NOT EXISTS control_events (
     target_stirrer_rpm REAL,
     target_shake_speed_cpm REAL,
     reason TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    role TEXT NOT NULL DEFAULT 'system',
     created_at TEXT NOT NULL,
     previous_hash TEXT,
     event_hash TEXT,
@@ -250,7 +252,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_tasks_unique_active_external_t
     WHERE external_task_id IS NOT NULL
       AND status IN ('received', 'executing', 'executed');
 "#;
-const COLUMN_MIGRATIONS: [(&str, &str, &str); 19] = [
+const COLUMN_MIGRATIONS: [(&str, &str, &str); 21] = [
     ("sensor_samples", "pressure_mpa", "REAL NOT NULL DEFAULT 0"),
     (
         "sensor_samples",
@@ -277,6 +279,12 @@ const COLUMN_MIGRATIONS: [(&str, &str, &str); 19] = [
     ("control_events", "target_shake_speed_cpm", "REAL"),
     ("control_events", "previous_hash", "TEXT"),
     ("control_events", "event_hash", "TEXT"),
+    (
+        "control_events",
+        "actor",
+        "TEXT NOT NULL DEFAULT 'system'",
+    ),
+    ("control_events", "role", "TEXT NOT NULL DEFAULT 'system'"),
     ("batches", "process_id", "INTEGER REFERENCES processes(id)"),
     ("integration_tasks", "external_task_id", "TEXT"),
     (
@@ -410,11 +418,39 @@ pub struct SensorSampleRecord {
     pub sample: SensorSnapshot,
 }
 
+/// Actor identity persisted on every audit event. HTTP-initiated writes carry
+/// the authenticated session's username/role; system- or integration-initiated
+/// events use an explicit non-empty identifier (never blank).
+pub const SYSTEM_AUDIT_ACTOR: &str = "system";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditActor {
+    pub username: String,
+    pub role: String,
+}
+
+impl AuditActor {
+    pub fn new(username: impl Into<String>, role: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            role: role.into(),
+        }
+    }
+
+    /// Identity used for events produced by the daemon itself (control loop,
+    /// startup recovery, demo seed) when no authenticated user initiated them.
+    pub fn system() -> Self {
+        Self::new(SYSTEM_AUDIT_ACTOR, SYSTEM_AUDIT_ACTOR)
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ControlEvent {
     pub id: i64,
     pub batch_id: Option<i64>,
     pub event_type: String,
+    pub actor: String,
+    pub role: String,
     pub target_temperature_c: Option<f64>,
     pub target_stirrer_rpm: Option<f64>,
     pub target_shake_speed_cpm: Option<f64>,
@@ -1069,6 +1105,7 @@ impl Db {
         description: &str,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<ProcessDefinition> {
         let now = Utc::now();
         let created_at = now.to_rfc3339();
@@ -1086,7 +1123,7 @@ impl Db {
         .context("failed to create process")?;
         let process_id = tx.last_insert_rowid();
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at)?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at, actor)?;
         let process = ProcessDefinition {
             id: process_id,
             name: name.to_string(),
@@ -1145,9 +1182,10 @@ impl Db {
         description: &str,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<ProcessDefinition> {
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self.create_process_with_audit(name, description, event_type, reason);
+            return self.create_process_with_audit(name, description, event_type, reason, actor);
         };
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
@@ -1172,7 +1210,7 @@ impl Db {
         .await
         .context("failed to create process with SQLx")?;
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at)
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at, actor)
             .await?;
         let process = ProcessDefinition {
             id: result.last_insert_rowid(),
@@ -1223,6 +1261,7 @@ impl Db {
         status: &str,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessDefinition>> {
         let now = Utc::now();
         let updated_at = now.to_rfc3339();
@@ -1246,7 +1285,7 @@ impl Db {
             return Ok(None);
         }
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at)?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at, actor)?;
         let process = process_summary_by_id(&tx, process_id).map_err(anyhow::Error::from)?;
         tx.commit()
             .context("failed to commit process update transaction")?;
@@ -1308,6 +1347,7 @@ impl Db {
         status: &str,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessDefinition>> {
         let Some(pool) = &self.inner.sqlx_pool else {
             return self.update_process_with_audit(
@@ -1317,6 +1357,7 @@ impl Db {
                 status,
                 event_type,
                 reason,
+                actor,
             );
         };
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
@@ -1350,7 +1391,7 @@ impl Db {
             return Ok(None);
         }
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at)
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at, actor)
             .await?;
         let process = self
             .process_summary_by_id_sqlx_tx(&mut tx, process_id)
@@ -1476,6 +1517,7 @@ impl Db {
         step: &NewProcessStep,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessStep>> {
         let mut conn = self.write_conn()?;
         let tx = conn
@@ -1522,7 +1564,7 @@ impl Db {
         let step_id = tx.last_insert_rowid();
         touch_process(&tx, process_id).context("failed to touch process")?;
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at)?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &created_at, actor)?;
         let step = process_step_by_id(&tx, step_id).map_err(anyhow::Error::from)?;
         tx.commit()
             .context("failed to commit process step insert transaction")?;
@@ -1600,9 +1642,10 @@ impl Db {
         step: &NewProcessStep,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessStep>> {
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self.add_process_step_with_audit(process_id, step, event_type, reason);
+            return self.add_process_step_with_audit(process_id, step, event_type, reason, actor);
         };
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
@@ -1657,7 +1700,7 @@ impl Db {
         .context("failed to insert process step with SQLx")?;
         touch_process_sqlx(&mut tx, process_id).await?;
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at)
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &created_at, actor)
             .await?;
         let step = process_step_by_id_sqlx_tx(&mut tx, result.last_insert_rowid()).await?;
         tx.commit()
@@ -1724,6 +1767,7 @@ impl Db {
         step: &NewProcessStep,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessStep>> {
         let now = Utc::now();
         let updated_at = now.to_rfc3339();
@@ -1779,7 +1823,7 @@ impl Db {
         }
         touch_process(&tx, process_id).context("failed to touch process")?;
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at)?;
+        insert_control_event_in_rusqlite_tx(&tx, None, event_type, None, reason, &updated_at, actor)?;
         let step = process_step_by_id(&tx, step_id).map_err(anyhow::Error::from)?;
         tx.commit()
             .context("failed to commit process step update transaction")?;
@@ -1865,10 +1909,12 @@ impl Db {
         step: &NewProcessStep,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<Option<ProcessStep>> {
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self
-                .update_process_step_with_audit(process_id, step_id, step, event_type, reason);
+            return self.update_process_step_with_audit(
+                process_id, step_id, step, event_type, reason, actor,
+            );
         };
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
@@ -1929,7 +1975,7 @@ impl Db {
         }
         touch_process_sqlx(&mut tx, process_id).await?;
         self.consume_control_event_failure_for_tests()?;
-        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at)
+        insert_control_event_in_sqlx_tx(&mut tx, None, event_type, None, reason, &updated_at, actor)
             .await?;
         let step = process_step_by_id_sqlx_tx(&mut tx, step_id).await?;
         tx.commit()
@@ -2259,6 +2305,7 @@ impl Db {
         event_type: &str,
         command: Option<&SafeCommand>,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         self.consume_control_event_failure_for_tests()?;
         let conn = self.write_conn()?;
@@ -2298,8 +2345,8 @@ impl Db {
             r#"
             INSERT INTO control_events
                 (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
-                 reason, created_at, previous_hash, event_hash)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                 reason, actor, role, created_at, previous_hash, event_hash)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
             "#,
             params![
                 batch_id,
@@ -2308,6 +2355,8 @@ impl Db {
                 target_stirrer_rpm,
                 target_shake_speed_cpm,
                 reason,
+                actor.username,
+                actor.role,
                 created_at,
                 previous_hash,
                 event_hash
@@ -2323,9 +2372,10 @@ impl Db {
         event_type: &str,
         command: Option<&SafeCommand>,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self.insert_control_event(batch_id, event_type, command, reason);
+            return self.insert_control_event(batch_id, event_type, command, reason, actor);
         };
         self.consume_control_event_failure_for_tests()?;
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
@@ -2369,8 +2419,8 @@ impl Db {
             r#"
             INSERT INTO control_events
                 (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
-                 reason, created_at, previous_hash, event_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 reason, actor, role, created_at, previous_hash, event_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(batch_id)
@@ -2379,6 +2429,8 @@ impl Db {
         .bind(target_stirrer_rpm)
         .bind(target_shake_speed_cpm)
         .bind(reason)
+        .bind(&actor.username)
+        .bind(&actor.role)
         .bind(created_at)
         .bind(previous_hash)
         .bind(event_hash)
@@ -2852,6 +2904,7 @@ impl Db {
         result: &ProductResult,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         ensure_valid_product_result_for_insert(result)?;
         self.consume_control_event_failure_for_tests()?;
@@ -2886,6 +2939,7 @@ impl Db {
             None,
             reason,
             &created_at,
+            actor,
         )?;
         tx.commit()
             .context("failed to commit product result transaction")?;
@@ -2925,10 +2979,11 @@ impl Db {
         result: &ProductResult,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         ensure_valid_product_result_for_insert(result)?;
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self.insert_product_result_with_audit(result, event_type, reason);
+            return self.insert_product_result_with_audit(result, event_type, reason, actor);
         };
         self.consume_control_event_failure_for_tests()?;
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
@@ -2964,6 +3019,7 @@ impl Db {
             None,
             reason,
             &created_at,
+            actor,
         )
         .await?;
         tx.commit()
@@ -3029,6 +3085,7 @@ impl Db {
         recommendation: &Recommendation,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         ensure_valid_recommendation_for_insert(recommendation)?;
         let mut conn = self.write_conn()?;
@@ -3064,6 +3121,7 @@ impl Db {
             Some(&command),
             reason,
             &created_at,
+            actor,
         )?;
         tx.commit()
             .context("failed to commit AI recommendation transaction")?;
@@ -3076,10 +3134,11 @@ impl Db {
         recommendation: &Recommendation,
         event_type: &str,
         reason: &str,
+        actor: &AuditActor,
     ) -> Result<()> {
         ensure_valid_recommendation_for_insert(recommendation)?;
         let Some(pool) = &self.inner.sqlx_pool else {
-            return self.insert_recommendation_with_audit(recommendation, event_type, reason);
+            return self.insert_recommendation_with_audit(recommendation, event_type, reason, actor);
         };
         let _write_guard = self.inner.sqlx_write_lock.lock().await;
         let _audit_guard = self.inner.audit_write_lock.lock().await;
@@ -3116,6 +3175,7 @@ impl Db {
             Some(&command),
             reason,
             &created_at,
+            actor,
         )
         .await?;
         tx.commit()
@@ -3322,6 +3382,24 @@ impl Db {
         .await
         .context("failed to list recent batches with SQLx")?;
         collect_valid_batches_from_sqlx_rows(rows, "recent_batches_sqlx")
+    }
+
+    /// Total number of batch rows. Used by the export endpoints to detect and
+    /// disclose a truncated export instead of presenting a capped result as
+    /// the complete history.
+    pub async fn batch_count_sqlx(&self) -> Result<usize> {
+        let Some(pool) = &self.inner.sqlx_pool else {
+            let conn = self.read_conn()?;
+            let count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM batches", [], |row| row.get(0))
+                .context("failed to count batches")?;
+            return Ok(count as usize);
+        };
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM batches")
+            .fetch_one(pool)
+            .await
+            .context("failed to count batches with SQLx")?;
+        Ok(count as usize)
     }
 
     pub fn latest_unfinished_batch(&self) -> Result<Option<Batch>> {
@@ -3576,10 +3654,10 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 ORDER BY id DESC
                 LIMIT ?1
@@ -3598,10 +3676,10 @@ impl Db {
         let rows = sqlx::query(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 ORDER BY id DESC
                 LIMIT ?
@@ -3628,7 +3706,7 @@ impl Db {
                 (
                     r#"
                     SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                           target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                           target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                     FROM control_events
                     WHERE event_type = ?1
                     ORDER BY id DESC
@@ -3644,7 +3722,7 @@ impl Db {
                 (
                     r#"
                     SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                           target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                           target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                     FROM control_events
                     ORDER BY id DESC
                     LIMIT ?1 OFFSET ?2
@@ -3708,7 +3786,7 @@ impl Db {
             sqlx::query(
                 r#"
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 WHERE event_type = ?
                 ORDER BY id DESC
@@ -3725,7 +3803,7 @@ impl Db {
             sqlx::query(
                 r#"
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
@@ -3752,10 +3830,10 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 WHERE event_hash IS NOT NULL
                 ORDER BY id DESC
@@ -3789,10 +3867,10 @@ impl Db {
         let rows = sqlx::query(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 WHERE event_hash IS NOT NULL
                 ORDER BY id DESC
@@ -3822,7 +3900,7 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM control_events
             WHERE event_hash IS NOT NULL
             ORDER BY id ASC
@@ -3881,10 +3959,10 @@ impl Db {
         let mut stmt = conn.prepare(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 WHERE batch_id = ?1
                 ORDER BY id DESC
@@ -3908,10 +3986,10 @@ impl Db {
         let rows = sqlx::query(
             r#"
             SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                   target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                   target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
             FROM (
                 SELECT id, batch_id, event_type, target_temperature_c, target_stirrer_rpm,
-                       target_shake_speed_cpm, reason, created_at, previous_hash, event_hash
+                       target_shake_speed_cpm, reason, actor, role, created_at, previous_hash, event_hash
                 FROM control_events
                 WHERE batch_id = ?
                 ORDER BY id DESC
@@ -4363,7 +4441,7 @@ where
 }
 
 fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEvent> {
-    let created_at: String = row.get(7)?;
+    let created_at: String = row.get(9)?;
     let event = ControlEvent {
         id: row.get(0)?,
         batch_id: row.get(1)?,
@@ -4372,9 +4450,11 @@ fn control_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ControlEv
         target_stirrer_rpm: row.get(4)?,
         target_shake_speed_cpm: row.get(5)?,
         reason: row.get(6)?,
+        actor: row.get(7)?,
+        role: row.get(8)?,
         created_at: parse_dt(&created_at)?,
-        previous_hash: row.get(8)?,
-        event_hash: row.get(9)?,
+        previous_hash: row.get(10)?,
+        event_hash: row.get(11)?,
     };
     validate_control_event_record(event)
         .map_err(|reason| invalid_control_event_conversion_error(reason))
@@ -4390,6 +4470,8 @@ fn control_event_from_sqlx_row(row: SqliteRow) -> Result<ControlEvent> {
         target_stirrer_rpm: row.try_get("target_stirrer_rpm")?,
         target_shake_speed_cpm: row.try_get("target_shake_speed_cpm")?,
         reason: row.try_get("reason")?,
+        actor: row.try_get("actor")?,
+        role: row.try_get("role")?,
         created_at: parse_dt_anyhow(&created_at)?,
         previous_hash: row.try_get("previous_hash")?,
         event_hash: row.try_get("event_hash")?,
@@ -5283,6 +5365,7 @@ fn insert_control_event_in_rusqlite_tx(
     command: Option<&SafeCommand>,
     reason: &str,
     created_at: &str,
+    actor: &AuditActor,
 ) -> Result<()> {
     let previous_hash: Option<String> = tx
         .query_row(
@@ -5320,8 +5403,8 @@ fn insert_control_event_in_rusqlite_tx(
         r#"
         INSERT INTO control_events
             (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
-             reason, created_at, previous_hash, event_hash)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             reason, actor, role, created_at, previous_hash, event_hash)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         "#,
         params![
             batch_id,
@@ -5330,6 +5413,8 @@ fn insert_control_event_in_rusqlite_tx(
             target_stirrer_rpm,
             target_shake_speed_cpm,
             reason,
+            actor.username,
+            actor.role,
             created_at,
             previous_hash,
             event_hash
@@ -5346,6 +5431,7 @@ async fn insert_control_event_in_sqlx_tx(
     command: Option<&SafeCommand>,
     reason: &str,
     created_at: &str,
+    actor: &AuditActor,
 ) -> Result<()> {
     let previous_hash: Option<String> = sqlx::query_scalar(
         r#"
@@ -5381,8 +5467,8 @@ async fn insert_control_event_in_sqlx_tx(
         r#"
         INSERT INTO control_events
             (batch_id, event_type, target_temperature_c, target_stirrer_rpm, target_shake_speed_cpm,
-             reason, created_at, previous_hash, event_hash)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             reason, actor, role, created_at, previous_hash, event_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(batch_id)
@@ -5391,6 +5477,8 @@ async fn insert_control_event_in_sqlx_tx(
     .bind(target_stirrer_rpm)
     .bind(target_shake_speed_cpm)
     .bind(reason)
+    .bind(&actor.username)
+    .bind(&actor.role)
     .bind(created_at)
     .bind(previous_hash)
     .bind(event_hash)

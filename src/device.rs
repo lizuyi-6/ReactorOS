@@ -949,6 +949,22 @@ fn targets_for_component(
     Ok(round_component_targets(next))
 }
 
+/// Temperature/stirrer pair a component command would leave the runtime
+/// targets at. The forbidden-control-zone check must see this *pair*, not the
+/// single axis, otherwise `set_target_temperature` alone could push a running
+/// low-stir vessel into a hot-low-stir zone that `/api/control/targets`
+/// rejects with 403 (CLAUDE 3.3: risk-increasing writes cannot skip a proof
+/// another path requires). Returns `None` when the action does not move either
+//  guarded axis (e.g. shake start/stop) — nothing to zone-check.
+pub fn component_control_temperature_rpm_pair(
+    command: &ComponentControlCommand,
+    current: &ControlTargets,
+    safety: &SafetyConfig,
+) -> Result<Option<(f64, f64)>> {
+    let next = targets_for_component(command, current, safety)?;
+    Ok(Some((next.temperature_c, next.stirrer_rpm)))
+}
+
 fn component_number(command: &ComponentControlCommand, field: &str) -> Result<f64> {
     let value = command.value.as_ref().ok_or_else(|| {
         anyhow!(

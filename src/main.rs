@@ -9,7 +9,7 @@ use reactor_edge_daemon::{
     bootstrap::{enforce_network_auth_gate, resolve_assets_dir},
     config::{load_device_config, load_safety_config, DeviceMode},
     control::{ControlBlockReason, ControlDecision},
-    db::Db,
+    db::{AuditActor, Db},
     demo::seed_demo_context,
     device::{build_device, AckStatus},
     memory::load_ai_memory,
@@ -228,6 +228,7 @@ async fn main() -> Result<()> {
                             "control loop task exited unexpectedly; automatic control disabled"
                         }
                     },
+                    &AuditActor::system(),
                 )
                 .await
             {
@@ -628,6 +629,7 @@ async fn control_loop(
                                     "device_write",
                                     Some(&command),
                                     &audit_reason,
+                                    &AuditActor::system(),
                                 )
                                 .await
                             {
@@ -702,6 +704,7 @@ async fn control_loop(
                                 "device_write_failed",
                                 Some(&command),
                                 &reason,
+                                &AuditActor::system(),
                             )
                             .await
                         {
@@ -739,6 +742,7 @@ async fn audit_field_input_auto_disable(
             "field_input_fault_auto_disabled",
             None,
             &audit_reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -763,6 +767,7 @@ async fn audit_downstream_control_fault(
             "downstream_command_fault",
             None,
             &audit_reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -847,7 +852,13 @@ async fn audit_device_write_handshake_fault(
         return;
     }
     if let Err(err) = db
-        .insert_control_event_sqlx(active_batch_id, event_type, Some(command), reason)
+        .insert_control_event_sqlx(
+            active_batch_id,
+            event_type,
+            Some(command),
+            reason,
+            &AuditActor::system(),
+        )
         .await
     {
         tracing::warn!("failed to persist {event_type} event: {err}");
@@ -861,6 +872,7 @@ async fn audit_control_fault_auto_disable(db: &Db, active_batch_id: Option<i64>)
             "control_fault_auto_disabled",
             None,
             "control fault was already latched; automatic control forced disabled",
+            &AuditActor::system(),
         )
         .await
     {
@@ -884,6 +896,7 @@ async fn audit_automatic_batch_recovery_block(
             "unfinished_batch_recovery_auto_blocked",
             None,
             &audit_reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -907,6 +920,7 @@ async fn audit_automatic_final_interlock_block(
             "automatic_final_interlock_blocked",
             None,
             &audit_reason,
+            &AuditActor::system(),
         )
         .await
     {

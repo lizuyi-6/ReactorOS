@@ -7,13 +7,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::{
-    api_auth::{require_permission, Permission},
+    api_auth::{audit_actor_for_user, require_permission, AuthUser, Permission},
     clean_label, ensure_target_update_interlock_clear, ensure_targets_allowed,
     optional_present_i64, optional_present_number, start_process_lifecycle, stop_process_lifecycle,
     success, validate_range, validate_stir_speed, validate_target_temperature, ApiJson, AppError,
     AppState, TargetUpdateInterlockMode, V1Envelope,
 };
-use crate::{control::SafeCommand, db::IntegrationTask, number::round2, state::ControlTargets};
+use crate::{
+    control::SafeCommand,
+    db::{AuditActor, IntegrationTask},
+    number::round2,
+    state::ControlTargets,
+};
 
 #[derive(Debug, Deserialize)]
 pub(super) struct AinasTaskQuery {
@@ -92,9 +97,9 @@ pub(super) async fn create_ainas_task(
     // remote action through /api/integrations/ainas/tasks. Engineer and
     // admin are still subject to the action-specific check below.
     require_permission(&headers, Permission::ApplyIntegrationTask)?;
-    require_ainas_action_permission(&headers, action)?;
+    let user = require_ainas_action_permission(&headers, action)?;
     Ok(Json(success(
-        execute_integration_task(&state, "ainas", payload).await?,
+        execute_integration_task(&state, "ainas", payload, &audit_actor_for_user(&user)).await?,
     )))
 }
 
@@ -102,6 +107,7 @@ pub(crate) async fn execute_integration_task(
     state: &AppState,
     source: &str,
     mut payload: AinasTaskRequest,
+    actor: &AuditActor,
 ) -> Result<IntegrationTask, AppError> {
     let action = normalize_ainas_action(&payload.action)?;
     payload.action = action.to_string();
@@ -138,7 +144,7 @@ pub(crate) async fn execute_integration_task(
         return Ok(task);
     }
 
-    match execute_ainas_task(state, action, &payload).await {
+    match execute_ainas_task(state, action, &payload, actor).await {
         Ok(response) => {
             let update_result = state
                 .db
@@ -228,7 +234,10 @@ fn normalize_ainas_action(action: &str) -> Result<&'static str, AppError> {
     }
 }
 
-fn require_ainas_action_permission(headers: &HeaderMap, action: &str) -> Result<(), AppError> {
+fn require_ainas_action_permission(
+    headers: &HeaderMap,
+    action: &str,
+) -> Result<AuthUser, AppError> {
     let permission = match action {
         "set_targets" => Permission::SetSafeTargets,
         "start_process" | "stop_process" => Permission::StartStopProcess,
@@ -238,18 +247,18 @@ fn require_ainas_action_permission(headers: &HeaderMap, action: &str) -> Result<
             ));
         }
     };
-    require_permission(headers, permission)?;
-    Ok(())
+    require_permission(headers, permission)
 }
 
 async fn execute_ainas_task(
     state: &AppState,
     action: &str,
     payload: &AinasTaskRequest,
+    actor: &AuditActor,
 ) -> Result<Value, AppError> {
     match action {
         "set_targets" => {
-            let targets = apply_ainas_targets(state, payload).await?;
+            let targets = apply_ainas_targets(state, payload, actor).await?;
             Ok(json!({
                 "action": "set_targets",
                 "status": "executed",
@@ -261,7 +270,7 @@ async fn execute_ainas_task(
             let process_id = optional_present_i64(payload.process_id, "process_id")?
                 .ok_or_else(|| AppError::bad_request("process_id is required for start_process"))?;
             let response =
-                start_process_lifecycle(state, process_id, "ainas_process_started").await?;
+                start_process_lifecycle(state, process_id, "ainas_process_started", actor).await?;
             json_response(response)
         }
         "stop_process" => {
@@ -271,6 +280,7 @@ async fn execute_ainas_task(
                 process_id,
                 "ainas_process_stopped",
                 payload.reason.clone(),
+                actor,
             )
             .await?;
             json_response(response)
@@ -308,6 +318,7 @@ fn validate_integration_action_shape(
 async fn apply_ainas_targets(
     state: &AppState,
     payload: &AinasTaskRequest,
+    actor: &AuditActor,
 ) -> Result<ControlTargets, AppError> {
     if payload.target_temperature_c.is_none()
         && payload.target_stirrer_rpm.is_none()
@@ -387,6 +398,7 @@ async fn apply_ainas_targets(
                 reason: reason.clone(),
             }),
             &reason,
+            actor,
         )
         .await?;
     crate::api::commit_targets_after_final_interlock(

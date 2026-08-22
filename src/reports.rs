@@ -9,17 +9,19 @@ use crate::{
 
 pub(crate) fn build_audit_csv(events: &[ControlEvent]) -> String {
     let mut csv = String::from(
-        "id,batch_id,event_type,target_temperature_c,target_stirrer_rpm,target_shake_speed_cpm,reason,created_at,previous_hash,event_hash\n",
+        "id,batch_id,event_type,actor,role,target_temperature_c,target_stirrer_rpm,target_shake_speed_cpm,reason,created_at,previous_hash,event_hash\n",
     );
     for event in events {
         csv.push_str(&format!(
-            "{},{},{},{},{},{},{},{},{},{}\n",
+            "{},{},{},{},{},{},{},{},{},{},{},{}\n",
             event.id,
             event
                 .batch_id
                 .map(|value| value.to_string())
                 .unwrap_or_default(),
             csv_escape(&event.event_type),
+            csv_escape(&event.actor),
+            csv_escape(&event.role),
             event
                 .target_temperature_c
                 .map(|value| value.to_string())

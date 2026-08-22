@@ -26,10 +26,13 @@ use crate::{
     config::{DeviceConfig, DeviceMode, SafetyConfig},
     control::{clamp_operator_targets, forbidden_control_zone, SafeCommand},
     db::{
-        Batch, BatchOutcome, ControlEvent, Db, DemoAlarm, NewProcessStep, ProcessDefinition,
-        ProcessDetail, ProcessStep, ProductResult, SensorSampleRecord,
+        AuditActor, Batch, BatchOutcome, ControlEvent, Db, DemoAlarm, NewProcessStep,
+        ProcessDefinition, ProcessDetail, ProcessStep, ProductResult, SensorSampleRecord,
     },
-    device::{ComponentControlCommand, ComponentControlOutcome, SharedDevice},
+    device::{
+        component_control_temperature_rpm_pair, ComponentControlCommand, ComponentControlOutcome,
+        SharedDevice,
+    },
     field_scenario::{
         detect_field_scenario, detect_production_line, FieldScenarioContext, FieldScenarioProfile,
         ProductionLineProfile,
@@ -64,8 +67,8 @@ pub(crate) use api_response::{success, ApiJson, AppError, V1Envelope};
 #[path = "api_auth.rs"]
 mod api_auth;
 use api_auth::{
-    authenticated_user, login_response, permission_policy, require_admin, require_permission,
-    AuthUser, LoginRequest, LoginResponse, Permission,
+    audit_actor_for_user, authenticated_user, login_response, permission_policy, require_admin,
+    require_permission, AuthUser, LoginRequest, LoginResponse, Permission,
 };
 
 #[path = "modbus_registers.rs"]
@@ -860,8 +863,28 @@ async fn audit_export_csv(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let events = state.db.audit_events_sqlx(10_000, 0, event_type).await?;
-    let csv = build_audit_csv(&events);
+    const AUDIT_EXPORT_ROW_CAP: usize = 10_000;
+    let events = state
+        .db
+        .audit_events_sqlx(AUDIT_EXPORT_ROW_CAP, 0, event_type)
+        .await?;
+    // Never present a truncated export as complete: when more events exist
+    // than the cap returned, append an explicit truncation notice row so the
+    // operator (and any downstream compliance consumer) can tell.
+    let total_events = state.db.audit_event_count_sqlx(event_type).await?;
+    let truncated = total_events > events.len();
+    let mut csv = build_audit_csv(&events);
+    if truncated {
+        csv.push_str(&format!(
+            "# TRUNCATED EXPORT: showing newest {shown} of {total} audit events; raise the export limit or filter by event_type to retrieve the rest\n",
+            shown = events.len(),
+            total = total_events
+        ));
+    }
+    let truncation_headers = (
+        [("x-audit-export-truncated", if truncated { "true" } else { "false" })],
+        [("x-audit-export-total-events", total_events.to_string())],
+    );
     Ok((
         [
             ("content-type", "text/csv; charset=utf-8"),
@@ -870,6 +893,7 @@ async fn audit_export_csv(
                 "attachment; filename=\"reactor-audit-log.csv\"",
             ),
         ],
+        truncation_headers,
         csv,
     ))
 }
@@ -958,9 +982,15 @@ async fn modbus_register_write(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ModbusWriteRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
-    require_admin(&headers)?;
-    let response =
-        apply_modbus_register_write(&state, &register, payload.value, payload.reason).await?;
+    let user = require_admin(&headers)?;
+    let response = apply_modbus_register_write(
+        &state,
+        &register,
+        payload.value,
+        payload.reason,
+        &audit_actor_for_user(&user),
+    )
+    .await?;
     Ok(Json(success(response)))
 }
 
@@ -975,7 +1005,7 @@ async fn create_process(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<CreateProcessRequest>,
 ) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
     ensure_production_basis_write_allowed(&state, "process definition create").await?;
     let name = clean_label(payload.name, "未命名工艺", 80);
     let description = clean_label(payload.description, "", 240);
@@ -986,6 +1016,7 @@ async fn create_process(
             &description,
             "process_created",
             "operator created process",
+            &audit_actor_for_user(&user),
         )
         .await?;
     Ok(Json(success(process)))
@@ -1007,7 +1038,7 @@ async fn update_process(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<UpdateProcessRequest>,
 ) -> Result<Json<V1Envelope<ProcessDefinition>>, AppError> {
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
     ensure_production_basis_write_allowed(&state, "process definition update").await?;
     let Some(current) = process_detail_or_bad_request(&state, process_id).await? else {
         return Err(AppError::not_found("process not found"));
@@ -1024,6 +1055,7 @@ async fn update_process(
             status,
             "process_updated",
             "operator updated process",
+            &audit_actor_for_user(&user),
         )
         .await?
     else {
@@ -1038,7 +1070,7 @@ async fn add_process_step(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ProcessStepRequest>,
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
     ensure_production_basis_write_allowed(&state, "process step add").await?;
     let step = validate_process_step(&state.safety, payload)?;
     let Some(step) = state
@@ -1048,6 +1080,7 @@ async fn add_process_step(
             &step,
             "process_step_added",
             "operator added process step",
+            &audit_actor_for_user(&user),
         )
         .await?
     else {
@@ -1062,7 +1095,7 @@ async fn update_process_step(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ProcessStepRequest>,
 ) -> Result<Json<V1Envelope<ProcessStep>>, AppError> {
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
     ensure_production_basis_write_allowed(&state, "process step update").await?;
     let step = validate_process_step(&state.safety, payload)?;
     let Some(step) = state
@@ -1073,6 +1106,7 @@ async fn update_process_step(
             &step,
             "process_step_updated",
             "operator updated process step",
+            &audit_actor_for_user(&user),
         )
         .await?
     else {
@@ -1086,8 +1120,14 @@ async fn apply_process(
     Path(process_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
-    let response = start_process_lifecycle(&state, process_id, "process_applied").await?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
+    let response = start_process_lifecycle(
+        &state,
+        process_id,
+        "process_applied",
+        &audit_actor_for_user(&user),
+    )
+    .await?;
     Ok(Json(success(response)))
 }
 
@@ -1096,8 +1136,14 @@ async fn start_process(
     Path(process_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
-    let response = start_process_lifecycle(&state, process_id, "process_started").await?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
+    let response = start_process_lifecycle(
+        &state,
+        process_id,
+        "process_started",
+        &audit_actor_for_user(&user),
+    )
+    .await?;
     Ok(Json(success(response)))
 }
 
@@ -1107,12 +1153,13 @@ async fn stop_process_by_id(
     headers: HeaderMap,
     payload: Option<Json<StopProcessRequest>>,
 ) -> Result<Json<V1Envelope<ProcessStopResponse>>, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
     let response = stop_process_lifecycle(
         &state,
         Some(process_id),
         "process_stopped",
         payload.and_then(|Json(payload)| payload.reason),
+        &audit_actor_for_user(&user),
     )
     .await?;
     Ok(Json(success(response)))
@@ -1123,12 +1170,13 @@ async fn stop_current_process(
     headers: HeaderMap,
     payload: Option<Json<StopProcessRequest>>,
 ) -> Result<Json<V1Envelope<ProcessStopResponse>>, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
     let response = stop_process_lifecycle(
         &state,
         None,
         "process_stopped",
         payload.and_then(|Json(payload)| payload.reason),
+        &audit_actor_for_user(&user),
     )
     .await?;
     Ok(Json(success(response)))
@@ -1138,6 +1186,7 @@ async fn start_process_lifecycle(
     state: &AppState,
     process_id: i64,
     event_type: &'static str,
+    actor: &AuditActor,
 ) -> Result<ProcessApplyResponse, AppError> {
     let Some(detail) = process_detail_or_bad_request(state, process_id).await? else {
         return Err(AppError::not_found("process not found"));
@@ -1176,7 +1225,7 @@ async fn start_process_lifecycle(
         "process started from persisted process definition"
     };
     if let Err(err) = start_process_on_device(state, &targets, Some(batch.id)).await {
-        audit_start_failed_before_activation(state, Some(batch.id), &targets, "process", &err)
+        audit_start_failed_before_activation(state, Some(batch.id), &targets, "process", &err, actor)
             .await;
         if let Err(finish_err) = state.db.finish_batch_sqlx(batch.id).await {
             tracing::warn!("failed to mark failed process start batch finished: {finish_err}");
@@ -1199,6 +1248,7 @@ async fn start_process_lifecycle(
                 reason: start_reason.to_string(),
             }),
             start_reason,
+            actor,
         )
         .await
     {
@@ -1320,6 +1370,7 @@ async fn audit_start_failed_before_activation(
     targets: &ControlTargets,
     start_kind: &str,
     err: &AppError,
+    actor: &AuditActor,
 ) {
     let error_message = err.message().to_string();
     let reason = format!("{start_kind} start failed before activation: {error_message}");
@@ -1339,6 +1390,7 @@ async fn audit_start_failed_before_activation(
                 reason: reason.clone(),
             }),
             &reason,
+            actor,
         )
         .await
     {
@@ -1362,6 +1414,7 @@ async fn stop_process_lifecycle(
     expected_process_id: Option<i64>,
     event_type: &'static str,
     operator_reason: Option<String>,
+    actor: &AuditActor,
 ) -> Result<ProcessStopResponse, AppError> {
     let batch_id = {
         let runtime = state.runtime.read().await;
@@ -1461,6 +1514,7 @@ async fn stop_process_lifecycle(
                     reason: recovery_reason.clone(),
                 }),
                 &recovery_reason,
+                actor,
             )
             .await
         {
@@ -1507,6 +1561,7 @@ async fn stop_process_lifecycle(
                 reason: stop_reason.clone(),
             }),
             &stop_reason,
+            actor,
         )
         .await
     {
@@ -1919,9 +1974,23 @@ async fn batches_export_csv(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&headers, Permission::ExportReports)?;
-    let batches = state.db.recent_batches_sqlx(10_000).await?;
-    let outcomes = state.db.recent_batch_outcomes_sqlx(10_000).await?;
-    let csv = build_batches_csv(&batches, &outcomes);
+    const BATCH_EXPORT_ROW_CAP: usize = 10_000;
+    let batches = state.db.recent_batches_sqlx(BATCH_EXPORT_ROW_CAP).await?;
+    let outcomes = state.db.recent_batch_outcomes_sqlx(BATCH_EXPORT_ROW_CAP).await?;
+    let total_batches = state.db.batch_count_sqlx().await?;
+    let truncated = total_batches > batches.len();
+    let mut csv = build_batches_csv(&batches, &outcomes);
+    if truncated {
+        csv.push_str(&format!(
+            "# TRUNCATED EXPORT: showing {shown} of {total} batches; raise the export limit to retrieve the rest\n",
+            shown = batches.len(),
+            total = total_batches
+        ));
+    }
+    let truncation_headers = (
+        [("x-batches-export-truncated", if truncated { "true" } else { "false" })],
+        [("x-batches-export-total", total_batches.to_string())],
+    );
     Ok((
         [
             ("content-type", "text/csv; charset=utf-8"),
@@ -1930,6 +1999,7 @@ async fn batches_export_csv(
                 "attachment; filename=\"reactor-batches.csv\"",
             ),
         ],
+        truncation_headers,
         csv,
     ))
 }
@@ -1939,9 +2009,25 @@ async fn batches_export_xlsx(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, AppError> {
     require_permission(&headers, Permission::ExportReports)?;
-    let batches = state.db.recent_batches_sqlx(10_000).await?;
-    let outcomes = state.db.recent_batch_outcomes_sqlx(10_000).await?;
+    const BATCH_EXPORT_ROW_CAP_XLSX: usize = 10_000;
+    let batches = state
+        .db
+        .recent_batches_sqlx(BATCH_EXPORT_ROW_CAP_XLSX)
+        .await?;
+    let outcomes = state
+        .db
+        .recent_batch_outcomes_sqlx(BATCH_EXPORT_ROW_CAP_XLSX)
+        .await?;
+    // XLSX is a zip container: appending a note after the archive bytes would
+    // corrupt it for strict readers. Truncation is disclosed via response
+    // headers only (x-batches-export-truncated / x-batches-export-total).
+    let total_batches = state.db.batch_count_sqlx().await?;
+    let truncated = total_batches > batches.len();
     let workbook = build_batches_xlsx(&batches, &outcomes)?;
+    let truncation_headers = (
+        [("x-batches-export-truncated", if truncated { "true" } else { "false" })],
+        [("x-batches-export-total", total_batches.to_string())],
+    );
     Ok((
         [
             (
@@ -1953,6 +2039,7 @@ async fn batches_export_xlsx(
                 "attachment; filename=\"reactor-batches.xlsx\"",
             ),
         ],
+        truncation_headers,
         workbook,
     ))
 }
@@ -2024,13 +2111,14 @@ async fn control_component(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ComponentControlRequest>,
 ) -> Result<Json<V1Envelope<ComponentControlResponse>>, AppError> {
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
     let response = execute_component_control(
         &state,
         &device_id,
         &component_id,
         payload,
         "component_control",
+        &audit_actor_for_user(&user),
     )
     .await?;
     Ok(Json(success(response)))
@@ -2042,6 +2130,7 @@ async fn execute_component_control(
     component_id: &str,
     payload: ComponentControlRequest,
     event_type: &'static str,
+    actor: &AuditActor,
 ) -> Result<ComponentControlResponse, AppError> {
     ensure_reactor_device_id(device_id)?;
 
@@ -2103,6 +2192,19 @@ async fn execute_component_control(
         action: payload.action.clone(),
         value: component_control_command_value(&action_capability, &payload),
     };
+    // Forbidden-zone pair check BEFORE any device write. A component write
+    // replaces the whole target set on the downstream, so the resulting
+    // temperature/stirrer pair must satisfy the same forbidden-control-zone
+    // envelope `/api/control/targets` enforces (CLAUDE 3.3): without this, a
+    // manual `set_target_temperature` or `set_rpm` could drive the field into
+    // a zone the targets endpoint rejects with 403.
+    if requires_proven_safe_field {
+        if let Some((temperature_c, stirrer_rpm)) =
+            component_control_temperature_rpm_pair(&command, &runtime.targets, &state.safety)?
+        {
+            validate_target_pair_allowed(&state.safety, temperature_c, stirrer_rpm)?;
+        }
+    }
     let outcome = match state
         .device
         .write_component(&command, &runtime.targets, &state.safety)
@@ -2134,6 +2236,7 @@ async fn execute_component_control(
             event_type,
             Some(&audit_command),
             &audit_reason,
+            actor,
         )
         .await
     {
@@ -2262,7 +2365,8 @@ async fn ai_control(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<AiControlRequest>,
 ) -> Result<Json<V1Envelope<AiControlResponse>>, AppError> {
-    require_permission(&headers, Permission::ApplyAiSuggestion)?;
+    let user = require_permission(&headers, Permission::ApplyAiSuggestion)?;
+    let actor = audit_actor_for_user(&user);
     let dry_run = optional_present_bool(payload.dry_run, "dry_run")?.unwrap_or(true);
     let allow_process_start =
         optional_present_bool(payload.allow_process_start, "allow_process_start")?.unwrap_or(true);
@@ -2350,6 +2454,7 @@ async fn ai_control(
                         &recommendation,
                         "ai_master_recommendation_generated",
                         "AI master control generated a recommendation before applying targets",
+                        &actor,
                     )
                     .await?;
             }
@@ -2382,6 +2487,7 @@ async fn ai_control(
                     &state,
                     targets.clone(),
                     "AI master control adjusted targets",
+                    &actor,
                 )
                 .await?;
                 actions.last_mut().expect("target action exists").result =
@@ -2419,7 +2525,7 @@ async fn ai_control(
             });
             if !dry_run {
                 let started =
-                    start_process_lifecycle(&state, process.id, "ai_process_started").await?;
+                    start_process_lifecycle(&state, process.id, "ai_process_started", &actor).await?;
                 actions.last_mut().expect("process action exists").result =
                     Some(serde_json::to_value(started).map_err(anyhow::Error::from)?);
             }
@@ -2467,7 +2573,7 @@ async fn ai_control(
             });
             if !dry_run {
                 let stopped =
-                    stop_process_lifecycle(&state, None, "ai_process_stopped", None).await?;
+                    stop_process_lifecycle(&state, None, "ai_process_stopped", None, &actor).await?;
                 actions.last_mut().expect("stop action exists").result =
                     Some(serde_json::to_value(stopped).map_err(anyhow::Error::from)?);
             }
@@ -2501,6 +2607,7 @@ async fn ai_control(
                         "shake_stepper",
                         action,
                         "ai_component_control",
+                        &actor,
                     )
                     .await?;
                     actions.last_mut().expect("component action exists").result =
@@ -2540,6 +2647,7 @@ async fn ai_control(
                 "ai_master_decision",
                 audit_command.as_ref(),
                 &audit_reason,
+                &actor,
             )
             .await
         {
@@ -2613,6 +2721,7 @@ async fn ai_experiment_plan(
             &recommendation,
             "ai_experiment_plan_recommendation_generated",
             "AI experiment plan generated a recommendation draft for operator review",
+            &AuditActor::system(),
         )
         .await?;
     let plan = build_experiment_plan(&state, recommendation).await?;
@@ -2864,6 +2973,7 @@ async fn apply_ai_targets(
     state: &AppState,
     targets: ControlTargets,
     reason: &str,
+    actor: &AuditActor,
 ) -> Result<(), AppError> {
     let expected_current = state.runtime.read().await.targets.clone();
     let acknowledged_safety_latches = {
@@ -2880,7 +2990,7 @@ async fn apply_ai_targets(
     let command = safe_command_from_runtime_targets(&targets, reason);
     state
         .db
-        .insert_control_event_sqlx(None, "ai_targets_updated", Some(&command), reason)
+        .insert_control_event_sqlx(None, "ai_targets_updated", Some(&command), reason, actor)
         .await?;
     if let Err(err) = state.device.write_targets(&command).await {
         latch_control_write_fault(state, &err).await;
@@ -3020,7 +3130,8 @@ async fn v1_control(
     ApiJson(payload): ApiJson<V1ControlRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     ensure_reactor_device_id(&device_id)?;
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
+    let actor = audit_actor_for_user(&user);
     let auto_start = optional_present_bool(payload.auto_start, "auto_start")?.unwrap_or(false);
     let targets = validate_v1_control_params(&state.safety, &payload.params, auto_start)?;
     if auto_start {
@@ -3065,7 +3176,7 @@ async fn v1_control(
 
     if auto_start {
         if let Err(err) = start_process_on_device(&state, &targets, batch_id).await {
-            audit_start_failed_before_activation(&state, batch_id, &targets, "v1 control", &err)
+            audit_start_failed_before_activation(&state, batch_id, &targets, "v1 control", &err, &actor)
                 .await;
             // The device start write failed, so the field was never commanded on and
             // runtime was never armed with this batch. Mirror batch start: just close
@@ -3099,6 +3210,7 @@ async fn v1_control(
                 reason: "v1 control request accepted after document range validation".to_string(),
             }),
             "v1 control request accepted after document range validation",
+            &actor,
         )
         .await
     {
@@ -3354,7 +3466,8 @@ async fn v1_process(
     ApiJson(payload): ApiJson<V1ProcessRequest>,
 ) -> Result<Json<V1Envelope<Value>>, AppError> {
     ensure_reactor_device_id(&device_id)?;
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
+    let actor = audit_actor_for_user(&user);
     if payload.phases.is_empty() {
         return Err(AppError::bad_request("phases must not be empty"));
     }
@@ -3480,6 +3593,7 @@ async fn v1_process(
                 reason: "v1 process accepted after document range validation".to_string(),
             }),
             "v1 process accepted after document range validation",
+            &actor,
         )
         .await?;
     commit_targets_after_final_interlock(
@@ -3520,7 +3634,8 @@ async fn start_batch(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<StartBatchRequest>,
 ) -> Result<Json<Batch>, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
+    let actor = audit_actor_for_user(&user);
     let has_explicit_control_field = payload.target_temperature_c.is_some()
         || payload.target_stirrer_rpm.is_some()
         || payload.target_shake_speed_cpm.is_some()
@@ -3610,6 +3725,7 @@ async fn start_batch(
             &applied_targets,
             "batch",
             &err,
+            &actor,
         )
         .await;
         if let Err(finish_err) = state.db.finish_batch_sqlx(batch.id).await {
@@ -3633,6 +3749,7 @@ async fn start_batch(
                 reason: "batch started and runtime targets updated".to_string(),
             }),
             "batch started and runtime targets updated",
+            &actor,
         )
         .await
     {
@@ -3676,7 +3793,8 @@ async fn finish_batch(
     Path(batch_id): Path<i64>,
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::StartStopProcess)?;
+    let user = require_permission(&headers, Permission::StartStopProcess)?;
+    let actor = audit_actor_for_user(&user);
     let active_batch_id = state.runtime.read().await.active_batch_id;
     let Some(batch) = state.db.batch_by_id_sqlx(batch_id).await? else {
         if active_batch_id == Some(batch_id) {
@@ -3779,6 +3897,7 @@ async fn finish_batch(
             "batch_finished",
             audit_command.as_ref(),
             "batch finished; automatic control disabled",
+            &actor,
         )
         .await
     {
@@ -3836,6 +3955,7 @@ async fn finish_missing_active_batch_recovery(
                 reason: recovery_reason.clone(),
             }),
             &recovery_reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -3863,7 +3983,8 @@ async fn product_results(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ProductResultRequest>,
 ) -> Result<Json<AiRecommendationEnvelope>, AppError> {
-    require_permission(&headers, Permission::EditProcess)?;
+    let user = require_permission(&headers, Permission::EditProcess)?;
+    let actor = audit_actor_for_user(&user);
     ensure_batch_ready_for_product_result(&state, payload.batch_id).await?;
     if !(0.0..=100.0).contains(&payload.yield_percent) {
         return Err(AppError::bad_request(
@@ -3887,6 +4008,7 @@ async fn product_results(
             &result,
             "product_result_recorded",
             "product result saved; recommendation regeneration queued",
+            &actor,
         )
         .await?;
     let recommendation = generate_recommendation(&state).await?;
@@ -3896,6 +4018,7 @@ async fn product_results(
             &recommendation,
             "product_result_recommendation_generated",
             "product result regenerated AI recommendation",
+            &actor,
         )
         .await?;
     Ok(Json(recommendation_envelope(&state, recommendation).await))
@@ -3977,7 +4100,8 @@ async fn set_auto(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<AutoRequest>,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
+    let actor = audit_actor_for_user(&user);
     let acknowledged_safety_latches = if payload.enabled {
         let runtime = {
             let mut runtime = state.runtime.write().await;
@@ -4012,6 +4136,7 @@ async fn set_auto(
             },
             None,
             "operator changed automatic control state",
+            &actor,
         )
         .await?;
     if payload.enabled {
@@ -4046,7 +4171,8 @@ async fn set_manual_lock(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<ManualLockRequest>,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
+    let actor = audit_actor_for_user(&user);
     let acknowledged_safety_latches = if !payload.locked {
         let runtime = {
             let mut runtime = state.runtime.write().await;
@@ -4074,6 +4200,7 @@ async fn set_manual_lock(
                 "manual_lock_on",
                 None,
                 "operator enabled manual lock; automatic control disabled",
+                &actor,
             )
             .await?;
         return Ok(StatusCode::NO_CONTENT);
@@ -4109,6 +4236,7 @@ async fn set_manual_lock(
             "manual_lock_off",
             None,
             "operator requested manual lock disable; awaiting final generation re-check before clearing",
+            &actor,
         )
         .await?;
     // Final generation re-check: any latch that advanced during the audit window
@@ -4130,6 +4258,7 @@ async fn set_manual_lock(
                 "manual_unlock_refused",
                 None,
                 "manual lock unlock refused: a safety latch fired during the audit window; the preceding manual_lock_off did NOT take effect and manual lock remains engaged",
+                &actor,
             )
             .await?;
         {
@@ -4180,7 +4309,8 @@ async fn reset_control_fault(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
+    let actor = audit_actor_for_user(&user);
     let (acknowledged_error, acknowledged_control_fault_generation) = {
         let mut runtime = state.runtime.write().await;
         let Some(error) = runtime.last_control_error.clone() else {
@@ -4214,6 +4344,7 @@ async fn reset_control_fault(
             "control_fault_reset",
             None,
             "operator acknowledged device write fault after field verification; automatic control remains disabled",
+            &actor,
         )
         .await?;
     {
@@ -4254,7 +4385,8 @@ async fn set_targets(
     headers: HeaderMap,
     ApiJson(payload): ApiJson<TargetRequest>,
 ) -> Result<Json<ControlTargets>, AppError> {
-    require_permission(&headers, Permission::SetSafeTargets)?;
+    let user = require_permission(&headers, Permission::SetSafeTargets)?;
+    let actor = audit_actor_for_user(&user);
     let current = state.runtime.read().await.targets.clone();
     let targets = ControlTargets {
         temperature_c: payload.temperature_c,
@@ -4297,6 +4429,7 @@ async fn set_targets(
                 reason: "operator target request after safety validation".to_string(),
             }),
             "operator changed desired targets after configured safety validation",
+            &actor,
         )
         .await?;
     commit_targets_after_final_interlock(
@@ -4343,7 +4476,8 @@ async fn emergency_stop(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::EmergencyStop)?;
+    let user = require_permission(&headers, Permission::EmergencyStop)?;
+    let actor = audit_actor_for_user(&user);
     {
         let mut runtime = state.runtime.write().await;
         runtime.engage_emergency_stop();
@@ -4368,6 +4502,7 @@ async fn emergency_stop(
                 &format!(
                     "operator triggered emergency stop; fail-safe target write FAILED, downstream may still hold previous targets: {write_err_msg}; activate hardware e-stop"
                 ),
+                &actor,
             )
             .await
         {
@@ -4384,6 +4519,7 @@ async fn emergency_stop(
             "emergency_stop",
             Some(&stop_command),
             "operator triggered emergency stop; fail-safe targets delivered to downstream device; automatic control disabled",
+            &actor,
         )
         .await
     {
@@ -4400,7 +4536,8 @@ async fn reset_emergency_stop(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
-    require_permission(&headers, Permission::EmergencyStop)?;
+    let user = require_permission(&headers, Permission::EmergencyStop)?;
+    let actor = audit_actor_for_user(&user);
     let acknowledged_emergency_stop_generation = {
         let runtime = {
             let mut runtime = state.runtime.write().await;
@@ -4426,6 +4563,7 @@ async fn reset_emergency_stop(
             "emergency_stop_reset",
             None,
             "operator reset emergency stop flag",
+            &actor,
         )
         .await?;
     {
@@ -4484,6 +4622,7 @@ async fn generate_latest_recommendation(
             &recommendation,
             "recommendation_generated",
             "operator regenerated latest AI recommendation",
+            &AuditActor::system(),
         )
         .await?;
     Ok(Json(Some(
@@ -4702,6 +4841,7 @@ async fn audit_high_sensor_alarm_auto_disable(
             "high_sensor_alarm_auto_disabled",
             None,
             &reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -4724,6 +4864,7 @@ async fn audit_field_input_auto_disable(
             "field_input_fault_auto_disabled",
             None,
             reason,
+            &AuditActor::system(),
         )
         .await
     {
@@ -4738,6 +4879,7 @@ async fn audit_control_fault_auto_disable(db: &Db, active_batch_id: Option<i64>)
             "control_fault_auto_disabled",
             None,
             "control fault was already latched; automatic control forced disabled",
+            &AuditActor::system(),
         )
         .await
     {

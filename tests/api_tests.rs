@@ -20,7 +20,7 @@ use reactor_edge_daemon::{
         OptimizerBounds, SafetyConfig, StirrerSafety, TemperatureSafety,
     },
     control::SafeCommand,
-    db::{Db, ProductResult},
+    db::{AuditActor, Db, ProductResult},
     demo::seed_demo_context,
     device::{
         ComponentActionCapability, ComponentControlCommand, ComponentControlOutcome,
@@ -129,6 +129,20 @@ impl ReactorDevice for TestComponentDevice {
                     min: Some(0.0),
                     max: Some(2000.0),
                     unit: Some("RPM".to_string()),
+                }],
+            },
+            DeviceComponentCapability {
+                component_id: "temperature_controller".to_string(),
+                component_type: "temperature_controller".to_string(),
+                label: "Temperature Controller".to_string(),
+                controllable: true,
+                actions: vec![ComponentActionCapability {
+                    action: "set_target_temperature".to_string(),
+                    label: "Set Target".to_string(),
+                    value_type: "number".to_string(),
+                    min: Some(0.0),
+                    max: Some(500.0),
+                    unit: Some("C".to_string()),
                 }],
             },
         ]
@@ -4898,6 +4912,127 @@ async fn component_control_blocks_dangerous_actions_during_unfinished_batch_reco
 }
 
 #[tokio::test]
+async fn component_control_rejects_forbidden_zone_pair_before_device_write() {
+    // Regression for the forbidden-zone bypass: a component write replaces the
+    // whole target set on the downstream, so the resulting temperature/stirrer
+    // pair must satisfy the same forbidden-control-zone envelope that
+    // /api/control/targets enforces. temp=130 + rpm=100 sits inside the
+    // hot-low-stir zone (125..160 C, 0..350 rpm) and must be refused 403
+    // before any device write or audit event.
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(50.0, 0.1, 240.0, 24.0, 10.0)).await;
+    {
+        let mut state = runtime.write().await;
+        state.device_status = Some(healthy_device_status());
+    }
+    let original_targets = runtime.read().await.targets.clone();
+    let (device, recorded_device) = recording_component_device();
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime: runtime.clone(),
+            device,
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+            simulation_session: None,
+        },
+        PathBuf::from("static"),
+    );
+
+    // set_target_temperature alone: current rpm (300) + temp 130 enters the zone.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/devices/reactor_001/components/temperature_controller/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"action": "set_target_temperature", "value": 130.0}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    assert!(
+        body["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("forbidden control zone"),
+        "expected forbidden-zone rejection, got: {body}"
+    );
+
+    // set_rpm alone: temp 60 stays outside the zone, but dropping rpm into the
+    // zone while temp is high must also be checked. Park temp at 130 first via
+    // runtime state to prove the rpm-only path is zone-checked too.
+    {
+        let mut state = runtime.write().await;
+        state.targets.temperature_c = 130.0;
+    }
+    let rpm_only = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/devices/reactor_001/components/stirrer_motor/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"action": "set_rpm", "value": 100.0}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(rpm_only.status(), StatusCode::FORBIDDEN);
+
+    // Neither rejected command may reach the device or mutate runtime targets.
+    assert!(recorded_device.component_writes.lock().unwrap().is_empty());
+    assert_eq!(runtime.read().await.targets, {
+        let mut expected = original_targets.clone();
+        expected.temperature_c = 130.0;
+        expected
+    });
+    assert!(db.recent_control_events(10).unwrap().is_empty());
+
+    // Sanity: a safe pair still passes the zone check and reaches the device.
+    {
+        let mut state = runtime.write().await;
+        state.targets.temperature_c = original_targets.temperature_c;
+    }
+    let safe = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/devices/reactor_001/components/temperature_controller/control")
+                .header("authorization", auth_header("operator"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({"action": "set_target_temperature", "value": 80.0}).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(safe.status(), StatusCode::OK);
+    assert_eq!(
+        recorded_device.component_writes.lock().unwrap().len(),
+        1,
+        "a zone-safe component write must reach the device"
+    );
+}
+
+#[tokio::test]
 async fn component_control_rejects_invalid_action_values_before_device_write() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -8966,6 +9101,109 @@ async fn upper_computer_supports_audit_config_and_modbus_debug_pages() {
     assert!(csv.contains("event_hash"));
     assert!(csv.contains("\"'=pressure valid smoke test\""));
     assert!(!csv.contains(",=pressure valid smoke test,"));
+}
+
+#[tokio::test]
+async fn audit_logs_carry_actor_and_role_from_authenticated_writes() {
+    // V21 regression: /api/audit/logs events must expose actor/role — the
+    // authenticated username/role for HTTP-initiated writes and the explicit
+    // "system" identity for daemon-originated events.
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    db.insert_sample(
+        None,
+        &SensorSnapshot {
+            temperature_c: 42.5,
+            pressure_mpa: 0.18,
+            stirrer_rpm: 260.0,
+            shake_speed_cpm: 30.0,
+            tilt_state: 1,
+            tilt_angle_deg: 12.5,
+            flow_rate_l_min: 2.0,
+            product_concentration_percent: 10.0,
+            ph: 6.8,
+            captured_at: Utc::now(),
+        },
+    )
+    .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = db.recent_samples(1).unwrap().pop();
+    }
+    let app = router(
+        AppState {
+            db: db.clone(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+            simulation_session: None,
+        },
+        PathBuf::from("static"),
+    );
+
+    // Authenticated write through the Modbus debug API (admin role).
+    let write_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/modbus/registers/target_pressure_mpa/write")
+                .header("authorization", auth_header("admin"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({ "value": 0.4, "reason": "actor probe" }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(write_response.status(), StatusCode::OK);
+
+    // Daemon-originated event must use the explicit system identity.
+    db.insert_control_event(
+        None,
+        "system_probe",
+        None,
+        "daemon internal action",
+        &AuditActor::system(),
+    )
+    .unwrap();
+
+    let audit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/audit/logs?page=1&page_size=50")
+                .header("authorization", auth_header("engineer"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(audit_response.status(), StatusCode::OK);
+    let body = to_bytes(audit_response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let events = body["data"]["events"].as_array().unwrap();
+    let modbus_event = events
+        .iter()
+        .find(|event| event["event_type"] == "modbus_register_write")
+        .expect("modbus_register_write audit event must exist");
+    assert_eq!(modbus_event["actor"], "admin");
+    assert_eq!(modbus_event["role"], "admin");
+    let system_event = events
+        .iter()
+        .find(|event| event["event_type"] == "system_probe")
+        .expect("system_probe audit event must exist");
+    assert_eq!(system_event["actor"], "system");
+    assert_eq!(system_event["role"], "system");
 }
 
 #[tokio::test]
@@ -13792,6 +14030,7 @@ async fn batch_export_and_report_are_generated_from_backend_data() {
         "manual|operator_note",
         None,
         hostile_audit_reason,
+        &AuditActor::system(),
     )
     .unwrap();
 

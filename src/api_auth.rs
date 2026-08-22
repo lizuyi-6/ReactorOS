@@ -145,6 +145,11 @@ pub(crate) fn authenticated_user(headers: &HeaderMap) -> Result<AuthUser, AppErr
     Ok(auth_user(username, role))
 }
 
+/// Build the audit-trail actor identity for an authenticated session.
+pub(crate) fn audit_actor_for_user(user: &AuthUser) -> crate::db::AuditActor {
+    crate::db::AuditActor::new(user.username.as_str(), user.role.as_str())
+}
+
 pub(crate) fn require_permission(
     headers: &HeaderMap,
     permission: Permission,
