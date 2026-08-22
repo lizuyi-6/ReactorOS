@@ -59,10 +59,38 @@ export async function vueKeepPipelineFlowing(request, token) {
   return setInterval(post, 2000);
 }
 
+// AI 主控执行（fullchain ai 用例点击"立即执行"）会经 aiApi.control 默认
+// allow_process_start=true 自动启动工艺/批次，污染后续用例（409 控制台噪音、
+// AI 页错误态）。每个用例开始前自愈：停活动工艺 + 结束未完结批次。
+export async function ensureNoActiveBatch(request, token) {
+  const headers = { Authorization: "Bearer " + token, "Content-Type": "application/json" };
+  try {
+    const cur = await request.get("/api/v1/control/process/current", { headers });
+    if (cur.ok()) {
+      const j = await cur.json().catch(() => ({}));
+      const st = j?.data?.status ?? j?.status;
+      if (st === "active") {
+        await request.post("/api/v1/control/process/stop", { headers, data: { reason: "e2e 用例隔离清理" } }).catch(() => {});
+      }
+    }
+    const b = await request.get("/api/batches", { headers });
+    if (b.ok()) {
+      const j = await b.json().catch(() => ({}));
+      const list = j?.data?.batches ?? [];
+      for (const bt of list) {
+        if (!(bt.finished_at ?? bt.finishedAt)) {
+          await request.post("/api/batches/" + (bt.id ?? bt.batch_id) + "/finish", { headers, data: { reason: "e2e 用例隔离清理" } }).catch(() => {});
+        }
+      }
+    }
+  } catch { /* 自愈失败不阻塞用例 */ }
+}
+
 // Load the Vue app authenticated, with a live pipeline feeding samples so the
 // monitor shows real readings (not the 503 empty state). Returns a cleanup fn.
 export async function prepareVuePage(page, request) {
   const token = await vueLogin(request);
+  await ensureNoActiveBatch(request, token);
   // NOTE: we intentionally do NOT call /api/test/reset here. Reset wipes the
   // seeded demo batches/processes, which the history-timestamp test needs to
   // see (an empty history table has no timestamps to format-check). The
@@ -100,7 +128,7 @@ export async function prepareVuePage(page, request) {
     localStorage.setItem("reactoros.vue.language", "zh");
   }, [token]);
   await page.goto("/#/monitor", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("body")).toContainText("实时监控");
+  await expect(page.locator("body")).toContainText("Reactor Overview");
   return () => clearInterval(interval);
 }
 

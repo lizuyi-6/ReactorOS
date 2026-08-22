@@ -33,15 +33,14 @@ test.describe("Vue HMI — desktop acceptance", () => {
     await page.goto("/#/monitor", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(800);
     const body = await page.locator("body").innerText();
-    // Pressure card layout after the HMI rebuild: "釜内压力 / ● LIVE / 0.500 / MPa".
-    // Assert a numeric MPa reading appears after the label (not the "--" placeholder);
-    // the gap is bounded so this only matches within the pressure card.
-    expect(body, "pressure card must show an MPa value, not '--'").toMatch(/釜内压力[\s\S]{1,60}?[\d.]+\s*MPa/);
-    expect(body, "pressure must not be the empty placeholder").not.toMatch(/釜内压力[\s\S]{1,60}?--/);
+    // HMI 重建后压力卡为 "Pressure 压力 / 3.00 bar"（后端 MPa × 10 换算显示，
+    // 见 ControlView.vue 注释）。断言标签附近有数值+单位，而不是 "--" 占位符。
+    expect(body, "pressure card must show a numeric bar value, not '--'").toMatch(/压力[\s\S]{1,40}?[\d.]+\s*bar/);
+    expect(body, "pressure must not be the empty placeholder").not.toMatch(/压力[\s\S]{1,20}?--/);
     // The trend chart is rendered by ECharts into a <canvas>. After tree-shaking
     // ECharts to LineChart + GridComponent + CanvasRenderer, a missing component
     // would leave the canvas empty or log to the console - assert both.
-    await expect(page.locator("canvas")).toBeVisible();
+    await expect(page.locator("canvas").first()).toBeVisible();
     assertNoVueConsoleErrors(page);
   });
 
@@ -66,28 +65,20 @@ test.describe("Vue HMI — desktop acceptance", () => {
     await prepareVuePage(page, request);
     await page.goto("/#/control", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(600);
-    const input = page.locator('.el-input-number input, input[type="number"]').first();
-    await input.fill("99999");
-    const btn = page.locator('button:has-text("写入"), button:has-text("Write")').first();
-    const [resp] = await Promise.all([
-      page
-        .waitForResponse(
-          (r) => r.url().includes("/api/") && ["POST", "PUT"].includes(r.request().method()),
-          { timeout: 5000 }
-        )
-        .catch(() => null),
-      btn.click({ timeout: 2000 }).catch(() => {}),
-    ]);
-    expect(resp, "a write request must reach the backend").not.toBeNull();
-    // The rebuilt UI's el-input-number clamps to the safety max before
-    // submitting, so 99999 must NEVER be sent as-is. Assert the committed
-    // temperature_c is within a sane reactor range (well below 99999).
-    // The backend safety gate (out-of-range refusal) is covered by api_tests.rs.
-    const sentBody = resp.request().postData() ?? "";
-    const tempMatch = sentBody.match(/"temperature_c"\s*:\s*([\d.]+)/);
-    expect(tempMatch, "request body must carry a temperature_c field").not.toBeNull();
-    const committedTemp = Number(tempMatch[1]);
-    expect(committedTemp, "out-of-range input must be clamped before submit, not sent as 99999").toBeLessThan(1000);
-    expect(committedTemp, "clamped value must be within reactor safety range").toBeLessThanOrEqual(300);
+    // 新 UI 用 el-slider + 步进按钮代替自由数字输入：越界值无法输入，边界由
+    // 滑杆 min/max 结构性保证。断言滑杆上限不超控制层安全边界（温度 160°C /
+    // 转速 1200rpm，config/safety.toml），且只读列（压力/流量）滑杆被禁用。
+    const sliders = page.locator(".sp-col .el-slider[role=slider], .sp-col .el-slider .el-slider__runway");
+    await expect(sliders.first()).toBeVisible({ timeout: 8000 });
+    const tempCol = page.locator(".sp-col", { hasText: "目标温度" }).first();
+    const tempMax = await tempCol.locator("[role=slider]").first().getAttribute("aria-valuemax");
+    expect(Number(tempMax), "temperature slider max must be within safety bound 160").toBeLessThanOrEqual(160);
+    const rpmCol = page.locator(".sp-col", { hasText: "搅拌转速" }).first();
+    const rpmMax = await rpmCol.locator("[role=slider]").first().getAttribute("aria-valuemax");
+    expect(Number(rpmMax), "stirrer slider max must be within safety bound 1200").toBeLessThanOrEqual(1200);
+    // 只读列（目标压力）不得允许写入
+    const roCol = page.locator(".sp-col.readonly", { hasText: "目标压力" }).first();
+    await expect(roCol, "pressure target must be read-only").toBeVisible();
+    assertNoVueConsoleErrors(page);
   });
 });

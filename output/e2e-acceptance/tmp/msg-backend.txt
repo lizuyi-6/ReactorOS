@@ -1,0 +1,7 @@
+feat(audit): 审计事件携带 actor/role 并全链路带身份
+
+- control_events 新增 actor/role 列（NOT NULL DEFAULT system），COLUMN_MIGRATIONS 19->21，rusqlite+SQLx 双路径读写
+- HTTP 写路径从 bearer 身份写入发起者；系统/控制环事件写 system；MQTT/Modbus TCP 通道分别标记 mqtt/modbus-tcp
+- 审计 CSV 导出带 actor/role 列；哈希链载荷刻意不含新字段（避免既有库链校验 broken）
+- 配套：组件指令禁区校验按 (温度,转速) 成对判定（device.rs）；非 loopback 绑定遇默认口令 fail-closed（bootstrap.rs）；StepFun step_plan 端点归一化回归测试
+- 新增回归：actor/role 持久化、旧库迁移回填、鉴权写入携带身份；cargo-x test 487 全绿

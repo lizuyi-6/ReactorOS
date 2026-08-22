@@ -33,36 +33,24 @@ test.describe("Vue HMI — mobile acceptance (Pixel 5)", () => {
     await page.goto("/#/monitor", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(800);
     const body = await page.locator("body").innerText();
-    expect(body).toContain("MPa");
-    expect(body).not.toMatch(/压力\s*\n\s*--/);
+    // HMI 重建后压力显示为 bar（后端 MPa × 10，见 ControlView.vue 注释）
+    expect(body).toMatch(/压力[\s\S]{1,40}?[\d.]+\s*bar/);
+    expect(body).not.toMatch(/压力[\s\S]{1,20}?--/);
   });
 
   test("safety gate blocks an out-of-range write on mobile", async ({ page, request }) => {
     await prepareVuePage(page, request);
     await page.goto("/#/control", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(600);
-    const input = page.locator('.el-input-number input, input[type="number"]').first();
-    await input.fill("99999");
-    const btn = page.locator('button:has-text("写入"), button:has-text("Write")').first();
-    const [resp] = await Promise.all([
-      page
-        .waitForResponse(
-          (r) => r.url().includes("/api/") && ["POST", "PUT"].includes(r.request().method()),
-          { timeout: 5000 }
-        )
-        .catch(() => null),
-      btn.click({ timeout: 2000 }).catch(() => {}),
-    ]);
-    expect(resp).not.toBeNull();
-    // The rebuilt UI's el-input-number clamps to the safety max before
-    // submitting, so 99999 must NEVER be sent as-is. Assert the committed
-    // temperature_c is within a sane reactor range (well below 99999).
-    // The backend safety gate (out-of-range refusal) is covered by api_tests.rs.
-    const sentBody = resp.request().postData() ?? "";
-    const tempMatch = sentBody.match(/"temperature_c"\s*:\s*([\d.]+)/);
-    expect(tempMatch, "request body must carry a temperature_c field").not.toBeNull();
-    const committedTemp = Number(tempMatch[1]);
-    expect(committedTemp, "out-of-range input must be clamped before submit, not sent as 99999").toBeLessThan(1000);
-    expect(committedTemp, "clamped value must be within reactor safety range").toBeLessThanOrEqual(300);
+    // 新 UI 无自由数字输入：越界提交被滑杆 min/max 结构性阻止（clampNum）。
+    // 断言滑杆上限不超控制层安全边界（160°C / 1200rpm，config/safety.toml）。
+    const tempCol = page.locator(".sp-col", { hasText: "目标温度" }).first();
+    await expect(tempCol).toBeVisible({ timeout: 8000 });
+    const tempMax = await tempCol.locator("[role=slider]").first().getAttribute("aria-valuemax");
+    expect(Number(tempMax), "temperature slider max must be within safety bound 160").toBeLessThanOrEqual(160);
+    const rpmCol = page.locator(".sp-col", { hasText: "搅拌转速" }).first();
+    const rpmMax = await rpmCol.locator("[role=slider]").first().getAttribute("aria-valuemax");
+    expect(Number(rpmMax), "stirrer slider max must be within safety bound 1200").toBeLessThanOrEqual(1200);
+    assertNoVueConsoleErrors(page);
   });
 });

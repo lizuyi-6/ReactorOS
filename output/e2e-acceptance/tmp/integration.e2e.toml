@@ -1,0 +1,20 @@
+[mqtt]
+enabled = false
+host = "127.0.0.1"
+port = 1883
+use_tls = false
+client_id = "xingshu-e2e"
+keep_alive_s = 30
+queue_capacity = 100
+status_topic = "xingshu/reactor_001/status"
+task_topic = "xingshu/reactor_001/tasks"
+receipt_topic = "xingshu/reactor_001/task_receipts"
+alert_topic = "xingshu/reactor_001/alerts"
+alert_interval_s = 5
+
+[modbus_tcp]
+enabled = false
+bind = "0.0.0.0:502"
+require_tls = false
+unit_id = 1
+max_pdu_bytes = 260

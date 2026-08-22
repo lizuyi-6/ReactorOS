@@ -1,0 +1,8 @@
+test(e2e): 端到端验收套件与验收报告
+
+- api-acceptance.mjs：后端非 AI 接口 63 例（正常+异常+越权+边界）
+- ai-acceptance.mjs：AI 决策/执行 41 例复杂场景（真实 StepFun step-3.7-flash）
+- Playwright 双端 55 例：fullchain 桌面/移动关键链路 + ux-audit 溢出/裁切/双语/水印/radius 审计
+- 既有 spec 修正：EN 残留 init-script 语言陷阱、innerText 隐藏元素回退陷阱、登录单通道断言
+- 验收报告 output/e2e-acceptance/REPORT.md（V1-V33 finding 清单 + 修复轮记录）
+- 复验：63/63 + 41/41 + 55/55 全绿
