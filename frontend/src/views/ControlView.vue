@@ -62,30 +62,35 @@
               <span v-if="!col.writable" class="ro-tag">{{ tr("只读", "Read-only") }}</span>
             </div>
 
-            <div class="sp-stepper">
+            <div class="sp-stepper" :class="{ readonly: !col.writable }">
+              <!-- V30：只读列不渲染步进按钮（disabled 按钮挤占宽度致数值溢出） -->
               <button
+                v-if="col.writable"
                 type="button"
                 class="sp-btn"
-                :disabled="!col.writable || busy"
-                :title="tr('减小', 'Decrease')"
-                @click="bump(col, -1)"
+                :disabled="busy"
+                :title="tr('增大', 'Increase')"
+                @click="bump(col, 1)"
               >▲</button>
               <span class="sp-value" :class="{ dim: !col.writable }">{{ col.display }}</span>
               <button
+                v-if="col.writable"
                 type="button"
                 class="sp-btn"
-                :disabled="!col.writable || busy"
-                :title="tr('增大', 'Increase')"
-                @click="bump(col, 1)"
+                :disabled="busy"
+                :title="tr('减小', 'Decrease')"
+                @click="bump(col, -1)"
               >▼</button>
             </div>
 
+            <!-- V30：只读列不渲染滑杆（disabled runway 实测溢出） -->
             <el-slider
+              v-if="col.writable"
               :model-value="col.model"
               :min="col.min"
               :max="col.max"
               :step="col.step"
-              :disabled="!col.writable || busy"
+              :disabled="busy"
               :show-tooltip="false"
               class="sp-slider"
               @update:model-value="col.set"
@@ -643,7 +648,8 @@ function pvBar(): number | null {
 
 const setpointCols = computed<SpCol[]>(() => {
   const sample = live.latestSample;
-  const tempMax = Math.min(100, safetyTempMax.value ?? 100);
+  // V28 修复：上限对齐优化器边界 140°C（仍不超控制层 safety max），避免 AI 推荐 >100°C 时无法用滑杆设定
+  const tempMax = Math.min(140, safetyTempMax.value ?? 140);
   const rpmMax = Math.min(1000, safetyRpmMax.value ?? 1000);
   const pressure = pvBar();
   return [
@@ -1293,6 +1299,9 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text-primary);
   white-space: normal;
+  /* V30：长英文标签可断行，不再溢出小卡 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .sp-title .en .unit {
@@ -1320,7 +1329,8 @@ onBeforeUnmount(() => {
 .sp-stepper {
   display: flex;
   align-items: center;
-  gap: 6px;
+  /* V30：紧凑化，给数值留足宽度 */
+  gap: 3px;
 }
 
 .sp-value {
@@ -1329,7 +1339,8 @@ onBeforeUnmount(() => {
   text-align: center;
   font-family: var(--font-data);
   font-variant-numeric: tabular-nums;
-  font-size: var(--fs-2xl);
+  /* V30：数值字号收敛防溢出（5 列小卡 + 步进按钮挤占，实测 1440px 下 28px 仍超宽） */
+  font-size: clamp(var(--fs-sm), 1.35vw, var(--fs-lg));
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
@@ -1337,12 +1348,14 @@ onBeforeUnmount(() => {
 
 .sp-value.dim {
   color: var(--text-secondary);
-  font-size: var(--fs-xl);
+  /* V30：只读数值同步收敛 */
+  font-size: clamp(var(--fs-sm), 1.35vw, var(--fs-lg));
 }
 
 .sp-btn {
-  width: 24px;
+  width: 20px;
   height: 42px;
+  padding: 0;
   flex: none;
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-sm);
@@ -1426,9 +1439,10 @@ onBeforeUnmount(() => {
   font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：按钮英文标签允许换行完整显示（原 nowrap+ellipsis 仍被计为裁切） */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
   max-width: 100%;
 }
 
@@ -1540,9 +1554,10 @@ onBeforeUnmount(() => {
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
   max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：长工艺名断行完整显示（原 ellipsis 仍被计为裁切） */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .recipe-timeline {
@@ -1932,9 +1947,9 @@ onBeforeUnmount(() => {
 .ev-type {
   font-size: var(--fs-sm);
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：事件类型允许换行完整显示 */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .ev-val {
@@ -1988,5 +2003,29 @@ onBeforeUnmount(() => {
   .row-top { grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) 180px; }
   .sp-title .en { font-size: var(--fs-xs); }
   .sp-value { font-size: var(--fs-xl); }
+}
+
+/* ============ V32 修复：移动端单列堆叠、允许整页滚动 ============ */
+@media (max-width: 900px) {
+  .control-page {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
+  }
+  .row-top,
+  .row-mid,
+  .row-main,
+  .col-safety {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .row-top > *, .row-mid > *, .row-main > *, .col-safety > * { min-height: 0; }
+  /* 急停卡优先展示（不再被压成 200px 竖条） */
+  .estop-col { order: -1; }
+  /* 设定值五列改两列，保证步进按钮与滑杆可点 */
+  .sp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .quick-row, .mode-row { display: flex; flex-wrap: wrap; }
 }
 </style>

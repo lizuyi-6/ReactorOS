@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Audit Trail / 审计追踪 — 参考稿 4 号页面完整重写。
 // 数据源：auditApi.logs({page,pageSize,eventType}) → AuditLogsResponse{events, total, chain}。
-// 后端无 actor/role/severity/IP 等字段，一律显示 "--"，不编造。
+// actor/role 由后端 control_events 提供（system 表示控制环/内部事件）；severity/IP 后端暂无，不编造。
 // Export Report 无后端端点：用当前页真实事件 + 链状态在客户端生成 Markdown 报告。
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
@@ -71,7 +71,9 @@ const ACTION_LABELS: Record<string, [string, string]> = {
 
 function actionDual(eventType: string): string {
   const pair = ACTION_LABELS[eventType];
-  return pair ? `${pair[0]} ${pair[1]}` : eventType;
+  if (!pair) return eventType;
+  // V19：中文模式 "English 中文" 双语并列；英文模式仅英文（不再残留中文）
+  return language.value === "zh" ? `${pair[0]} ${pair[1]}` : pair[0];
 }
 
 // 事件本身无 result 字段；按 event_type 语义推导展示（失败/拦截类事件在类型名中自带信号）。
@@ -334,7 +336,9 @@ onMounted(() => {
       </div>
       <div class="head-meta">
         <el-tag size="small" :type="verification.tone === 'good' ? 'success' : verification.tone === 'bad' ? 'danger' : 'info'">
-          {{ verification.tone === "good" ? "Chain Verified 链已验证" : verification.tone === "bad" ? "Chain Broken 链断开" : "--" }}
+          <template v-if="verification.tone === 'good'">Chain Verified <span class="zh">链已验证</span></template>
+          <template v-else-if="verification.tone === 'bad'">Chain Broken <span class="zh">链断开</span></template>
+          <template v-else>--</template>
         </el-tag>
       </div>
     </header>
@@ -344,7 +348,7 @@ onMounted(() => {
       <div class="stat-card">
         <div class="stat-top">
           <AppIcon name="report" :size="14" />
-          <span class="stat-label">Total Events <i>事件总数</i></span>
+          <span class="stat-label">Total Events <i class="zh">事件总数</i></span>
         </div>
         <div class="stat-value mono">{{ total }}</div>
         <div class="stat-sub">{{ tr("自", "Since") }} <span class="mono">{{ sinceText }}</span></div>
@@ -353,14 +357,15 @@ onMounted(() => {
       <div class="stat-card">
         <div class="stat-top">
           <AppIcon name="shield" :size="14" />
-          <span class="stat-label">Chain Health <i>链路健康度</i></span>
+          <span class="stat-label">Chain Health <i class="zh">链路健康度</i></span>
         </div>
         <div class="stat-value mono" :class="chainHealth && chainHealth.pct >= 100 ? 'good' : chainHealth ? 'warn' : ''">
           {{ chainHealth ? chainHealth.pct + "%" : "--" }}
         </div>
         <div v-if="chainHealth" class="stat-sub" :class="chainHealth.pct >= 100 ? 'good' : 'bad'">
           <AppIcon v-if="chainHealth.pct >= 100" name="check" :size="12" />
-          {{ chainHealth.pct >= 100 ? "All blocks verified 全部区块已验证" : chainHealth.broken + " " + tr("个断链块", "broken blocks") }}
+          <template v-if="chainHealth.pct >= 100">All blocks verified <span class="zh">全部区块已验证</span></template>
+          <template v-else>{{ chainHealth.broken + " " + tr("个断链块", "broken blocks") }}</template>
         </div>
         <div v-else class="stat-sub">--</div>
       </div>
@@ -368,11 +373,12 @@ onMounted(() => {
       <div class="stat-card">
         <div class="stat-top">
           <AppIcon name="check" :size="14" />
-          <span class="stat-label">Verification Status <i>校验状态</i></span>
+          <span class="stat-label">Verification Status <i class="zh">校验状态</i></span>
         </div>
         <div class="stat-value stat-text" :class="verification.tone">
           <span v-if="verification.tone !== 'unknown'" class="status-dot" :class="verification.tone === 'good' ? 'ok' : 'bad'" />
-          {{ verification.tone === "unknown" ? "--" : verification.en + " " + verification.zh }}
+          <template v-if="verification.tone === 'unknown'">--</template>
+          <template v-else>{{ verification.en }} <span class="zh">{{ verification.zh }}</span></template>
         </div>
         <div class="stat-sub">Window <span class="mono">{{ windowRange }}</span></div>
       </div>
@@ -380,7 +386,7 @@ onMounted(() => {
       <div class="stat-card">
         <div class="stat-top">
           <AppIcon name="export" :size="14" />
-          <span class="stat-label">Exports (30 Days) <i>导出次数</i></span>
+          <span class="stat-label">Exports (30 Days) <i class="zh">导出次数</i></span>
         </div>
         <div class="stat-value mono">--</div>
         <div class="stat-sub">CSV / Report</div>
@@ -390,7 +396,7 @@ onMounted(() => {
     <!-- 2) 筛选行 -->
     <div class="filter-bar">
       <div class="f-field">
-        <span class="f-label">Event Type <i>事件类型</i></span>
+        <span class="f-label">Event Type <i class="zh">事件类型</i></span>
         <el-select
           v-model="filters.eventType"
           class="f-control"
@@ -403,12 +409,12 @@ onMounted(() => {
       </div>
 
       <div class="f-field">
-        <span class="f-label">User Role <i>用户角色</i></span>
+        <span class="f-label">User Role <i class="zh">用户角色</i></span>
         <el-select class="f-control" disabled placeholder="--" />
       </div>
 
       <div class="f-field f-wide">
-        <span class="f-label">Date Range <i>时间范围</i></span>
+        <span class="f-label">Date Range <i class="zh">时间范围</i></span>
         <el-date-picker
           v-model="filters.dateRange"
           type="daterange"
@@ -421,12 +427,12 @@ onMounted(() => {
       </div>
 
       <div class="f-field">
-        <span class="f-label">Severity <i>严重程度</i></span>
+        <span class="f-label">Severity <i class="zh">严重程度</i></span>
         <el-select class="f-control" disabled placeholder="--" />
       </div>
 
       <div class="f-field">
-        <span class="f-label">Batch ID <i>批次号</i></span>
+        <span class="f-label">Batch ID <i class="zh">批次号</i></span>
         <el-input
           v-model="filters.batchId"
           class="f-control"
@@ -463,7 +469,7 @@ onMounted(() => {
           </div>
         </template>
 
-        <div v-loading="loading" class="table-wrap">
+        <div v-loading="loading" class="table-wrap overflow-auto">
           <el-table
             :data="events"
             height="100%"
@@ -482,14 +488,14 @@ onMounted(() => {
               <template #default="{ row }"><span class="mono">{{ formatTimestamp(row.created_at) }}</span></template>
             </el-table-column>
 
-            <el-table-column width="66">
+            <el-table-column width="86">
               <template #header><div class="th"><span>Actor</span><span class="th-zh">执行者</span></div></template>
-              <template #default><span class="dim">--</span></template>
+              <template #default="{ row }"><span class="mono">{{ row.actor || "--" }}</span></template>
             </el-table-column>
 
-            <el-table-column width="66">
+            <el-table-column width="76">
               <template #header><div class="th"><span>Role</span><span class="th-zh">角色</span></div></template>
-              <template #default><span class="dim">--</span></template>
+              <template #default="{ row }"><span class="dim">{{ row.role || "--" }}</span></template>
             </el-table-column>
 
             <el-table-column min-width="180" show-overflow-tooltip>
@@ -554,48 +560,48 @@ onMounted(() => {
         <div v-if="selected" class="detail-content">
           <div class="d-group">{{ tr("事件信息", "Event") }}</div>
           <div class="d-row">
-            <span class="d-k">Event ID <i>事件ID</i></span>
+            <span class="d-k">Event ID <i class="zh">事件ID</i></span>
             <span class="d-v mono">
               {{ blockId(selected.id) }}
               <button class="copy-btn" :title="tr('复制', 'Copy')" @click="copyValue(String(selected.id))">{{ tr("复制", "Copy") }}</button>
             </span>
           </div>
           <div class="d-row">
-            <span class="d-k">Timestamp <i>时间戳</i></span>
+            <span class="d-k">Timestamp <i class="zh">时间戳</i></span>
             <span class="d-v mono">{{ formatTimestamp(selected.created_at) }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Actor <i>执行者</i></span>
-            <span class="d-v mono dim">--</span>
+            <span class="d-k">Actor <i class="zh">执行者</i></span>
+            <span class="d-v mono">{{ selected.actor || "--" }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Role <i>角色</i></span>
-            <span class="d-v mono dim">--</span>
+            <span class="d-k">Role <i class="zh">角色</i></span>
+            <span class="d-v">{{ selected.role || "--" }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Action <i>操作</i></span>
+            <span class="d-k">Action <i class="zh">操作</i></span>
             <span class="d-v">{{ actionDual(selected.event_type) }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Target <i>目标对象</i></span>
+            <span class="d-k">Target <i class="zh">目标对象</i></span>
             <span class="d-v mono">{{ targetObject(selected) }}</span>
           </div>
 
           <div class="d-group">{{ tr("变更内容", "Changes") }}</div>
           <div class="d-row">
-            <span class="d-k">Old Value <i>旧值</i></span>
+            <span class="d-k">Old Value <i class="zh">旧值</i></span>
             <span class="d-v mono dim">--</span>
           </div>
           <div class="d-row">
-            <span class="d-k">New Value <i>新值</i></span>
+            <span class="d-k">New Value <i class="zh">新值</i></span>
             <span class="d-v mono">{{ targetText(selected) }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Reason <i>原因</i></span>
+            <span class="d-k">Reason <i class="zh">原因</i></span>
             <span class="d-v reason">{{ selected.reason || "--" }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Result <i>结果</i></span>
+            <span class="d-k">Result <i class="zh">结果</i></span>
             <span class="d-v">
               <span class="status-dot" :class="resultTone(selected.event_type) === 'success' ? 'ok' : resultTone(selected.event_type) === 'danger' ? 'bad' : 'warn'" />
               {{ resultLabel(selected.event_type) }}
@@ -604,19 +610,19 @@ onMounted(() => {
 
           <div class="d-group">{{ tr("来源与链证", "Provenance") }}</div>
           <div class="d-row">
-            <span class="d-k">Source IP <i>来源IP</i></span>
+            <span class="d-k">Source IP <i class="zh">来源IP</i></span>
             <span class="d-v mono dim">--</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Client <i>客户端</i></span>
+            <span class="d-k">Client <i class="zh">客户端</i></span>
             <span class="d-v mono">Web Console</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Notes <i>备注</i></span>
+            <span class="d-k">Notes <i class="zh">备注</i></span>
             <span class="d-v dim">--</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Hash <i>哈希</i></span>
+            <span class="d-k">Hash <i class="zh">哈希</i></span>
             <span class="d-v mono">
               <span v-if="selected.event_hash" :title="selected.event_hash">{{ hashShort(selected.event_hash) }}</span>
               <span v-else class="dim">--</span>
@@ -624,15 +630,15 @@ onMounted(() => {
             </span>
           </div>
           <div class="d-row">
-            <span class="d-k">Block <i>区块</i></span>
+            <span class="d-k">Block <i class="zh">区块</i></span>
             <span class="d-v mono">{{ blockId(selected.id) }}</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Confirmations <i>确认数</i></span>
+            <span class="d-k">Confirmations <i class="zh">确认数</i></span>
             <span class="d-v mono dim">--</span>
           </div>
           <div class="d-row">
-            <span class="d-k">Verified <i>校验</i></span>
+            <span class="d-k">Verified <i class="zh">校验</i></span>
             <span class="d-v">
               <span v-if="selected.event_hash" class="status-dot ok" />
               <span v-else class="status-dot" />
@@ -643,7 +649,7 @@ onMounted(() => {
           <!-- 链路校验可视化 -->
           <div class="chain-block">
             <div class="chain-head">
-              <span class="chain-title">Chain Verification <i>链路校验</i></span>
+              <span class="chain-title">Chain Verification <i class="zh">链路校验</i></span>
               <a class="chain-link" @click.prevent="chainDialog = true">View Full Chain {{ tr("完整链路", "") }} →</a>
             </div>
             <div class="chain-cubes">
@@ -764,9 +770,9 @@ onMounted(() => {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：窄屏允许换行 */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .stat-label i {
@@ -798,8 +804,10 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  white-space: nowrap;
-  overflow: hidden;
+  /* V30：长窗口范围允许换行 */
+  white-space: normal;
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
 .good { color: var(--ind-green); }
@@ -813,6 +821,7 @@ onMounted(() => {
   align-items: flex-end;
   gap: 12px;
   flex-wrap: wrap;
+  min-width: 0;
   background: var(--bg-panel);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-lg);
@@ -843,10 +852,23 @@ onMounted(() => {
 
 .f-control {
   width: 158px;
+  max-width: 100%;
 }
 
+.f-wide { max-width: 100%; min-width: 0; }
 .f-wide .f-control {
   width: 232px;
+  max-width: 100%;
+}
+/* V32：日期范围选择器内部最小宽度在 393px 溢出——深度收敛 */
+.f-wide :deep(.el-date-editor) { max-width: 100%; min-width: 0; }
+
+/* V32：移动端分页瘦身（total/sizes 挤爆 393px 页脚） */
+@media (max-width: 900px) {
+  .table-footer { justify-content: center; }
+  .table-footer :deep(.el-pagination__total),
+  .table-footer :deep(.el-pagination__sizes),
+  .table-footer .range { display: none; }
 }
 
 .f-actions {
@@ -883,6 +905,8 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
   position: relative;
+  /* V30/V32：移动端表格横向滚动（多列审计表在 393px 必然超宽） */
+  overflow-x: auto;
 }
 
 .audit-table :deep(.el-table__row) {
@@ -1152,6 +1176,14 @@ onMounted(() => {
 .empty-hint {
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
+}
+
+/* ===== V32：移动端单列堆叠、整页可滚动 ===== */
+@media (max-width: 900px) {
+  .audit-page { height: auto; overflow: visible; }
+  .main-area { display: flex; flex-direction: column; }
+  .main-area > * { flex: none; }
+  .stats-row { grid-template-columns: 1fr 1fr; }
 }
 
 /* ===== 响应式 ===== */

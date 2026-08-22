@@ -56,6 +56,10 @@ const modelLabel = computed(() => text(plant.config?.ai_provider?.model ?? null)
 
 // ---------- 最新 AI 推荐 ----------
 const recommendation = computed(() => live.recommendation ?? fetchedRecommendation.value ?? plant.recommendation);
+// V7：stale_local_recommendation = 云端不可达时的旧缓存样本，跨页统一标记过期
+const isStaleRec = computed(
+  () => recommendation.value?.provider?.mode === "stale_local_recommendation"
+);
 
 const recTempC = computed(() => numOr(recommendation.value?.target_temperature_c));
 const recRpm = computed(() => numOr(recommendation.value?.target_stirrer_rpm));
@@ -464,7 +468,11 @@ onUnmounted(() => {
         <!-- A) 最新建议 -->
         <PanelCard en="Latest AI Recommendation" zh="最新建议" icon="ai" scrollable>
           <template #actions>
-            <span v-if="recommendation" class="pill-live">
+            <!-- V7 修复：stale 缓存推荐不再冒充"当前建议"，明确过期态 -->
+            <span v-if="recommendation && isStaleRec" class="pill-live stale">
+              <span class="pill-dot"></span>{{ tr("已过期 · 需重新生成", "Stale · Regenerate") }}
+            </span>
+            <span v-else-if="recommendation" class="pill-live">
               <span class="pill-dot"></span>{{ tr("当前建议", "Recommended Now") }}
             </span>
           </template>
@@ -519,7 +527,7 @@ onUnmounted(() => {
                   <span class="conf-num" :style="{ color: ringColor(confidencePct) }">
                     {{ confidencePct !== null ? confidencePct + "%" : "--" }}
                   </span>
-                  <span class="conf-label">Confidence<br />置信度</span>
+                  <span class="conf-label">Confidence<span class="zh"><br />置信度</span></span>
                 </div>
               </div>
             </div>
@@ -972,6 +980,14 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* V7：过期缓存推荐徽章走琥珀警示色 */
+.pill-live.stale {
+  background: rgba(255, 176, 32, 0.12);
+  border-color: rgba(255, 176, 32, 0.45);
+  color: var(--ind-amber);
+}
+.pill-live.stale .pill-dot { background: var(--ind-amber); box-shadow: 0 0 6px var(--ind-amber); }
+
 .pill-dot {
   width: 7px;
   height: 7px;
@@ -1016,19 +1032,22 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 6px;
-  white-space: nowrap;
+  /* V30：窄屏允许换行（原 nowrap 溢出） */
+  white-space: normal;
+  flex-wrap: wrap;
 }
 
 .big-value {
   font-family: var(--font-data);
-  font-size: 25px;
+  /* V30：字号随视口收敛（25px 在移动端大卡溢出） */
+  font-size: clamp(17px, 2.4vw, 25px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
   display: flex;
   align-items: baseline;
   gap: 5px;
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .big-unit {
@@ -1530,9 +1549,9 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--text-tertiary);
   font-family: var(--font-data);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：允许换行完整显示（原 nowrap+ellipsis 仍被计为裁切） */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .gr-list {
@@ -1813,6 +1832,13 @@ onUnmounted(() => {
 
 .res-table {
   width: 100%;
+}
+
+/* ===== V32：移动端单列堆叠、整页可滚动 ===== */
+@media (max-width: 900px) {
+  .ai-rows { display: flex; flex-direction: column; }
+  .row { display: flex; flex-direction: column; }
+  .row > * { flex: none; }
 }
 
 /* ===== 响应式微调（不改变整页不滚动的约束） ===== */

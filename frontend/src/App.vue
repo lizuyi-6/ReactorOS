@@ -77,6 +77,14 @@ const safetyState = computed<{ tone: "ok" | "warn" | "bad"; label: string }>(() 
 });
 
 const operatorName = computed(() => auth.user?.username ?? tr("未登录", "Guest"));
+// V29 修复：角色徽章绑定真实登录角色（此前硬编码 Operator/操作员）
+const roleLabel = computed(() => {
+  const r = auth.role;
+  if (r === "admin") return { zh: "管理员", en: "Admin" };
+  if (r === "engineer") return { zh: "工程师", en: "Engineer" };
+  if (r === "operator") return { zh: "操作员", en: "Operator" };
+  return { zh: "访客", en: "Guest" };
+});
 
 async function handleLogout(): Promise<void> {
   auth.logout();
@@ -165,8 +173,8 @@ onBeforeUnmount(() => {
 
         <div class="tb-card neutral clickable" @click="auth.isAuthenticated ? handleLogout() : router.push('/login')">
           <span class="tb-text">
-            <span class="tb-label">Operator</span>
-            <span class="tb-sub">{{ tr("操作员", "Operator") }}</span>
+            <span class="tb-label">{{ roleLabel.en }}</span>
+            <span class="tb-sub zh">{{ roleLabel.zh }}</span>
           </span>
           <span class="tb-value">{{ operatorName }}</span>
         </div>
@@ -199,7 +207,7 @@ onBeforeUnmount(() => {
           <span class="nav-icon"><AppIcon :name="String(item.meta?.icon ?? 'monitor')" :size="20" /></span>
           <span class="nav-content">
             <span class="nav-title">{{ item.meta?.en }}</span>
-            <span class="nav-subtitle">{{ item.meta?.zh }}</span>
+            <span class="nav-subtitle zh">{{ item.meta?.zh }}</span>
           </span>
         </RouterLink>
       </nav>
@@ -414,10 +422,17 @@ onBeforeUnmount(() => {
   .nav-content { display: none; }
   .nav-item { justify-content: center; padding: 13px; }
   .edge-row .edge-label { display: none; }
+  /* V32：窄图标栏隐藏节点 ID/版本值（mono 长串溢出 68px 栏） */
+  .edge-row .edge-value { display: none; }
   .health-row span:last-child { display: none; }
   .health-row { justify-content: center; }
 }
 @media (max-width: 900px) {
   .topbar-cards .tb-card:nth-child(n + 4) { display: none; }
+  /* V32：药丸不再互相叠印——允许横向滚动而不是硬挤 */
+  .topbar-cards { overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .tb-card { flex: none; padding: 4px 9px; }
+  .tb-text .tb-sub { display: none; }
+  .clock-box { flex: none; }
 }
 </style>

@@ -717,7 +717,10 @@ onUnmounted(() => {
   gap: 10px;
   padding: 4px 0;
   min-height: 26px;
+  /* V30：长值可换行，避免溢出卡片 */
+  flex-wrap: wrap;
 }
+.kv-row > * { min-width: 0; overflow-wrap: anywhere; }
 
 .kv-row.column {
   flex-direction: column;
@@ -974,6 +977,11 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 8px;
 }
+/* V30：窄卡内按钮文字允许换行（el-button 默认 nowrap 会溢出） */
+.btn-stack .el-button { white-space: normal; height: auto; min-height: 32px; line-height: 1.3; }
+/* V30：纵向堆叠时清除 Element Plus 兄弟按钮的 margin-left:12px（width:100% 时造成 12px 溢出） */
+.btn-stack .el-button + .el-button { margin-left: 0; }
+.btn-stack .el-button { width: 100%; margin-left: 0; }
 
 .danger-zone {
   margin-top: auto;
@@ -1071,5 +1079,7 @@ onUnmounted(() => {
   .grid.cols-3 {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* V32：边缘节点双列改单列 */
+  .edge-layout { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

@@ -94,7 +94,11 @@ html, body, #app {
   padding: 10px 14px;
   border-bottom: 1px solid var(--border-glass);
   flex: none;
+  /* V30/V32：操作区控件多时在窄屏换行（原单行硬挤溢出） */
+  flex-wrap: wrap;
+  min-width: 0;
 }
+.panel-header > * { min-width: 0; }
 
 .panel-title {
   font-size: var(--fs-md);
@@ -104,6 +108,21 @@ html, body, #app {
   align-items: center;
   gap: 8px;
 }
+
+/* V19：英文模式隐藏所有双标签中的中文副标签（tr() 文案由 JS 侧切换） */
+:root[data-lang="en"] .zh,
+:root[data-lang="en"] .sub-zh,
+:root[data-lang="en"] .th-zh,
+:root[data-lang="en"] .role-zh,
+:root[data-lang="en"] .trace-zh,
+:root[data-lang="en"] .param-zh,
+:root[data-lang="en"] .m-zh,
+:root[data-lang="en"] .lbl-zh,
+:root[data-lang="en"] .brand-zh,
+:root[data-lang="en"] .hint-zh,
+:root[data-lang="en"] .run-zh,
+:root[data-lang="en"] .idle-zh,
+:root[data-lang="en"] .sf-zh { display: none !important; }
 
 .panel-title .zh {
   color: var(--text-tertiary);
@@ -424,4 +443,13 @@ html, body, #app {
 }
 @media (max-width: 1100px) {
   :root { --sidebar-w: var(--sidebar-w-collapsed); }
+}
+
+/* V32：移动端主容器允许纵向滚动（此前 overflow:hidden 导致页面无法滚动、面板被裁/重叠） */
+@media (max-width: 900px) {
+  .app-main { overflow-y: auto; overflow-x: hidden; }
+  .app-main > * { flex: none; }
+  /* 通用页栈同样放开高度与滚动 */
+  .page-stack { height: auto; overflow: visible; }
+  .page-stack > * { flex: none; }
 }

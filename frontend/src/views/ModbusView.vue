@@ -1276,4 +1276,12 @@ const timelineDots = [
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* V32：移动端单列堆叠、整页可滚动 */
+@media (max-width: 900px) {
+  .main-grid { display: flex; flex-direction: column; }
+  .main-grid > * { flex: none; }
+  .col-left { display: flex; flex-direction: column; }
+  .status-cards { grid-template-columns: 1fr 1fr; }
+}
 </style>

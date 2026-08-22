@@ -849,9 +849,9 @@ onUnmounted(() => {
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：窄屏允许断行（原 ellipsis 仍被计为裁切） */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .param-head .zh {
   font-size: var(--fs-xs);
@@ -1204,5 +1204,12 @@ onUnmounted(() => {
   .ai-val .big {
     font-size: var(--fs-xl);
   }
+}
+
+/* V32：移动端单列堆叠、整页可滚动 */
+@media (max-width: 900px) {
+  .monitor-page { display: flex; flex-direction: column; height: auto; overflow: visible; }
+  .upper, .lower { display: flex; flex-direction: column; min-height: 0; }
+  .upper > *, .lower > * { flex: none; }
 }
 </style>

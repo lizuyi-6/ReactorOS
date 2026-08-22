@@ -57,7 +57,6 @@ function fillUser(name: string): void {
 async function submit(): Promise<void> {
   if (!username.value.trim() || !password.value) {
     loginError.value = tr("请输入用户名和密码", "Enter username and password");
-    ElMessage.warning(loginError.value);
     return;
   }
   submitting.value = true;
@@ -69,8 +68,8 @@ async function submit(): Promise<void> {
     const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/monitor";
     await router.push(redirect);
   } catch (error) {
+    // V20 修复：内联错误条是唯一失败反馈（不再叠加顶部 toast 重复提示）
     loginError.value = errorMessage(error, tr("登录失败", "Sign in failed"));
-    ElMessage.error(loginError.value);
   } finally {
     submitting.value = false;
   }

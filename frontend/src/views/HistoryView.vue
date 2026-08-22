@@ -777,15 +777,15 @@ onMounted(async () => {
             <template v-if="selectedBatch">
               <div class="kv-head">
                 <div class="kv-cell">
-                  <span class="k">Batch ID 批次号</span>
+                  <span class="k">Batch ID <span class="zh">批次号</span></span>
                   <span class="v mono">#{{ selectedBatch.id }}</span>
                 </div>
                 <div class="kv-cell">
-                  <span class="k">Recipe 配方</span>
+                  <span class="k">Recipe <span class="zh">配方</span></span>
                   <span class="v">{{ recipeOf(selectedBatch) }}</span>
                 </div>
                 <div class="kv-cell">
-                  <span class="k">Product 产品</span>
+                  <span class="k">Product <span class="zh">产品</span></span>
                   <span class="v">--</span>
                 </div>
               </div>
@@ -940,7 +940,7 @@ onMounted(async () => {
         </PanelCard>
 
         <PanelCard en="Historical Comparison" zh="历史对比 · 最近批次">
-          <div class="comp-wrap">
+          <div class="comp-wrap overflow-auto">
             <template v-if="comparisonBatches.length">
               <div class="comp-row comp-head" :style="compGridStyle">
                 <span class="comp-label">
@@ -1023,6 +1023,13 @@ onMounted(async () => {
   .row-bottom {
     grid-template-columns: 1fr 1fr 1fr;
   }
+}
+
+/* V32：移动端单列堆叠、整页可滚动 */
+@media (max-width: 900px) {
+  .rows { display: flex; flex-direction: column; }
+  .row { display: flex; flex-direction: column; }
+  .row > * { flex: none; }
 }
 
 /* ---------- 筛选栏 ---------- */
@@ -1149,9 +1156,9 @@ onMounted(async () => {
 .kv-cell .k {
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：允许换行 */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .kv-cell .v {
@@ -1188,9 +1195,9 @@ onMounted(async () => {
   font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：允许换行 */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .m-zh {
@@ -1306,7 +1313,9 @@ onMounted(async () => {
 
 .event-row {
   display: grid;
-  grid-template-columns: 60px minmax(72px, auto) minmax(0, 1fr) auto;
+  /* V30：窄面板下描述独占一行（原四列布局使文本列塌缩到 0 宽） */
+  grid-template-columns: 56px minmax(0, auto) minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   align-items: center;
   padding: 5px 6px;
@@ -1330,23 +1339,29 @@ onMounted(async () => {
   background: var(--accent-dim);
   color: var(--accent-strong);
   font-size: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* V30：长事件类型断行完整显示 */
+  white-space: normal;
+  overflow-wrap: anywhere;
   max-width: 110px;
 }
 
 .ev-text {
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* V30：描述独占第二行并换行完整显示 */
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ev-value {
   color: var(--text-primary);
   font-size: var(--fs-xs);
-  white-space: nowrap;
+  /* V30：JSON 值断行显示，宽度随面板收敛 */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  justify-self: end;
+  max-width: 45%;
 }
 
 .audit-link {
@@ -1381,13 +1396,16 @@ onMounted(async () => {
 .comp-wrap {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
+  /* V30：对比矩阵横向滚动（多批次列在窄屏必然超宽，滚动是正确模式） */
+  overflow: auto;
 }
 
 .comp-row {
   display: grid;
   gap: 4px;
   align-items: center;
+  /* V30：窄屏横向滚动的最小内容宽度 */
+  min-width: 520px;
 }
 
 .comp-head {

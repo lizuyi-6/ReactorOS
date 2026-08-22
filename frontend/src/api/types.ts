@@ -234,6 +234,10 @@ export interface ControlEvent {
   id: number;
   batch_id?: number | null;
   event_type: string;
+  /** 发起者用户名；系统/控制环事件为 "system"（V21 后端已提供） */
+  actor?: string;
+  /** 发起者角色；系统事件为 "system" */
+  role?: string;
   target_temperature_c?: number | null;
   target_stirrer_rpm?: number | null;
   target_shake_speed_cpm?: number | null;

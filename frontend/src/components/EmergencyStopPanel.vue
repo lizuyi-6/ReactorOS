@@ -177,7 +177,8 @@ onBeforeUnmount(cancelHold);
   0%, 100% { box-shadow: 0 6px 22px rgba(198, 47, 59, 0.5), 0 0 0 0 rgba(255, 82, 82, 0.5); }
   50% { box-shadow: 0 6px 22px rgba(198, 47, 59, 0.5), 0 0 0 12px rgba(255, 82, 82, 0); }
 }
-.estop-ring { position: absolute; inset: -9px; transform: rotate(-90deg); }
+/* V30：进度环收入按钮盒内（原 inset:-9px 造成 18px 外溢被检出） */
+.estop-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
 .ring-bg { fill: none; stroke: rgba(255, 255, 255, 0.15); stroke-width: 4; }
 .ring-fg { fill: none; stroke: #ffd166; stroke-width: 4; stroke-linecap: round; }
 .estop-symbol { position: relative; }
