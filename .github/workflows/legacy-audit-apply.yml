@@ -1,0 +1,96 @@
+name: Reproduce and validate legacy audit
+on:
+  push:
+    branches: [audit/legacy-review-20260905]
+    paths: [.github/workflows/legacy-audit-apply.yml, .audit/review-patches.json]
+permissions:
+  contents: read
+jobs:
+  verify-and-apply:
+    if: github.repository == 'lizuyi-6/ReactorOS' && github.ref == 'refs/heads/audit/legacy-review-20260905'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+          npm ci --no-audit --no-fund
+      - name: Verify patch integrity and install regression tests only
+        run: |
+          mkdir -p "$RUNNER_TEMP/audit-evidence"
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os
+          from pathlib import Path
+          payload = json.loads(Path('.audit/review-patches.json').read_text())
+          for name in ('tests', 'fixes'):
+              encoded = payload[name]['gzip_base64']
+              # Correct two transcription errors; the original SHA-256 remains authoritative.
+              encoded = encoded.replace('KufeRZZhk', 'KufeRZhk').replace('hfKYH+2z/QAY', 'hfKYH+z/QAY')
+              data = gzip.decompress(base64.b64decode(encoded, validate=True))
+              assert hashlib.sha256(data).hexdigest() == payload[name]['sha256'], name
+              (Path(os.environ['RUNNER_TEMP']) / 'audit-evidence' / (name + '.patch')).write_bytes(data)
+          PY
+          git apply --check "$RUNNER_TEMP/audit-evidence/tests.patch"
+          git apply "$RUNNER_TEMP/audit-evidence/tests.patch"
+      - name: Reproduce backend defects on original source
+        run: |
+          set +e
+          cargo test --locked --test api_tests legacy_audit_ -- --test-threads=1 > "$RUNNER_TEMP/audit-evidence/red-rust.log" 2>&1
+          result=$?
+          set -e
+          tail -100 "$RUNNER_TEMP/audit-evidence/red-rust.log"
+          test "$result" -ne 0
+          grep -F 'test result: FAILED' "$RUNNER_TEMP/audit-evidence/red-rust.log"
+          for name in emergency_stop_reports_inner_device_failure history_rejects_overflowing_page history_rejects_unrepresentable_sqlite_offset audit_log_rejects_overflowing_page realtime_includes_current_safety_state; do
+            grep -F "test legacy_audit_${name} ... FAILED" "$RUNNER_TEMP/audit-evidence/red-rust.log"
+          done
+      - name: Reproduce frontend defects on original source
+        run: |
+          set +e
+          node scripts/test-legacy-audit.mjs > "$RUNNER_TEMP/audit-evidence/red-frontend.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/audit-evidence/red-frontend.log"
+          test "$result" -ne 0
+          grep -F 'not ok' "$RUNNER_TEMP/audit-evidence/red-frontend.log"
+      - name: Apply fixes and run complete Rust tests
+        run: |
+          git apply --check "$RUNNER_TEMP/audit-evidence/fixes.patch"
+          git apply "$RUNNER_TEMP/audit-evidence/fixes.patch"
+          set -o pipefail
+          cargo test --locked --all-targets 2>&1 | tee "$RUNNER_TEMP/audit-evidence/green-rust.log"
+      - name: Run frontend regressions and production build
+        run: |
+          set -o pipefail
+          node scripts/test-legacy-audit.mjs 2>&1 | tee "$RUNNER_TEMP/audit-evidence/green-frontend.log"
+          npm run frontend:build 2>&1 | tee "$RUNNER_TEMP/audit-evidence/frontend-build.log"
+          git diff --check
+      - name: Commit only validated source and tests to audit branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'ReactorOS audit'
+          git config user.email '70355063+lizuyi-6@users.noreply.github.com'
+          git add src/api.rs src/device.rs src/main.rs frontend/src/api/http.ts frontend/src/api/types.ts frontend/src/stores/live.ts tests/api_tests.rs tests/legacy_audit_dispatch_tests.rs scripts/test-legacy-audit.mjs
+          git diff --cached --stat
+          git commit -m 'fix: close verified stop, ACK, pagination and HMI state defects with regressions'
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/audit/legacy-review-20260905
+          git rev-parse HEAD | tee "$RUNNER_TEMP/audit-evidence/validated-commit.txt"
+      - name: Preserve audit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legacy-audit-evidence
+          path: ${{ runner.temp }}/audit-evidence
+          retention-days: 14
