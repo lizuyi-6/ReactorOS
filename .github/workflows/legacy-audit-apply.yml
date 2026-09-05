@@ -1,15 +1,15 @@
-name: Reproduce and validate legacy audit
+name: Validate audit deadline compatibility
 on:
   push:
     branches: [audit/legacy-review-20260905]
-    paths: [.github/workflows/legacy-audit-apply.yml, .audit/review-patches.json]
+    paths: [.github/workflows/legacy-audit-apply.yml]
 permissions:
   contents: read
 jobs:
   verify-and-apply:
     if: github.repository == 'lizuyi-6/ReactorOS' && github.ref == 'refs/heads/audit/legacy-review-20260905'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -20,77 +20,74 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev pkg-config
-          npm ci --no-audit --no-fund
-      - name: Verify patch integrity and install regression tests only
+      - run: npm ci --no-audit --no-fund
+      - name: Preserve AI retry budget without extending ordinary polling deadlines
         run: |
           mkdir -p "$RUNNER_TEMP/audit-evidence"
           python3 - <<'PY'
-          import base64, gzip, hashlib, json, os
           from pathlib import Path
-          payload = json.loads(Path('.audit/review-patches.json').read_text())
-          for name in ('tests', 'fixes'):
-              encoded = payload[name]['gzip_base64']
-              # Correct two transcription errors; the original SHA-256 remains authoritative.
-              encoded = encoded.replace('KufeRZZhk', 'KufeRZhk').replace('hfKYH+2z/QAY', 'hfKYH+z/QAY')
-              data = gzip.decompress(base64.b64decode(encoded, validate=True))
-              assert hashlib.sha256(data).hexdigest() == payload[name]['sha256'], name
-              (Path(os.environ['RUNNER_TEMP']) / 'audit-evidence' / (name + '.patch')).write_bytes(data)
+          import hashlib
+          p = Path('frontend/src/api/index.ts')
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == '3d2ed442efee2925232224d4db1cc42d33c36cb5d5efd56feae0da13e5de72c5'
+          s = p.read_text()
+          s = s.replace('export const DEVICE_ID = "reactor_001";', 'export const DEVICE_ID = "reactor_001";\n// Covers the default provider budget (3 x 20s plus backoff); no client retries.\nexport const AI_REQUEST_TIMEOUT_MS = 90_000;')
+          for old, new in [
+              ('"/api/product-results", { method: "POST", body }', '"/api/product-results", { method: "POST", body, timeoutMs: AI_REQUEST_TIMEOUT_MS }'),
+              ('"/api/recommendations/latest", { method: "POST" }', '"/api/recommendations/latest", { method: "POST", timeoutMs: AI_REQUEST_TIMEOUT_MS }'),
+              ('"/api/ai/control", { method: "POST", body }', '"/api/ai/control", { method: "POST", body, timeoutMs: AI_REQUEST_TIMEOUT_MS }'),
+              ('"/api/ai/experiment-plan", { auth: false }', '"/api/ai/experiment-plan", { auth: false, timeoutMs: AI_REQUEST_TIMEOUT_MS }'),
+          ]:
+              assert s.count(old) == 1, old
+              s = s.replace(old, new)
+          p.write_text(s)
+          p = Path('scripts/test-legacy-audit.mjs')
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == 'd443296ed45ef22a8a7ade31b4b8f739ba33ee5a2a8b75800c8ea1a69a6688bb'
+          s = p.read_text().replace("'frontend/src/stores/live.ts']", "'frontend/src/stores/live.ts', 'frontend/src/api/index.ts']")
+          s += '''
+          test('AI operations retain a finite provider-compatible budget; telemetry remains short', async () => {
+            const { aiApi, batchApi, systemApi, AI_REQUEST_TIMEOUT_MS } = await import(pathToFileURL(join(dir, 'api/index.mjs')).href);
+            const originalTimer = globalThis.setTimeout;
+            const budgets = [];
+            let calls = 0;
+            globalThis.setTimeout = (fn, delay, ...args) => { budgets.push(delay); return originalTimer(fn, delay, ...args); };
+            globalThis.fetch = async () => { calls++; return response({ code: 200, data: {} }); };
+            try {
+              await aiApi.regenerateRecommendation();
+              await aiApi.control({ dry_run: true });
+              await aiApi.experimentPlan();
+              await batchApi.saveProductResult({ batch_id: 1, yield_percent: 80, product_ratio: 0.8 });
+              await systemApi.live();
+              assert.equal(AI_REQUEST_TIMEOUT_MS, 90_000);
+              assert.deepEqual(budgets, [90_000, 90_000, 90_000, 90_000, 15_000]);
+              assert.equal(calls, 5);
+            } finally { globalThis.setTimeout = originalTimer; }
+          });
+          '''
+          p.write_text(s)
           PY
-          git apply --check "$RUNNER_TEMP/audit-evidence/tests.patch"
-          git apply "$RUNNER_TEMP/audit-evidence/tests.patch"
-      - name: Reproduce backend defects on original source
-        run: |
-          set +e
-          cargo test --locked --test api_tests legacy_audit_ -- --test-threads=1 > "$RUNNER_TEMP/audit-evidence/red-rust.log" 2>&1
-          result=$?
-          set -e
-          tail -100 "$RUNNER_TEMP/audit-evidence/red-rust.log"
-          test "$result" -ne 0
-          grep -F 'test result: FAILED' "$RUNNER_TEMP/audit-evidence/red-rust.log"
-          for name in emergency_stop_reports_inner_device_failure history_rejects_overflowing_page history_rejects_unrepresentable_sqlite_offset audit_log_rejects_overflowing_page realtime_includes_current_safety_state; do
-            grep -F "test legacy_audit_${name} ... FAILED" "$RUNNER_TEMP/audit-evidence/red-rust.log"
-          done
-      - name: Reproduce frontend defects on original source
-        run: |
-          set +e
-          node scripts/test-legacy-audit.mjs > "$RUNNER_TEMP/audit-evidence/red-frontend.log" 2>&1
-          result=$?
-          set -e
-          cat "$RUNNER_TEMP/audit-evidence/red-frontend.log"
-          test "$result" -ne 0
-          grep -F 'not ok' "$RUNNER_TEMP/audit-evidence/red-frontend.log"
-      - name: Apply fixes and run complete Rust tests
-        run: |
-          git apply --check "$RUNNER_TEMP/audit-evidence/fixes.patch"
-          git apply "$RUNNER_TEMP/audit-evidence/fixes.patch"
-          set -o pipefail
-          cargo test --locked --all-targets 2>&1 | tee "$RUNNER_TEMP/audit-evidence/green-rust.log"
-      - name: Run frontend regressions and production build
-        run: |
-          set -o pipefail
-          node scripts/test-legacy-audit.mjs 2>&1 | tee "$RUNNER_TEMP/audit-evidence/green-frontend.log"
-          npm run frontend:build 2>&1 | tee "$RUNNER_TEMP/audit-evidence/frontend-build.log"
           git diff --check
-      - name: Commit only validated source and tests to audit branch
+      - name: Validate frontend and preserve compatibility evidence
+        run: |
+          set -o pipefail
+          node scripts/test-legacy-audit.mjs 2>&1 | tee "$RUNNER_TEMP/audit-evidence/green-frontend-final.log"
+          npm run frontend:build 2>&1 | tee "$RUNNER_TEMP/audit-evidence/frontend-build-final.log"
+          git diff --check
+          git diff -- frontend/src/api/index.ts scripts/test-legacy-audit.mjs > "$RUNNER_TEMP/audit-evidence/deadline-compatibility.patch"
+      - name: Commit validated compatibility fix to audit branch only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name 'ReactorOS audit'
           git config user.email '70355063+lizuyi-6@users.noreply.github.com'
-          git add src/api.rs src/device.rs src/main.rs frontend/src/api/http.ts frontend/src/api/types.ts frontend/src/stores/live.ts tests/api_tests.rs tests/legacy_audit_dispatch_tests.rs scripts/test-legacy-audit.mjs
-          git diff --cached --stat
-          git commit -m 'fix: close verified stop, ACK, pagination and HMI state defects with regressions'
+          git add frontend/src/api/index.ts scripts/test-legacy-audit.mjs
+          git commit -m 'fix: preserve AI operation timeout budget with route-level regression'
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD:refs/heads/audit/legacy-review-20260905
-          git rev-parse HEAD | tee "$RUNNER_TEMP/audit-evidence/validated-commit.txt"
-      - name: Preserve audit test evidence
+          git rev-parse HEAD > "$RUNNER_TEMP/audit-evidence/validated-final-commit.txt"
+      - name: Preserve final audit evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: legacy-audit-evidence
+          name: legacy-audit-final-evidence
           path: ${{ runner.temp }}/audit-evidence
           retention-days: 14
