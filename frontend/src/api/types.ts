@@ -388,6 +388,7 @@ export interface HistoryResponse {
 }
 
 export interface RealtimePayload {
+  runtime?: RuntimeState;
   device_id: string;
   timestamp: string;
   status: string;

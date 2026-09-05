@@ -79,6 +79,28 @@ impl CommandAck {
     }
 }
 
+/// Enforce the supervisor's deadline independently of adapter implementations.
+/// A timeout means delivery is UNKNOWN, not that an actuator has been stopped.
+/// Dropping the future cannot cancel an already-running blocking/physical write;
+/// callers must latch a fault and must not automatically retry on that basis.
+pub async fn write_targets_with_ack_deadline(
+    device: &dyn ReactorDevice,
+    command: &SafeCommand,
+    request_id: &str,
+    timeout: Duration,
+) -> Result<CommandAck> {
+    let ack = tokio::time::timeout(
+        timeout,
+        device.write_targets_acknowledged(command, request_id, timeout),
+    )
+    .await
+    .map_err(|_| anyhow!("command acknowledgement deadline exceeded; delivery unknown"))??;
+    if ack.request_id != request_id {
+        return Err(anyhow!("command acknowledgement request_id mismatch; delivery unknown"));
+    }
+    Ok(ack)
+}
+
 #[async_trait::async_trait]
 pub trait ReactorDevice: Send + Sync {
     async fn read_sample(&self) -> Result<SensorSnapshot>;
