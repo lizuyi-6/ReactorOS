@@ -11,7 +11,7 @@ use reactor_edge_daemon::{
     control::{ControlBlockReason, ControlDecision},
     db::{AuditActor, Db},
     demo::seed_demo_context,
-    device::{build_device, AckStatus},
+    device::{build_device, write_targets_with_ack_deadline, AckStatus},
     memory::load_ai_memory,
     modbus_tcp::start_modbus_tcp_server,
     mqtt::{load_integration_config, start_mqtt_bridge},
@@ -720,9 +720,13 @@ async fn control_loop(
                 command_seq = command_seq.wrapping_add(1);
                 let request_id = format!("auto-{}-{}", Utc::now().timestamp_millis(), command_seq);
                 let ack_timeout = Duration::from_millis(safety.control.command_ack_timeout_ms);
-                match device
-                    .write_targets_acknowledged(&command, &request_id, ack_timeout)
-                    .await
+                match write_targets_with_ack_deadline(
+                    device.as_ref(),
+                    &command,
+                    &request_id,
+                    ack_timeout,
+                )
+                .await
                 {
                     Ok(ack) => {
                         let outcome = classify_ack_outcome(

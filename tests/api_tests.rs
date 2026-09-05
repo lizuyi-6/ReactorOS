@@ -17102,3 +17102,147 @@ fn assert_two_decimal_parameters(values: impl IntoIterator<Item = f64>) {
         );
     }
 }
+
+// Legacy audit regressions: exercise public routes, not just helper functions.
+fn legacy_audit_app(device: SharedDevice, safety: Arc<SafetyConfig>) -> (axum::Router, Db, SharedState) {
+    let db = Db::open_memory().unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: db.clone(), runtime: runtime.clone(), device,
+            device_mode: DeviceMode::Pipeline, device_config: device_config(),
+            safety, ai_memory: memory(), ai_provider: None,
+            test_reset_enabled: false, simulation_session: None,
+        },
+        PathBuf::from("static"),
+    );
+    (app, db, runtime)
+}
+
+#[tokio::test]
+async fn legacy_audit_emergency_stop_reports_inner_device_failure() {
+    let (app, db, runtime) = legacy_audit_app(failing_target_device(), Arc::new(safety()));
+    runtime.write().await.auto_enabled = true;
+    let response = app.oneshot(Request::builder().method("POST")
+        .uri("/api/control/emergency-stop")
+        .header("authorization", auth_header("operator"))
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body = String::from_utf8(to_bytes(response.into_body(), 65536).await.unwrap().to_vec()).unwrap();
+    assert!(body.contains("target bus timeout"));
+    let state = runtime.read().await;
+    assert!(state.emergency_stop);
+    assert!(!state.auto_enabled);
+    assert!(state.last_control_error.as_deref().unwrap().contains("target bus timeout"));
+    let events = db.recent_control_events(10).unwrap();
+    assert!(events.iter().any(|e| e.event_type == "emergency_stop" && e.reason.contains("FAILED")));
+    assert!(!events.iter().any(|e| e.reason.contains("targets delivered")));
+}
+
+struct LegacyAuditHangingDevice;
+#[async_trait::async_trait]
+impl ReactorDevice for LegacyAuditHangingDevice {
+    async fn read_sample(&self) -> anyhow::Result<SensorSnapshot> { std::future::pending().await }
+    async fn write_targets(&self, _: &SafeCommand) -> anyhow::Result<()> { std::future::pending().await }
+}
+
+#[tokio::test]
+async fn legacy_audit_emergency_stop_timeout_latches_before_waiting() {
+    let mut config = safety();
+    config.control.sensor_timeout_ms = 30;
+    let (app, db, runtime) = legacy_audit_app(Arc::new(LegacyAuditHangingDevice), Arc::new(config));
+    runtime.write().await.auto_enabled = true;
+    let request = app.oneshot(Request::builder().method("POST")
+        .uri("/api/control/emergency-stop")
+        .header("authorization", auth_header("operator"))
+        .body(Body::empty()).unwrap());
+    tokio::pin!(request);
+    tokio::select! {
+        _ = &mut request => panic!("hanging write returned before the deadline"),
+        _ = tokio::time::sleep(std::time::Duration::from_millis(5)) => {}
+    }
+    assert!(runtime.read().await.emergency_stop);
+    let response = tokio::time::timeout(std::time::Duration::from_secs(1), request).await.unwrap().unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(!runtime.read().await.auto_enabled);
+    assert!(db.recent_control_events(10).unwrap().iter().any(|e| e.reason.contains("timed out")));
+}
+
+#[tokio::test]
+async fn legacy_audit_emergency_stop_success_still_returns_no_content() {
+    let (device, recorded) = recording_device();
+    let (app, db, runtime) = legacy_audit_app(device, Arc::new(safety()));
+    let response = app.oneshot(Request::builder().method("POST")
+        .uri("/api/control/emergency-stop")
+        .header("authorization", auth_header("operator"))
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(runtime.read().await.emergency_stop);
+    assert_eq!(recorded.writes.lock().unwrap().len(), 1);
+    assert!(db.recent_control_events(10).unwrap().iter().any(|e| e.reason.contains("targets delivered")));
+}
+
+#[tokio::test]
+async fn legacy_audit_history_rejects_overflowing_page() {
+    let (app, _, _) = legacy_audit_app(test_device(), Arc::new(safety()));
+    let uri = format!("/api/v1/reactor/reactor_001/history?start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z&page={}&page_size=500", usize::MAX);
+    let response = app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn legacy_audit_history_rejects_unrepresentable_sqlite_offset() {
+    let (app, _, _) = legacy_audit_app(test_device(), Arc::new(safety()));
+    // On 64-bit this does not overflow usize, but does overflow SQLite's i64.
+    let uri = format!("/api/v1/reactor/reactor_001/history?start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z&page={}&page_size=1", usize::MAX);
+    let response = app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap()).await.unwrap();
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    #[cfg(target_pointer_width = "32")]
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn legacy_audit_audit_log_rejects_overflowing_page() {
+    let (app, _, _) = legacy_audit_app(test_device(), Arc::new(safety()));
+    let response = app.oneshot(Request::builder()
+        .uri(format!("/api/audit/logs?page={}&page_size=500", usize::MAX))
+        .header("authorization", auth_header("admin"))
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn legacy_audit_normal_history_pagination_remains_supported() {
+    let (app, _, _) = legacy_audit_app(test_device(), Arc::new(safety()));
+    let response = app.oneshot(Request::builder()
+        .uri("/api/v1/reactor/reactor_001/history?start_time=2026-01-01T00:00:00Z&end_time=2026-01-02T00:00:00Z&page=2&page_size=10")
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn legacy_audit_realtime_includes_current_safety_state() {
+    let (app, _, runtime) = legacy_audit_app(test_device(), Arc::new(safety()));
+    {
+        let mut state = runtime.write().await;
+        state.latest_sample = Some(SensorSnapshot {
+            temperature_c: 50.0, pressure_mpa: 0.1, stirrer_rpm: 0.0,
+            shake_speed_cpm: 0.0, tilt_state: 0, tilt_angle_deg: 0.0,
+            flow_rate_l_min: 0.0, product_concentration_percent: 0.0,
+            ph: 7.0, captured_at: Utc::now(),
+        });
+        state.engage_emergency_stop();
+        state.latch_control_fault("audit test fault".to_string());
+    }
+    let response = app.oneshot(Request::builder()
+        .uri("/api/v1/reactor/reactor_001/realtime")
+        .header("authorization", auth_header("operator"))
+        .body(Body::empty()).unwrap()).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_slice(&to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(payload["runtime"]["emergency_stop"], true);
+    assert_eq!(payload["runtime"]["auto_enabled"], false);
+    assert_eq!(payload["runtime"]["last_control_error"], "audit test fault");
+    assert_eq!(payload["data"]["current_temp"], 50.0);
+}

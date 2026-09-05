@@ -844,6 +844,15 @@ async fn demo_context(
     })))
 }
 
+// Reject both machine-word overflow and offsets that SQLite cannot represent.
+// Query parameters are untrusted even when the caller is authenticated.
+fn checked_page_offset(page: usize, page_size: usize) -> Result<usize, AppError> {
+    page.checked_sub(1)
+        .and_then(|index| index.checked_mul(page_size))
+        .filter(|offset| i64::try_from(*offset).is_ok())
+        .ok_or_else(|| AppError::bad_request("page offset exceeds supported range"))
+}
+
 async fn audit_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -852,6 +861,7 @@ async fn audit_logs(
     require_permission(&headers, Permission::ViewAudit)?;
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(50).clamp(1, 500);
+    let offset = checked_page_offset(page, page_size)?;
     let event_type = query
         .event_type
         .as_deref()
@@ -860,7 +870,7 @@ async fn audit_logs(
     let total = state.db.audit_event_count_sqlx(event_type).await?;
     let events = state
         .db
-        .audit_events_sqlx(page_size, (page - 1) * page_size, event_type)
+        .audit_events_sqlx(page_size, offset, event_type)
         .await?;
     let chain = state.db.audit_chain_status_sqlx().await?;
     Ok(Json(success(AuditLogResponse {
@@ -3482,6 +3492,9 @@ async fn v1_realtime_payload(
         "status": device.status,
         "device_online": device.online,
         "device_status": device,
+        // Send control state with the same snapshot as the measurements. A
+        // connected HMI must not retain old interlocks until its slow HTTP poll.
+        "runtime": runtime,
         "data": {
             "current_temp": sample.temperature_c,
             "current_pressure": sample.pressure_mpa,
@@ -3515,7 +3528,7 @@ async fn v1_history(
     }
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(100).clamp(1, 500);
-    let offset = (page - 1) * page_size;
+    let offset = checked_page_offset(page, page_size)?;
     let samples = state
         .db
         .samples_between_sqlx(start_time, end_time, page_size, offset)
@@ -4603,7 +4616,8 @@ async fn emergency_stop(
                     "emergency stop target write timed out after {} ms",
                     stop_write_budget.as_millis()
                 )
-            });
+            })
+            .and_then(|result| result);
     if let Err(err) = stop_write {
         let write_err_msg = err.to_string();
         latch_control_write_fault(&state, &err).await;

@@ -41,7 +41,9 @@ export const useLiveStore = defineStore("live", () => {
   let getToken: () => string | null = () => null;
 
   const runtime = computed<RuntimeState | null>(() => live.value?.runtime ?? runtimeFallback.value);
-  const latestSample = computed<SensorSample | null>(() => runtime.value?.latest_sample ?? null);
+  const latestSample = computed<SensorSample | null>(() =>
+    liveStatus.value === "fresh" ? runtime.value?.latest_sample ?? null : null
+  );
   const recentSamples = computed<SensorSample[]>(() =>
     Array.isArray(live.value?.recent_samples) ? (live.value!.recent_samples as SensorSample[]) : []
   );
@@ -137,14 +139,16 @@ export const useLiveStore = defineStore("live", () => {
         }
       : previousLive.device_status;
 
-    const nextRuntime: RuntimeState = { ...(previousRuntime ?? {}), latest_sample: sample };
+    const nextRuntime: RuntimeState = { ...(previousRuntime ?? {}), ...(payload.runtime ?? {}), latest_sample: sample };
     runtimeFallback.value = nextRuntime;
     live.value = {
       ...previousLive,
       runtime: nextRuntime,
       device_status: nextDeviceStatus,
       alarms: Array.isArray(payload.alarms) ? payload.alarms : previousLive.alarms,
-      recent_samples: [...previousSamples, sample].slice(-LIVE_SAMPLE_LIMIT)
+      recent_samples: [
+        ...previousSamples.filter((item) => item.captured_at !== sample.captured_at), sample
+      ].slice(-LIVE_SAMPLE_LIMIT)
     };
     liveStatus.value = "fresh";
     liveLastUpdated.value = new Date().toLocaleTimeString();
