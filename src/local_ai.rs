@@ -581,7 +581,12 @@ fn truncate(value: &str) -> String {
     if value.len() <= LIMIT {
         return value.to_string();
     }
-    format!("{}...<truncated>", &value[..LIMIT])
+    // Byte slicing (&value[..LIMIT]) panics when the limit lands inside a
+    // multi-byte character; training-script logs are routinely CJK-heavy.
+    format!(
+        "{}...<truncated>",
+        value.chars().take(LIMIT).collect::<String>()
+    )
 }
 
 fn merge_inference_status(

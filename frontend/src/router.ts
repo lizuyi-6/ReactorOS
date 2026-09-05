@@ -40,7 +40,7 @@ export const routes = [
   {
     path: "/audit",
     component: AuditView,
-    meta: { zh: "审计追踪", en: "Audit", titleZh: "审计追踪", titleEn: "Audit Trail", icon: "audit", requiresAuth: true }
+    meta: { zh: "审计追踪", en: "Audit", titleZh: "审计追踪", titleEn: "Audit Trail", icon: "audit" }
   },
   {
     path: "/modbus",
@@ -59,10 +59,10 @@ export const router = createRouter({
   routes
 });
 
-// 路由守卫：仅对标记 requiresAuth 的页面强制登录；其余页面公开可读，
-// 页面内写操作仍由后端 401/403 拦截（配合全局登出）。
+// 路由守卫：除 public 页（登录）外一律要求登录；未登录跳转登录页并记录回跳目标。
+// 写操作仍由后端 401/403 兜底（配合全局登出）。
 router.beforeEach((to) => {
-  if (to.meta?.public || !to.meta?.requiresAuth) return true;
+  if (to.meta?.public) return true;
   const hasToken = Boolean(localStorage.getItem("reactoros.vue.auth.token"));
   if (!hasToken) {
     return { path: "/login", query: { redirect: to.fullPath } };

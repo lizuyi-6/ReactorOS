@@ -3,6 +3,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -60,6 +61,23 @@ const checks = [
     label: "QEMU smoke prefers packaged Vue assets with legacy fallback",
   },
   {
+    file: "Dockerfile",
+    mustContain: [
+      "FROM node:24-bookworm-slim AS frontend-builder",
+      "RUN npm run frontend:build",
+      "COPY --from=frontend-builder /src/frontend/dist ./frontend/dist",
+      '"--assets", "/app/frontend/dist"',
+    ],
+    mustNotContain: ["COPY static ./static", '"--assets", "/app/static"'],
+    label: "Docker runtime carries and serves the Vue HMI",
+  },
+  {
+    file: "docker-compose.yml",
+    mustContain: ["- /app/frontend/dist"],
+    mustNotContain: ["- /app/static"],
+    label: "Docker Compose serves the Vue HMI",
+  },
+  {
     file: "scripts/perf-lubancat2-qemu.mjs",
     mustNotContain: ["--assets static"],
     label: "QEMU perf does not force legacy static HMI",
@@ -72,6 +90,7 @@ const checks = [
 ];
 
 const failures = [];
+await verifyCompressedHmi(failures);
 for (const check of checks) {
   const fullPath = path.join(root, check.file);
   let text;
@@ -99,3 +118,31 @@ if (failures.length) {
 }
 
 console.log("Vue release assets gate passed");
+
+async function verifyCompressedHmi(output) {
+  const dist = path.join(root, "frontend", "dist");
+  const htmlPath = path.join(dist, "index.html");
+  const brPath = `${htmlPath}.br`;
+  const gzipPath = `${htmlPath}.gz`;
+  try {
+    const [html, brotli, gzipped] = await Promise.all([
+      readFile(htmlPath),
+      readFile(brPath),
+      readFile(gzipPath),
+    ]);
+    if (!brotliDecompressSync(brotli).equals(html)) {
+      output.push("Vue compressed HMI: index.html.br does not decompress to index.html");
+    }
+    if (!gunzipSync(gzipped).equals(html)) {
+      output.push("Vue compressed HMI: index.html.gz does not decompress to index.html");
+    }
+    if (brotli.length >= html.length * 0.8) {
+      output.push(`Vue compressed HMI: Brotli output is unexpectedly large (${brotli.length}/${html.length})`);
+    }
+    if (gzipped.length >= html.length * 0.8) {
+      output.push(`Vue compressed HMI: gzip output is unexpectedly large (${gzipped.length}/${html.length})`);
+    }
+  } catch (error) {
+    output.push(`Vue compressed HMI: cannot verify index.html.br/index.html.gz: ${error.message}`);
+  }
+}

@@ -638,6 +638,9 @@ fn validate_modbus_register_write_value(
     Ok(())
 }
 
+// 校验的是合并后将整体下发的目标集，而不只是本次写入的寄存器字段：Modbus 调试写入
+// 会把 runtime 里继承的其余目标一并重发到设备，继承值越界时必须拒绝（400），
+// 不得夹逼、也不得静默重发（api_tests::modbus_*_rejects_invalid_existing_runtime_targets_without_clamping）。
 fn validate_modbus_register_targets(
     state: &AppState,
     targets: ControlTargets,

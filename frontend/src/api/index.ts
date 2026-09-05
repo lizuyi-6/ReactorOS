@@ -42,6 +42,12 @@ export const authApi = {
   },
   roles() {
     return request<PermissionRolesResponse>("/api/permissions/roles", { auth: false });
+  },
+  changePassword(oldPassword: string, newPassword: string) {
+    return request<{ username: string; changed: boolean }>("/api/auth/change-password", {
+      method: "POST",
+      body: { old_password: oldPassword, new_password: newPassword }
+    });
   }
 };
 
@@ -125,8 +131,12 @@ export const processApi = {
   apply(id: number) {
     return request<ProcessApplyResponse>(`/api/processes/${id}/apply`, { method: "POST" });
   },
-  start(id: number) {
-    return request<ProcessApplyResponse>(`/api/processes/${id}/start`, { method: "POST" });
+  start(id: number, name?: string) {
+    const trimmed = name?.trim();
+    return request<ProcessApplyResponse>(`/api/processes/${id}/start`, {
+      method: "POST",
+      body: trimmed ? { name: trimmed } : {}
+    });
   },
   stop(id: number, reason?: string) {
     return request<ProcessStopResponse>(`/api/processes/${id}/stop`, { method: "POST", body: reason ? { reason } : {} });

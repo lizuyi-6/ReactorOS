@@ -348,7 +348,26 @@ async fn control_loop(
                     .await;
             }
         } else {
-            match device.read_sample_and_status().await {
+            // Bound the device read. Serial and file-bridge reads can block
+            // indefinitely (firmware stuck mid-line, hung mount, serial lock
+            // held by another stuck call); without a bound the whole
+            // supervision loop stalls silently — staleness handling,
+            // auto-disable and safety-guard consults stop while the HMI keeps
+            // showing the last sample. sensor_timeout_ms is the natural
+            // budget: a read that cannot finish within the freshness window
+            // is a field fault by the same contract the sample freshness
+            // check applies.
+            let read_budget =
+                Duration::from_millis(u64::try_from(safety.control.sensor_timeout_ms).unwrap_or(1));
+            let read_result =
+                match tokio::time::timeout(read_budget, device.read_sample_and_status()).await {
+                    Ok(result) => result,
+                    Err(_) => Err(anyhow::anyhow!(
+                        "device read timed out after {} ms",
+                        read_budget.as_millis()
+                    )),
+                };
+            match read_result {
                 Ok((sample, status)) => {
                     let active_batch_id = {
                         let state = runtime.read().await;
@@ -446,11 +465,25 @@ async fn control_loop(
                 Err(err) => {
                     tracing::warn!("sensor read failed: {err}");
                     let reason = err.to_string();
-                    let status = match device.read_device_status().await {
-                        Ok(status) => status,
-                        Err(status_err) => {
+                    // Bound the follow-up status read too: it goes through the
+                    // same device/serial lock that may just have timed out.
+                    let status = match tokio::time::timeout(
+                        read_budget,
+                        device.read_device_status(),
+                    )
+                    .await
+                    {
+                        Ok(Ok(status)) => status,
+                        Ok(Err(status_err)) => {
                             tracing::debug!(
                                 "device status read after sensor failure failed: {status_err}"
+                            );
+                            None
+                        }
+                        Err(_) => {
+                            tracing::debug!(
+                                "device status read after sensor failure timed out after {} ms",
+                                read_budget.as_millis()
                             );
                             None
                         }
@@ -502,8 +535,29 @@ async fn control_loop(
         }
 
         let decision = {
-            let state = runtime.read().await;
-            decide_control_with_optional_guard(&safety, &state, safety_guard.as_deref())
+            // Clone a snapshot and drop the read lock BEFORE the optional guard
+            // subprocess call: evaluate_with_process blocks for up to
+            // safety_guard_timeout_ms, and holding the runtime read lock across
+            // it would queue every runtime writer (API handlers, WS) behind the
+            // guard wait. spawn_blocking also keeps the std::process wait off
+            // the 2 tokio workers (the decision state snapshot semantics are
+            // unchanged: the lock was never held past the decision anyway).
+            let state = runtime.read().await.clone();
+            let safety_for_guard = safety.clone();
+            let guard_path = safety_guard.clone();
+            let joined = tokio::task::spawn_blocking(move || {
+                decide_control_with_optional_guard(&safety_for_guard, &state, guard_path.as_deref())
+            })
+            .await;
+            match joined {
+                Ok(decision) => decision,
+                Err(err) => {
+                    tracing::error!(
+                        "safety guard decision task failed: {err}; blocking automatic control this cycle"
+                    );
+                    ControlDecision::Blocked(ControlBlockReason::ControlFault)
+                }
+            }
         };
 
         match decision {
@@ -520,8 +574,19 @@ async fn control_loop(
                     sleep(interval).await;
                     continue;
                 }
+                // Final interlock before the device write, split in two phases
+                // so the safety-guard subprocess wait (up to
+                // safety_guard_timeout_ms) never runs while holding the
+                // runtime read lock — that would queue every runtime writer
+                // (including e-stop engage) behind the guard:
+                //   phase 1: batch consistency + guard re-decision on a
+                //            snapshot, inside spawn_blocking;
+                //   phase 2: short read lock, in-process re-verification that
+                //            the LIVE state still produces exactly this
+                //            command (catches latch/target changes that
+                //            happened during the subprocess wait).
                 let active_batch_id = {
-                    let state = runtime.read().await;
+                    let state_snapshot = runtime.read().await.clone();
                     let unfinished = match db.unfinished_batches_sqlx(100).await {
                         Ok(unfinished) => unfinished,
                         Err(err) => {
@@ -530,8 +595,7 @@ async fn control_loop(
                             );
                             last_written_command = None;
                             retry_after = None;
-                            let active_batch_id = state.active_batch_id;
-                            drop(state);
+                            let active_batch_id = state_snapshot.active_batch_id;
                             let mut state = runtime.write().await;
                             state.latch_control_fault(format!(
                                 "automatic control blocked until unfinished batch state can be verified: {err}"
@@ -542,16 +606,16 @@ async fn control_loop(
                             continue;
                         }
                     };
-                    if let Err(reason) =
-                        automatic_batch_state_is_consistent(state.active_batch_id, &unfinished)
-                    {
+                    if let Err(reason) = automatic_batch_state_is_consistent(
+                        state_snapshot.active_batch_id,
+                        &unfinished,
+                    ) {
                         tracing::warn!(
                             "automatic control write skipped because persisted batch state is inconsistent: {reason}"
                         );
                         last_written_command = None;
                         retry_after = None;
-                        let active_batch_id = state.active_batch_id;
-                        drop(state);
+                        let active_batch_id = state_snapshot.active_batch_id;
                         let mut state = runtime.write().await;
                         let should_audit = state.latch_control_fault(reason.clone());
                         drop(state);
@@ -565,14 +629,70 @@ async fn control_loop(
                         sleep(interval).await;
                         continue;
                     }
-                    match ensure_automatic_control_write_still_current(
-                        safety.as_ref(),
-                        &state,
-                        safety_guard.as_deref(),
-                        &command,
-                    ) {
-                        Ok(active_batch_id) => active_batch_id,
-                        Err(decision) => {
+                    let safety_for_recheck = safety.clone();
+                    let guard_path = safety_guard.clone();
+                    let command_for_recheck = command.clone();
+                    let snapshot_for_recheck = state_snapshot.clone();
+                    let guard_recheck = match tokio::task::spawn_blocking(move || {
+                        ensure_automatic_control_write_still_current(
+                            &safety_for_recheck,
+                            &snapshot_for_recheck,
+                            guard_path.as_deref(),
+                            &command_for_recheck,
+                        )
+                    })
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(join_err) => {
+                            tracing::error!(
+                                "safety guard recheck task failed: {join_err}; skipping this write"
+                            );
+                            Err(ControlDecision::Blocked(ControlBlockReason::ControlFault))
+                        }
+                    };
+                    // Phase 2, single short read lock: the live state must
+                    // still yield exactly this command AND the same active
+                    // batch the DB consistency check above was run against —
+                    // a batch stop/start during the subprocess wait would
+                    // otherwise attribute this write to a batch never verified
+                    // against the persisted unfinished set.
+                    let (live_decision, live_active_batch_id) = {
+                        let state = runtime.read().await;
+                        (
+                            decide_control_with_optional_guard(safety.as_ref(), &state, None),
+                            state.active_batch_id,
+                        )
+                    };
+                    let command_still_current = matches!(
+                        &live_decision,
+                        ControlDecision::Write(current) if *current == command
+                    );
+                    let batch_still_current =
+                        live_active_batch_id == state_snapshot.active_batch_id;
+                    if guard_recheck.is_ok() && command_still_current && !batch_still_current {
+                        // Same command, but the active batch changed under us:
+                        // not a field fault, just a stale consistency check.
+                        // Skip this cycle; the next one re-verifies the new
+                        // batch against the persisted unfinished set.
+                        tracing::warn!(
+                            "automatic control write skipped: active batch changed during final interlock ({:?} -> {:?})",
+                            state_snapshot.active_batch_id,
+                            live_active_batch_id
+                        );
+                        last_written_command = None;
+                        retry_after = None;
+                        sleep(interval).await;
+                        continue;
+                    }
+                    let failed_decision = match guard_recheck {
+                        Ok(_) if command_still_current => None,
+                        Ok(_) => Some(live_decision),
+                        Err(decision) => Some(decision),
+                    };
+                    match failed_decision {
+                        None => live_active_batch_id,
+                        Some(decision) => {
                             tracing::warn!(
                                 "automatic control write skipped after final interlock recheck: {decision:?}"
                             );
@@ -580,9 +700,8 @@ async fn control_loop(
                             retry_after = None;
                             if let Some(reason) = automatic_final_interlock_fault_reason(&decision)
                             {
-                                let active_batch_id = state.active_batch_id;
-                                drop(state);
                                 let mut state = runtime.write().await;
+                                let active_batch_id = state.active_batch_id;
                                 let should_audit = state.latch_control_fault(reason.clone());
                                 drop(state);
                                 audit_automatic_final_interlock_block(

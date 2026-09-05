@@ -281,6 +281,16 @@ const writeDisabled = computed(
 );
 const writeValueInput = computed(() => (auth.isAdmin ? "" : tr("写寄存器需要 admin 角色", "Writing requires the admin role")));
 
+// 写入按钮禁用原因提示：禁用时让用户知道缺哪一项。
+const writeDisabledReason = computed(() => {
+  if (!writeDisabled.value || writing.value) return "";
+  if (!auth.isAdmin) return tr("写寄存器需要 admin 角色", "Writing requires the admin role");
+  if (!writeForm.register) return tr("请选择要写入的寄存器地址", "Select a writable register address");
+  if (writeValueNumber.value === null) return tr("请输入有效数值", "Enter a valid numeric value");
+  if (!writeForm.reason.trim()) return tr("请填写写入原因", "Enter the write reason");
+  return "";
+});
+
 // ---------- 读写动作 ----------
 
 /** 测量一次 API 往返延迟（真实前端实测值）。 */
@@ -753,6 +763,7 @@ const timelineDots = [
             <el-button type="primary" size="small" class="span-2 write-btn" :disabled="writeDisabled" :loading="writing" @click="doWrite">
               {{ tr("写入", "Write") }}
             </el-button>
+            <div v-if="writeDisabledReason" class="span-2 write-hint">{{ writeDisabledReason }}</div>
           </div>
           <div v-if="lastWrite" class="last-write">
             <span class="status-dot" :class="lastWrite.ok ? 'ok' : 'bad'"></span>
@@ -992,6 +1003,11 @@ const timelineDots = [
 }
 .write-btn {
   margin-top: 2px;
+}
+.write-hint {
+  font-size: 11px;
+  color: var(--ind-amber);
+  line-height: 1.3;
 }
 
 /* ===== Read 面板 ===== */

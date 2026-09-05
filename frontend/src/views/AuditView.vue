@@ -69,6 +69,10 @@ const ACTION_LABELS: Record<string, [string, string]> = {
   demo_seed_applied: ["Demo Seed", "演示数据种子"]
 };
 
+// 事件类型筛选：以完整词汇表为种子（此前只从当前页行收集，device_write 刷屏时只剩一个选项），
+// 再在 mergeEventTypes 中并入数据里出现的新类型。
+eventTypeOptions.value = Object.keys(ACTION_LABELS).sort((a, b) => a.localeCompare(b));
+
 function actionDual(eventType: string): string {
   const pair = ACTION_LABELS[eventType];
   if (!pair) return eventType;
@@ -191,12 +195,19 @@ const sinceText = computed(() => {
 });
 
 const chainHealth = computed(() => {
-  const hashed = chain.value?.total_hashed_events ?? 0;
+  // Same-window ratio: chained_events is counted over the verified window
+  // (last verification_limit events), so the denominator must be
+  // checked_events — the old all-time total_hashed_events denominator made
+  // this card warn forever with zero broken blocks once the chain passed
+  // 10k events.
+  const checked = chain.value?.checked_events ?? 0;
   const chained = chain.value?.chained_events ?? 0;
-  if (hashed <= 0) return null;
+  const hashed = chain.value?.total_hashed_events ?? 0;
+  if (checked <= 0) return null;
   return {
-    pct: Math.round((chained / hashed) * 100),
+    pct: Math.round((chained / checked) * 100),
     hashed,
+    checked,
     chained,
     broken: chain.value?.broken_events ?? 0
   };

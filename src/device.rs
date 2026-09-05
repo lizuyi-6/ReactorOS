@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::{BufRead, BufReader, Write},
+    io::{BufReader, Read, Write},
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -445,6 +445,31 @@ impl ReactorDevice for ModbusRtuDevice {
     }
 }
 
+/// Read one newline-terminated line, bounded by `max_bytes`. Unlike
+/// `BufRead::read_line`, a peer that streams bytes without ever sending a
+/// newline cannot grow the buffer past `max_bytes + 1` — the bound is enforced
+/// as bytes accumulate, not checked after the memory has already been spent.
+/// EOF mid-line returns the partial line, matching `read_line` semantics.
+fn read_bounded_line<R: Read>(reader: &mut R, max_bytes: usize) -> std::io::Result<(usize, String)> {
+    let mut buf = Vec::with_capacity(128.min(max_bytes.saturating_add(1)));
+    let mut byte = [0_u8; 1];
+    loop {
+        let n = reader.read(&mut byte)?;
+        if n == 0 {
+            break;
+        }
+        buf.push(byte[0]);
+        if byte[0] == b'\n' || buf.len() > max_bytes {
+            break;
+        }
+    }
+    let bytes = buf.len();
+    let line = String::from_utf8(buf).map_err(|_| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "serial line is not valid UTF-8")
+    })?;
+    Ok((bytes, line))
+}
+
 #[async_trait::async_trait]
 impl ReactorDevice for Esp32SerialDevice {
     async fn read_sample(&self) -> Result<SensorSnapshot> {
@@ -456,8 +481,7 @@ impl ReactorDevice for Esp32SerialDevice {
                 .map_err(|_| anyhow!("serial port lock poisoned"))?;
             let reader_port = port.try_clone()?;
             let mut reader = BufReader::new(reader_port);
-            let mut line = String::new();
-            let bytes = reader.read_line(&mut line)?;
+            let (bytes, line) = read_bounded_line(&mut reader, config.esp32.max_line_bytes)?;
             if bytes == 0 {
                 return Err(anyhow!("esp32 serial returned no data"));
             }
@@ -519,27 +543,35 @@ impl ReactorDevice for Esp32SerialDevice {
             // (100 ms) so the sample-path reader is unaffected and we never
             // block forever on a silent line. Loop until an ACK frame echoing
             // our rid arrives, or the handshake window expires. Sample frames
-            // and unparsable lines are skipped.
+            // and unparsable lines are skipped. On Windows a cloned handle
+            // shares the underlying COM timeouts, so restore the original
+            // value on every exit path to keep the sample-path reader's
+            // timeout unchanged there (Linux clones are independent; the
+            // restore is a harmless no-op).
+            let original_timeout = port.timeout();
             let mut reader_port = port.try_clone()?;
             reader_port.set_timeout(Duration::from_millis(100))?;
+            let restore_timeout = |reader_port: &mut Box<dyn SerialPort>| {
+                let _ = reader_port.set_timeout(original_timeout);
+            };
             let mut reader = BufReader::new(reader_port);
             let deadline = std::time::Instant::now() + timeout;
             loop {
                 if std::time::Instant::now() >= deadline {
+                    restore_timeout(reader.get_mut());
                     return Ok(CommandAck {
                         request_id,
                         status: AckStatus::Timeout,
                         accepted_targets: None,
                     });
                 }
-                let mut line = String::new();
-                match reader.read_line(&mut line) {
-                    Ok(0) | Err(_) => {
+                let line = match read_bounded_line(&mut reader, config.esp32.max_line_bytes) {
+                    Ok((0, _)) | Err(_) => {
                         std::thread::sleep(Duration::from_millis(10));
                         continue;
                     }
-                    Ok(_) => {}
-                }
+                    Ok((_, bounded)) => bounded,
+                };
                 if let Ok(ack) =
                     parse_esp32_ack_frame(&line, &config.esp32.frame_prefix, config.esp32.checksum)
                 {
@@ -552,6 +584,7 @@ impl ReactorDevice for Esp32SerialDevice {
                                     .unwrap_or_else(|| "downstream rejected command".to_string()),
                             )
                         };
+                        restore_timeout(reader.get_mut());
                         return Ok(CommandAck {
                             request_id,
                             status,

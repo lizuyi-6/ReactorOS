@@ -2719,9 +2719,13 @@ fn xingshu_status_json_promotes_summary_fields() {
     assert_eq!(value["summary"]["online_count"], 1);
     assert_eq!(value["summary"]["total_count"], 2);
     assert_eq!(value["summary"]["live_available"], false);
-    // When live is unavailable the latch booleans fall back to conservative defaults.
-    assert_eq!(value["summary"]["emergency_stop"], false);
-    assert_eq!(value["summary"]["auto_enabled"], false);
+    // When live is unavailable the latch states are UNKNOWN and must be null —
+    // a literal `false` would tell an agent "no e-stop / no lock engaged" when
+    // the daemon could not actually be read.
+    assert_eq!(value["summary"]["emergency_stop"], serde_json::Value::Null);
+    assert_eq!(value["summary"]["manual_lock"], serde_json::Value::Null);
+    assert_eq!(value["summary"]["control_fault"], serde_json::Value::Null);
+    assert_eq!(value["summary"]["auto_enabled"], serde_json::Value::Null);
 }
 
 #[test]

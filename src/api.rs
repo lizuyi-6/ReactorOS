@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use axum::{
@@ -16,7 +16,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
 use tokio::time::MissedTickBehavior;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::{
+    services::{ServeDir, ServeFile},
+    set_header::SetResponseHeader,
+};
 
 use crate::{
     ai_provider::{
@@ -67,8 +70,9 @@ pub(crate) use api_response::{success, ApiJson, AppError, V1Envelope};
 #[path = "api_auth.rs"]
 mod api_auth;
 use api_auth::{
-    audit_actor_for_user, authenticated_user, login_response, permission_policy, require_admin,
-    require_permission, AuthUser, LoginRequest, LoginResponse, Permission,
+    audit_actor_for_user, authenticated_user, login_response, permission_policy,
+    prepare_password_change, require_admin, require_permission, AuthUser, ChangePasswordRequest,
+    LoginRequest, LoginResponse, Permission,
 };
 
 #[path = "modbus_registers.rs"]
@@ -376,6 +380,12 @@ pub struct StopProcessRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct StartProcessRequest {
+    /// 可选批次名；缺省或空白时沿用工艺名称。
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ManualLockRequest {
     pub locked: bool,
 }
@@ -589,12 +599,25 @@ pub struct ExperimentPlanResponse {
 }
 
 pub fn router(state: AppState, assets: PathBuf) -> Router {
+    let spa_fallback = ServeFile::new(assets.join("index.html"))
+        .precompressed_br()
+        .precompressed_gzip();
+    let static_files = SetResponseHeader::if_not_present(
+        ServeDir::new(&assets)
+            .precompressed_br()
+            .precompressed_gzip()
+            .fallback(spa_fallback),
+        axum::http::header::VARY,
+        HeaderValue::from_static("accept-encoding"),
+    );
+
     Router::new()
         .route("/health", get(health))
         .route("/api/live", get(live))
         .route("/api/demo/context", get(demo_context))
         .route("/api/auth/login", post(auth_login))
         .route("/api/auth/me", get(auth_me))
+        .route("/api/auth/change-password", post(auth_change_password))
         .route("/api/devices/status", get(devices_status))
         .route("/api/v1/devices/status", get(devices_status))
         .route("/api/devices/capabilities", get(devices_capabilities))
@@ -686,10 +709,7 @@ pub fn router(state: AppState, assets: PathBuf) -> Router {
             get(latest_recommendation).post(generate_latest_recommendation),
         )
         .route("/api/*path", any(api_not_found))
-        .nest_service(
-            "/",
-            ServeDir::new(&assets).not_found_service(ServeFile::new(assets.join("index.html"))),
-        )
+        .nest_service("/", static_files)
         .with_state(state)
 }
 
@@ -757,15 +777,15 @@ async fn live(
         .filter(|recommendation| provider_allows_recommendation(&state, recommendation))
         .filter(|recommendation| recommendation.based_on_batch_count > 0);
     let ai_provider = local_provider_for(&state);
-    let device_status = device_status_summary_with_db(&state, &runtime).await?;
-    let alarms = live_alarms_for(
-        &state,
+    let batch_status = unfinished_batch_status(&state, &runtime).await?;
+    let device_status = device_status_summary_with_batch_status(&state, &runtime, &batch_status);
+    let alarms = live_alarms_for_with_batch_status(
         state.safety.as_ref(),
         &runtime,
         runtime.latest_sample.as_ref(),
         state.ai_memory.as_ref(),
-    )
-    .await?;
+        &batch_status,
+    );
     let field_scenario = detect_field_scenario(FieldScenarioContext {
         device_mode: &state.device_mode,
         runtime: Some(&runtime),
@@ -882,7 +902,10 @@ async fn audit_export_csv(
         ));
     }
     let truncation_headers = (
-        [("x-audit-export-truncated", if truncated { "true" } else { "false" })],
+        [(
+            "x-audit-export-truncated",
+            if truncated { "true" } else { "false" },
+        )],
         [("x-audit-export-total-events", total_events.to_string())],
     );
     Ok((
@@ -899,14 +922,46 @@ async fn audit_export_csv(
 }
 
 async fn auth_login(
+    State(state): State<AppState>,
     ApiJson(payload): ApiJson<LoginRequest>,
 ) -> Result<Json<V1Envelope<LoginResponse>>, AppError> {
-    Ok(Json(success(login_response(payload)?)))
+    let overrides = state.db.password_overrides_sqlx().await?;
+    Ok(Json(success(login_response(payload, &overrides)?)))
 }
 
 async fn auth_me(headers: HeaderMap) -> Result<Json<V1Envelope<AuthUser>>, AppError> {
     let user = authenticated_user(&headers)?;
     Ok(Json(success(user)))
+}
+
+/// 修改当前登录账户的密码：校验旧口令后以加盐哈希写入本地覆盖表
+/// （auth_password_overrides），之后登录只认覆盖值；全程审计。
+async fn auth_change_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(payload): ApiJson<ChangePasswordRequest>,
+) -> Result<Json<V1Envelope<Value>>, AppError> {
+    let user = authenticated_user(&headers)?;
+    let overrides = state.db.password_overrides_sqlx().await?;
+    let hash = prepare_password_change(&user.username, &payload, &overrides)?;
+    state
+        .db
+        .set_password_override_sqlx(&user.username, &hash)
+        .await?;
+    state
+        .db
+        .insert_control_event_sqlx(
+            None,
+            "password_changed",
+            None,
+            "local account password changed",
+            &audit_actor_for_user(&user),
+        )
+        .await?;
+    Ok(Json(success(json!({
+        "username": user.username,
+        "changed": true,
+    }))))
 }
 
 async fn config_summary(State(state): State<AppState>) -> Json<V1Envelope<Value>> {
@@ -1125,6 +1180,7 @@ async fn apply_process(
         &state,
         process_id,
         "process_applied",
+        None,
         &audit_actor_for_user(&user),
     )
     .await?;
@@ -1135,12 +1191,18 @@ async fn start_process(
     State(state): State<AppState>,
     Path(process_id): Path<i64>,
     headers: HeaderMap,
+    payload: Option<Json<StartProcessRequest>>,
 ) -> Result<Json<V1Envelope<ProcessApplyResponse>>, AppError> {
     let user = require_permission(&headers, Permission::StartStopProcess)?;
+    let name_override = payload
+        .and_then(|Json(payload)| payload.name)
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty());
     let response = start_process_lifecycle(
         &state,
         process_id,
         "process_started",
+        name_override.as_deref(),
         &audit_actor_for_user(&user),
     )
     .await?;
@@ -1186,6 +1248,7 @@ async fn start_process_lifecycle(
     state: &AppState,
     process_id: i64,
     event_type: &'static str,
+    name_override: Option<&str>,
     actor: &AuditActor,
 ) -> Result<ProcessApplyResponse, AppError> {
     let Some(detail) = process_detail_or_bad_request(state, process_id).await? else {
@@ -1197,6 +1260,7 @@ async fn start_process_lifecycle(
         ));
     }
     let targets = targets_from_process_steps(&state.safety, &detail.steps)?;
+    let batch_name = name_override.unwrap_or(&detail.process.name);
     let acknowledged_safety_latches = {
         let runtime = {
             let mut runtime = state.runtime.write().await;
@@ -1210,7 +1274,7 @@ async fn start_process_lifecycle(
         .db
         .create_batch_for_process_sqlx(
             Some(process_id),
-            &detail.process.name,
+            batch_name,
             targets.temperature_c,
             targets.stirrer_rpm,
             seconds_to_minutes(Some(targets.heat_time_s)),
@@ -1225,8 +1289,15 @@ async fn start_process_lifecycle(
         "process started from persisted process definition"
     };
     if let Err(err) = start_process_on_device(state, &targets, Some(batch.id)).await {
-        audit_start_failed_before_activation(state, Some(batch.id), &targets, "process", &err, actor)
-            .await;
+        audit_start_failed_before_activation(
+            state,
+            Some(batch.id),
+            &targets,
+            "process",
+            &err,
+            actor,
+        )
+        .await;
         if let Err(finish_err) = state.db.finish_batch_sqlx(batch.id).await {
             tracing::warn!("failed to mark failed process start batch finished: {finish_err}");
         }
@@ -1976,7 +2047,10 @@ async fn batches_export_csv(
     require_permission(&headers, Permission::ExportReports)?;
     const BATCH_EXPORT_ROW_CAP: usize = 10_000;
     let batches = state.db.recent_batches_sqlx(BATCH_EXPORT_ROW_CAP).await?;
-    let outcomes = state.db.recent_batch_outcomes_sqlx(BATCH_EXPORT_ROW_CAP).await?;
+    let outcomes = state
+        .db
+        .recent_batch_outcomes_sqlx(BATCH_EXPORT_ROW_CAP)
+        .await?;
     let total_batches = state.db.batch_count_sqlx().await?;
     let truncated = total_batches > batches.len();
     let mut csv = build_batches_csv(&batches, &outcomes);
@@ -1988,7 +2062,10 @@ async fn batches_export_csv(
         ));
     }
     let truncation_headers = (
-        [("x-batches-export-truncated", if truncated { "true" } else { "false" })],
+        [(
+            "x-batches-export-truncated",
+            if truncated { "true" } else { "false" },
+        )],
         [("x-batches-export-total", total_batches.to_string())],
     );
     Ok((
@@ -2025,7 +2102,10 @@ async fn batches_export_xlsx(
     let truncated = total_batches > batches.len();
     let workbook = build_batches_xlsx(&batches, &outcomes)?;
     let truncation_headers = (
-        [("x-batches-export-truncated", if truncated { "true" } else { "false" })],
+        [(
+            "x-batches-export-truncated",
+            if truncated { "true" } else { "false" },
+        )],
         [("x-batches-export-total", total_batches.to_string())],
     );
     Ok((
@@ -2525,7 +2605,8 @@ async fn ai_control(
             });
             if !dry_run {
                 let started =
-                    start_process_lifecycle(&state, process.id, "ai_process_started", &actor).await?;
+                    start_process_lifecycle(&state, process.id, "ai_process_started", None, &actor)
+                        .await?;
                 actions.last_mut().expect("process action exists").result =
                     Some(serde_json::to_value(started).map_err(anyhow::Error::from)?);
             }
@@ -2573,7 +2654,8 @@ async fn ai_control(
             });
             if !dry_run {
                 let stopped =
-                    stop_process_lifecycle(&state, None, "ai_process_stopped", None, &actor).await?;
+                    stop_process_lifecycle(&state, None, "ai_process_stopped", None, &actor)
+                        .await?;
                 actions.last_mut().expect("stop action exists").result =
                     Some(serde_json::to_value(stopped).map_err(anyhow::Error::from)?);
             }
@@ -3160,24 +3242,39 @@ async fn v1_control(
 
     let mut batch_id = None;
     if auto_start {
-        let batch = state.db.create_batch(
-            &format!(
-                "{}:{}",
-                device_id,
-                payload.command_id.as_deref().unwrap_or("process")
-            ),
-            targets.temperature_c,
-            targets.stirrer_rpm,
-            heating_minutes,
-            stirring_minutes,
-        )?;
+        // sqlx path: the legacy sync `create_batch` (rusqlite under a mutex,
+        // busy-timeout up to 15s) would block this async handler and, with
+        // only 2 tokio workers on the board, squeeze the control loop while
+        // e.g. an online backup holds the SQLite write lock.
+        let batch = state
+            .db
+            .create_batch_for_process_sqlx(
+                None,
+                &format!(
+                    "{}:{}",
+                    device_id,
+                    payload.command_id.as_deref().unwrap_or("process")
+                ),
+                targets.temperature_c,
+                targets.stirrer_rpm,
+                heating_minutes,
+                stirring_minutes,
+            )
+            .await?;
         batch_id = Some(batch.id);
     }
 
     if auto_start {
         if let Err(err) = start_process_on_device(&state, &targets, batch_id).await {
-            audit_start_failed_before_activation(&state, batch_id, &targets, "v1 control", &err, &actor)
-                .await;
+            audit_start_failed_before_activation(
+                &state,
+                batch_id,
+                &targets,
+                "v1 control",
+                &err,
+                &actor,
+            )
+            .await;
             // The device start write failed, so the field was never commanded on and
             // runtime was never armed with this batch. Mirror batch start: just close
             // the pending batch record. Do NOT call the post-activation rollback, which
@@ -3369,16 +3466,16 @@ async fn v1_realtime_payload(
     runtime: &RuntimeState,
 ) -> Result<Value, AppError> {
     let sample = fresh_sample_for_realtime(state, runtime)?;
-    let device_summary = device_status_summary_with_db(state, runtime).await?;
+    let batch_status = unfinished_batch_status(state, runtime).await?;
+    let device_summary = device_status_summary_with_batch_status(state, runtime, &batch_status);
     let device = &device_summary.devices[0];
-    let alarms = live_alarms_for(
-        state,
+    let alarms = live_alarms_for_with_batch_status(
         state.safety.as_ref(),
         runtime,
         Some(sample),
         state.ai_memory.as_ref(),
-    )
-    .await?;
+        &batch_status,
+    );
     Ok(json!({
         "device_id": device_id,
         "timestamp": sample.captured_at.to_rfc3339(),
@@ -4490,7 +4587,24 @@ async fn emergency_stop(
     let stop_targets = process_stop_targets(&state);
     let stop_command =
         safe_command_from_runtime_targets(&stop_targets, "emergency stop fail-safe targets");
-    if let Err(err) = state.device.write_targets(&stop_command).await {
+    // Bound the downstream write: it takes the same serial/device lock a stuck
+    // read or a command-ack handshake may hold, and without a bound this
+    // handler (and its audit row) hangs forever while the operator stares at a
+    // spinner. sensor_timeout_ms is the established device-availability
+    // budget; on expiry the existing failure branch latches a control fault,
+    // audits the miss and tells the operator to use the hardware e-stop.
+    let stop_write_budget =
+        Duration::from_millis(u64::try_from(state.safety.control.sensor_timeout_ms).unwrap_or(1));
+    let stop_write =
+        tokio::time::timeout(stop_write_budget, state.device.write_targets(&stop_command))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "emergency stop target write timed out after {} ms",
+                    stop_write_budget.as_millis()
+                )
+            });
+    if let Err(err) = stop_write {
         let write_err_msg = err.to_string();
         latch_control_write_fault(&state, &err).await;
         if let Err(audit_err) = state
@@ -5034,8 +5148,16 @@ async fn generate_recommendation(state: &AppState) -> Result<Recommendation, App
             "product result data unavailable; waiting for finished batch outcomes",
         ));
     }
-    let fallback =
-        recommend_with_memory(&state.safety.optimizer, Some(&state.ai_memory), &outcomes);
+    let Some(fallback) =
+        recommend_with_memory(&state.safety.optimizer, Some(&state.ai_memory), &outcomes)
+    else {
+        // Optimizer bounds fully covered by forbidden zones: emitting any
+        // target here would violate the operator's zones. Surface the impasse
+        // instead of fabricating a recommendation.
+        return Err(AppError::conflict(
+            "optimizer bounds are fully covered by forbidden control zones; no safe recommendation exists",
+        ));
+    };
     let Some(provider) = &state.ai_provider else {
         return Ok(fallback);
     };
@@ -5591,13 +5713,22 @@ async fn device_status_summary_with_db(
     state: &AppState,
     runtime: &RuntimeState,
 ) -> Result<DeviceStatusSummary, AppError> {
-    let mut summary = device_status_summary(state, runtime);
-    apply_unfinished_batch_status(
-        &unfinished_batch_status(state, runtime).await?,
+    let batch_status = unfinished_batch_status(state, runtime).await?;
+    Ok(device_status_summary_with_batch_status(
+        state,
         runtime,
-        &mut summary,
-    );
-    Ok(summary)
+        &batch_status,
+    ))
+}
+
+fn device_status_summary_with_batch_status(
+    state: &AppState,
+    runtime: &RuntimeState,
+    batch_status: &UnfinishedBatchStatus,
+) -> DeviceStatusSummary {
+    let mut summary = device_status_summary(state, runtime);
+    apply_unfinished_batch_status(batch_status, runtime, &mut summary);
+    summary
 }
 
 fn apply_unfinished_batch_status(
@@ -6089,19 +6220,35 @@ pub(crate) async fn live_alarms_for(
     sample: Option<&SensorSnapshot>,
     memory: &AiMemory,
 ) -> Result<Vec<Value>, AppError> {
-    let mut alarms = alarms_for(safety, runtime, sample, memory);
-    append_unfinished_batch_recovery_alarms(state, runtime, &mut alarms).await?;
-    Ok(alarms)
+    let batch_status = unfinished_batch_status(state, runtime).await?;
+    Ok(live_alarms_for_with_batch_status(
+        safety,
+        runtime,
+        sample,
+        memory,
+        &batch_status,
+    ))
 }
 
-async fn append_unfinished_batch_recovery_alarms(
-    state: &AppState,
+fn live_alarms_for_with_batch_status(
+    safety: &SafetyConfig,
+    runtime: &RuntimeState,
+    sample: Option<&SensorSnapshot>,
+    memory: &AiMemory,
+    batch_status: &UnfinishedBatchStatus,
+) -> Vec<Value> {
+    let mut alarms = alarms_for(safety, runtime, sample, memory);
+    append_unfinished_batch_recovery_alarm(batch_status, runtime, &mut alarms);
+    alarms
+}
+
+fn append_unfinished_batch_recovery_alarm(
+    batch_status: &UnfinishedBatchStatus,
     runtime: &RuntimeState,
     alarms: &mut Vec<Value>,
-) -> Result<(), AppError> {
-    let batch_status = unfinished_batch_status(state, runtime).await?;
+) {
     if !batch_status.recovery_required() {
-        return Ok(());
+        return;
     }
     alarms.push(json!({
         "type": "unfinished_batch_recovery",
@@ -6113,7 +6260,6 @@ async fn append_unfinished_batch_recovery_alarms(
         "runtime_active_batch_missing": batch_status.runtime_active_batch_missing,
         "suggestion": "verify field state and close or repair unfinished batches before starting production"
     }));
-    Ok(())
 }
 
 fn sensor_data_alarm_reason(

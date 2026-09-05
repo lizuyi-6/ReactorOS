@@ -51,6 +51,8 @@ async function loadRoles(): Promise<void> {
 
 function fillUser(name: string): void {
   username.value = name;
+  // 切换账户时清空密码框，避免残留上一个账户的旧密码串号
+  password.value = "";
   void nextTick(() => passwordInputRef.value?.focus());
 }
 

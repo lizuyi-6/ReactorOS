@@ -22,7 +22,7 @@ services:
       - --db
       - /app/data/reactor.sqlite3
       - --assets
-      - /app/static
+      - /app/frontend/dist
       - --bind
       - 0.0.0.0:8000
       - --enable-test-reset

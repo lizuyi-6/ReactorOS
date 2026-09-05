@@ -730,6 +730,112 @@ async fn health_endpoint_works() {
 }
 
 #[tokio::test]
+async fn static_assets_negotiate_precompressed_index_and_preserve_spa_fallback() {
+    let assets = tempfile::tempdir().unwrap();
+    let plain = b"<html>plain index</html>";
+    let brotli = b"test-brotli-index-bytes";
+    let gzipped = b"test-gzip-index-bytes";
+    std::fs::write(assets.path().join("index.html"), plain).unwrap();
+    std::fs::write(assets.path().join("index.html.br"), brotli).unwrap();
+    std::fs::write(assets.path().join("index.html.gz"), gzipped).unwrap();
+
+    let safety = Arc::new(safety());
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    let app = router(
+        AppState {
+            db: Db::open_memory().unwrap(),
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+            simulation_session: None,
+        },
+        assets.path().to_path_buf(),
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/")
+                .header("accept-encoding", "br, gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-encoding"], "br");
+    assert_eq!(response.headers()["content-type"], "text/html");
+    assert!(response.headers().get_all("vary").iter().any(|value| value
+        .to_str()
+        .unwrap()
+        .to_ascii_lowercase()
+        .contains("accept-encoding")));
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .as_ref(),
+        brotli
+    );
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/monitor/reactor-001")
+                .header("accept-encoding", "gzip")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-encoding"], "gzip");
+    assert_eq!(response.headers()["content-type"], "text/html");
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .as_ref(),
+        gzipped
+    );
+
+    let response = app
+        .clone()
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("content-encoding").is_none());
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .as_ref(),
+        plain
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/does-not-exist")
+                .header("accept-encoding", "br")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert!(response.headers().get("content-encoding").is_none());
+}
+
+#[tokio::test]
 async fn live_endpoint_exposes_poc_alignment_fields() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -793,6 +899,68 @@ async fn live_endpoint_exposes_poc_alignment_fields() {
 }
 
 #[tokio::test]
+async fn live_endpoint_uses_consistent_unfinished_batch_snapshot() {
+    let safety = Arc::new(safety());
+    let db = Db::open_memory().unwrap();
+    let active = db
+        .create_batch_for_process_sqlx(None, "live active", 60.0, 300.0, 10.0, 10.0)
+        .await
+        .unwrap();
+    let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
+    install_runtime_sample(&runtime, &db, fresh_sample(35.4, 0.0629, 300.0, 30.0, 12.9)).await;
+    {
+        let mut state = runtime.write().await;
+        state.active_batch_id = Some(active.id);
+        state.device_status = Some(healthy_device_status());
+    }
+    let app = router(
+        AppState {
+            db,
+            runtime,
+            device: test_device(),
+            device_mode: DeviceMode::Pipeline,
+            device_config: device_config(),
+            safety,
+            ai_memory: memory(),
+            ai_provider: None,
+            test_reset_enabled: false,
+            simulation_session: None,
+        },
+        PathBuf::from("static"),
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/live?sample_limit=1&include_processes=false&include_batches=false&include_events=false")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body: Value = serde_json::from_slice(&body).unwrap();
+    let device = &body["device_status"]["devices"][0];
+    assert_eq!(device["status"], "running");
+    assert_eq!(device["online"], true);
+    assert!(device["unfinished_batch_ids"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(device["unexpected_unfinished_batch_ids"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!body["alarms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|alarm| alarm["type"] == "unfinished_batch_recovery"));
+}
+
+#[tokio::test]
 async fn live_endpoint_surfaces_unfinished_batch_recovery_alarm() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -831,14 +999,26 @@ async fn live_endpoint_surfaces_unfinished_batch_recovery_alarm() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
+    let device = &body["device_status"]["devices"][0];
     let alarm = body["alarms"]
         .as_array()
         .unwrap()
         .iter()
         .find(|alarm| alarm["type"] == "unfinished_batch_recovery")
         .expect("live response should surface unfinished batch recovery alarm");
+    assert_eq!(device["status"], "error");
+    assert_eq!(device["online"], false);
+    assert_eq!(device["unfinished_batch_ids"][0], orphan.id);
+    assert_eq!(device["unexpected_unfinished_batch_ids"][0], orphan.id);
     assert_eq!(alarm["level"], "high");
-    assert_eq!(alarm["unfinished_batch_ids"][0], orphan.id);
+    assert_eq!(
+        alarm["unfinished_batch_ids"],
+        device["unfinished_batch_ids"]
+    );
+    assert_eq!(
+        alarm["unexpected_batch_ids"],
+        device["unexpected_unfinished_batch_ids"]
+    );
     assert_eq!(alarm["active_batch_id"], Value::Null);
 }
 
@@ -932,14 +1112,32 @@ async fn live_endpoint_surfaces_missing_persisted_active_batch_recovery_alarm() 
     assert_eq!(response.status(), StatusCode::OK);
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
+    let device = &body["device_status"]["devices"][0];
     let alarm = body["alarms"]
         .as_array()
         .unwrap()
         .iter()
         .find(|alarm| alarm["type"] == "unfinished_batch_recovery")
         .expect("live response should flag runtime batch missing from DB");
+    assert_eq!(device["status"], "error");
+    assert_eq!(device["online"], false);
+    assert_eq!(device["unfinished_batch_ids"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        device["unexpected_unfinished_batch_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
     assert_eq!(alarm["active_batch_id"], 42);
-    assert_eq!(alarm["unfinished_batch_ids"].as_array().unwrap().len(), 0);
+    assert_eq!(
+        alarm["unfinished_batch_ids"],
+        device["unfinished_batch_ids"]
+    );
+    assert_eq!(
+        alarm["unexpected_batch_ids"],
+        device["unexpected_unfinished_batch_ids"]
+    );
     assert_eq!(alarm["runtime_active_batch_missing"], true);
 }
 
@@ -2941,7 +3139,8 @@ async fn live_endpoint_exposes_only_cached_pipeline_recommendations() {
         &safety.optimizer,
         Some(ai_memory.as_ref()),
         &outcomes,
-    );
+    )
+    .expect("memory bounds leave safe points");
     db.insert_recommendation(&recommendation).unwrap();
 
     let app = router(
@@ -10867,6 +11066,29 @@ async fn modbus_tcp_pdu_reads_and_writes_safety_gated_map() {
 }
 
 #[tokio::test]
+async fn modbus_tcp_read_functions_answer_illegal_address_on_u16_boundary_overflow() {
+    // Regression: start+quantity near 0xFFFF used to be computed in u16 and
+    // overflowed (start=0xFFFF, quantity=1), panicking under overflow-checks —
+    // in release (panic=abort) a single remote Modbus frame killed the whole
+    // daemon. These PDUs must answer illegal-data-address (0x02), not panic.
+    let app_state = modbus_tcp_test_state().await;
+
+    let holding = handle_modbus_tcp_pdu(&app_state, &[0x03, 0xFF, 0xFF, 0x00, 0x01]).await;
+    assert_eq!(holding, vec![0x83, 0x02]);
+
+    let coils = handle_modbus_tcp_pdu(&app_state, &[0x01, 0xFF, 0xFF, 0x00, 0x02]).await;
+    assert_eq!(coils, vec![0x81, 0x02]);
+
+    let discrete = handle_modbus_tcp_pdu(&app_state, &[0x02, 0xFF, 0xFF, 0x00, 0x02]).await;
+    assert_eq!(discrete, vec![0x82, 0x02]);
+
+    // The last valid in-range address still reads through the normal map
+    // miss path (0x02) rather than being conflated with overflow.
+    let last_address = handle_modbus_tcp_pdu(&app_state, &[0x03, 0xFF, 0xFF, 0x00, 0x01]).await;
+    assert_eq!(last_address, vec![0x83, 0x02]);
+}
+
+#[tokio::test]
 async fn modbus_tcp_write_rejects_out_of_range_value_without_runtime_or_audit_side_effects() {
     let safety = Arc::new(safety());
     let db = Db::open_memory().unwrap();
@@ -12178,10 +12400,20 @@ async fn v1_realtime_surfaces_unfinished_batch_recovery_offline_state() {
         orphan.id
     );
     assert_eq!(body["data"]["phase"], "offline");
-    assert!(body["alarms"].as_array().unwrap().iter().any(|alarm| {
-        alarm["type"] == "unfinished_batch_recovery"
-            && alarm["unfinished_batch_ids"][0] == orphan.id
-    }));
+    let alarm = body["alarms"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|alarm| alarm["type"] == "unfinished_batch_recovery")
+        .expect("realtime response should surface unfinished batch recovery alarm");
+    assert_eq!(
+        alarm["unfinished_batch_ids"],
+        body["device_status"]["unfinished_batch_ids"]
+    );
+    assert_eq!(
+        alarm["unexpected_batch_ids"],
+        body["device_status"]["unexpected_unfinished_batch_ids"]
+    );
 }
 
 #[tokio::test]
@@ -15893,7 +16125,8 @@ async fn ai_target_adjustment_rejects_invalid_existing_runtime_targets_without_c
     let recommendation = reactor_edge_daemon::optimizer::recommend(
         &safety.optimizer,
         &db.recent_batch_outcomes(10).unwrap(),
-    );
+    )
+    .expect("test bounds leave safe points");
     db.insert_recommendation(&recommendation).unwrap();
     let runtime: SharedState = Arc::new(RwLock::new(RuntimeState::from_safety(&safety)));
     install_runtime_sample(&runtime, &db, fresh_sample(35.4, 0.0629, 300.0, 0.0, 12.9)).await;

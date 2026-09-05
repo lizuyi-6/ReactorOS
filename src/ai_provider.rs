@@ -555,7 +555,10 @@ fn finite_in_range(field: &str, value: f64, min: f64, max: f64) -> Result<f64> {
 fn sanitize_rationale(value: String, fallback: &str) -> String {
     let mut value = value.trim().replace(['\r', '\n'], " ");
     if value.len() > 180 {
-        value.truncate(180);
+        // Truncate on char boundaries: String::truncate works on bytes and
+        // panics when the 180th byte falls inside a multi-byte character —
+        // and model rationales are routinely CJK-heavy.
+        value = value.chars().take(180).collect();
     }
     if value.is_empty() {
         fallback.chars().take(120).collect()

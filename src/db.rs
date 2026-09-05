@@ -229,6 +229,12 @@ CREATE TABLE IF NOT EXISTS integration_tasks (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS auth_password_overrides (
+    username TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 "#;
 const INDEX_SQL: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_sensor_samples_captured_id
@@ -941,6 +947,46 @@ impl Db {
                 .await
                 .with_context(|| format!("sqlx index migration step failed: {statement:.80}"))?;
         }
+        Ok(())
+    }
+
+    /// 读取全部本地密码覆盖（username -> 加盐哈希）。无 sqlx 连接池时返回空表，
+    /// 登录路径退化为仅环境变量/默认口令。
+    pub async fn password_overrides_sqlx(
+        &self,
+    ) -> Result<std::collections::HashMap<String, String>> {
+        let Some(pool) = self.inner.sqlx_pool.as_ref() else {
+            return Ok(std::collections::HashMap::new());
+        };
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT username, password_hash FROM auth_password_overrides")
+                .fetch_all(pool)
+                .await
+                .context("failed to read auth password overrides with SQLx")?;
+        Ok(rows.into_iter().collect())
+    }
+
+    /// 写入/更新某账户的密码覆盖（仅存加盐哈希，不落明文）。
+    pub async fn set_password_override_sqlx(
+        &self,
+        username: &str,
+        password_hash: &str,
+    ) -> Result<()> {
+        let Some(pool) = self.inner.sqlx_pool.as_ref() else {
+            return Err(anyhow::anyhow!("password overrides require the SQLx store"));
+        };
+        let _write_guard = self.inner.sqlx_write_lock.lock().await;
+        sqlx::query(
+            "INSERT INTO auth_password_overrides (username, password_hash, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at",
+        )
+        .bind(username)
+        .bind(password_hash)
+        .bind(Utc::now().to_rfc3339())
+        .execute(pool)
+        .await
+        .context("failed to persist auth password override with SQLx")?;
         Ok(())
     }
 

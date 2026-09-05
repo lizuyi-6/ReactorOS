@@ -19,7 +19,7 @@ pub struct Recommendation {
     pub rationale: String,
 }
 
-pub fn recommend(bounds: &OptimizerBounds, outcomes: &[BatchOutcome]) -> Recommendation {
+pub fn recommend(bounds: &OptimizerBounds, outcomes: &[BatchOutcome]) -> Option<Recommendation> {
     recommend_with_memory(bounds, None, outcomes)
 }
 
@@ -27,7 +27,7 @@ pub fn recommend_with_memory(
     bounds: &OptimizerBounds,
     memory: Option<&AiMemory>,
     outcomes: &[BatchOutcome],
-) -> Recommendation {
+) -> Option<Recommendation> {
     let effective_bounds = memory
         .map(|memory| memory.effective_optimizer_bounds(bounds))
         .unwrap_or_else(|| bounds.clone());
@@ -45,21 +45,27 @@ pub fn recommend_with_memory(
         }
     }
 
-    let mut combined = memory_outcomes.clone();
-    combined.extend_from_slice(outcomes);
-    if combined.len() < 3 {
-        return midpoint_recommendation(
-            &effective_bounds,
-            outcomes.len() as i64,
-            memory,
-            memory_outcomes.len(),
-        );
-    }
-
     let forbidden_zones: &[ForbiddenZone] = memory
         .filter(|memory| memory.recommendation.enabled)
         .map(|memory| memory.forbidden_zones.as_slice())
         .unwrap_or(&[]);
+
+    let mut combined = memory_outcomes.clone();
+    combined.extend_from_slice(outcomes);
+    if combined.len() < 3 {
+        // The data-starved fallback must honor the operator's forbidden zones
+        // just like the search path: a raw bounds midpoint can sit inside a
+        // zone, and emitting it would violate the zones while the rationale
+        // claims "safe optimizer bounds".
+        let midpoint = safe_midpoint(&effective_bounds, forbidden_zones)?;
+        return Some(midpoint_recommendation(
+            &effective_bounds,
+            midpoint,
+            outcomes.len() as i64,
+            memory,
+            memory_outcomes.len(),
+        ));
+    }
 
     let mut sorted = combined;
     sorted.sort_by(|a, b| {
@@ -98,7 +104,14 @@ pub fn recommend_with_memory(
             search.note,
         ),
         None => {
-            let fallback = safe_midpoint(&effective_bounds, forbidden_zones);
+            let Some(fallback) = safe_midpoint(&effective_bounds, forbidden_zones) else {
+                // No point in the bounds box (midpoint and every anchor) is
+                // outside the forbidden zones. Fabricating a target here would
+                // emit a "recommendation" that violates the operator's zones
+                // while claiming to be safe — absence is the honest answer;
+                // callers surface it as "no safe recommendation".
+                return None;
+            };
             (
                 fallback.temperature_c,
                 fallback.stirrer_rpm,
@@ -110,7 +123,7 @@ pub fn recommend_with_memory(
         }
     };
 
-    Recommendation {
+    Some(Recommendation {
         based_on_batch_count: outcomes.len() as i64,
         target_temperature_c: round2(temp),
         target_stirrer_rpm: round2(rpm),
@@ -126,11 +139,12 @@ pub fn recommend_with_memory(
             forbidden_note,
             &optimizer_note,
         ),
-    }
+    })
 }
 
 fn midpoint_recommendation(
     bounds: &OptimizerBounds,
+    midpoint: Candidate,
     count: i64,
     memory: Option<&AiMemory>,
     memory_outcome_count: usize,
@@ -149,15 +163,30 @@ fn midpoint_recommendation(
             )
         })
         .unwrap_or_default();
+    let raw_midpoint = Candidate {
+        temperature_c: (bounds.min_temperature_c + bounds.max_temperature_c) / 2.0,
+        stirrer_rpm: (bounds.min_stirrer_rpm + bounds.max_stirrer_rpm) / 2.0,
+        heating_minutes: (bounds.min_heating_minutes + bounds.max_heating_minutes) / 2.0,
+        stirring_minutes: (bounds.min_stirring_minutes + bounds.max_stirring_minutes) / 2.0,
+    };
+    let zone_note = if midpoint.temperature_c != raw_midpoint.temperature_c
+        || midpoint.stirrer_rpm != raw_midpoint.stirrer_rpm
+        || midpoint.heating_minutes != raw_midpoint.heating_minutes
+        || midpoint.stirring_minutes != raw_midpoint.stirring_minutes
+    {
+        " The exact bounds center lies inside a forbidden zone; using the nearest safe anchor instead."
+    } else {
+        ""
+    };
     Recommendation {
         based_on_batch_count: count,
-        target_temperature_c: round2((bounds.min_temperature_c + bounds.max_temperature_c) / 2.0),
-        target_stirrer_rpm: round2((bounds.min_stirrer_rpm + bounds.max_stirrer_rpm) / 2.0),
-        heating_minutes: round2((bounds.min_heating_minutes + bounds.max_heating_minutes) / 2.0),
-        stirring_minutes: round2((bounds.min_stirring_minutes + bounds.max_stirring_minutes) / 2.0),
+        target_temperature_c: round2(midpoint.temperature_c),
+        target_stirrer_rpm: round2(midpoint.stirrer_rpm),
+        heating_minutes: round2(midpoint.heating_minutes),
+        stirring_minutes: round2(midpoint.stirring_minutes),
         expected_score: 0.0,
         rationale: format!(
-            "Not enough finished batches yet; using the center of configured safe optimizer bounds.{profile_note}{reference_note}"
+            "Not enough finished batches yet; using the center of configured safe optimizer bounds.{zone_note}{profile_note}{reference_note}"
         ),
     }
 }
@@ -280,11 +309,9 @@ fn seed_population(
             forbidden_zones,
         );
     }
-    push_if_allowed(
-        &mut population,
-        safe_midpoint(bounds, forbidden_zones),
-        forbidden_zones,
-    );
+    if let Some(midpoint) = safe_midpoint(bounds, forbidden_zones) {
+        push_if_allowed(&mut population, midpoint, forbidden_zones);
+    }
     for _ in 0..32 {
         if let Some(candidate) = sample_allowed_candidate(rng, elites, bounds, forbidden_zones) {
             population.push(candidate);
@@ -525,7 +552,7 @@ fn sample_allowed_candidate(
     None
 }
 
-fn safe_midpoint(bounds: &OptimizerBounds, forbidden_zones: &[ForbiddenZone]) -> Candidate {
+fn safe_midpoint(bounds: &OptimizerBounds, forbidden_zones: &[ForbiddenZone]) -> Option<Candidate> {
     let midpoint = Candidate {
         temperature_c: (bounds.min_temperature_c + bounds.max_temperature_c) / 2.0,
         stirrer_rpm: (bounds.min_stirrer_rpm + bounds.max_stirrer_rpm) / 2.0,
@@ -533,7 +560,7 @@ fn safe_midpoint(bounds: &OptimizerBounds, forbidden_zones: &[ForbiddenZone]) ->
         stirring_minutes: (bounds.min_stirring_minutes + bounds.max_stirring_minutes) / 2.0,
     };
     if !is_forbidden(&midpoint, forbidden_zones) {
-        return midpoint;
+        return Some(midpoint);
     }
 
     let anchors = [
@@ -560,11 +587,14 @@ fn safe_midpoint(bounds: &OptimizerBounds, forbidden_zones: &[ForbiddenZone]) ->
             ),
         };
         if !is_forbidden(&candidate, forbidden_zones) {
-            return candidate;
+            return Some(candidate);
         }
     }
 
-    midpoint
+    // Midpoint and all anchors fall inside forbidden zones: there is no safe
+    // fallback point. Returning the forbidden midpoint here (the old
+    // behavior) would pair an in-zone target with a "safe midpoint" note.
+    None
 }
 
 fn is_forbidden(candidate: &Candidate, forbidden_zones: &[ForbiddenZone]) -> bool {
@@ -599,7 +629,11 @@ fn stable_negative_id(id: &str) -> i64 {
     for byte in id.bytes() {
         hash = hash.wrapping_mul(31).wrapping_add(byte as i64);
     }
-    -(hash.abs() % 1_000_000 + 1)
+    // wrapping_abs alone leaves i64::MIN negative; rem_euclid keeps the
+    // result non-negative so the id stays in the reserved negative namespace
+    // instead of colliding with real batch ids (and abs() on i64::MIN panics
+    // under overflow-checks).
+    -(hash.wrapping_abs().rem_euclid(1_000_000) + 1)
 }
 
 fn rationale(

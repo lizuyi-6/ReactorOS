@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { ElMessageBox } from "element-plus";
 import { routes } from "./router";
 import { useAuthStore } from "./stores/auth";
-import { useLiveStore, HMI_REFRESH_INTERVAL_MS } from "./stores/live";
+import { useLiveStore } from "./stores/live";
 import { useLanguage } from "./i18n";
 import { boolText } from "./utils/format";
 import { DEVICE_ID } from "./api";
@@ -17,6 +18,8 @@ const { language, setLanguage, tr } = useLanguage();
 
 const now = ref(new Date());
 let refreshTimer: number | null = null;
+let refreshScheduleToken = 0;
+let schedulerStopped = false;
 let clockTimer: number | null = null;
 
 const navItems = computed(() => routes.filter((item) => item.path !== "/" && item.path !== "/login" && item.meta));
@@ -87,31 +90,99 @@ const roleLabel = computed(() => {
 });
 
 async function handleLogout(): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      tr("确认退出登录？退出后需重新登录才能操作。", "Sign out? You will need to sign in again to operate."),
+      tr("退出登录", "Sign Out"),
+      {
+        confirmButtonText: tr("退出", "Sign Out"),
+        cancelButtonText: tr("取消", "Cancel"),
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
   auth.logout();
   live.disconnectRealtimeSocket();
   await router.push("/login");
 }
 
+function canRefreshLive(): boolean {
+  return auth.isAuthenticated && !isLoginPage.value && !document.hidden;
+}
+
+function stopRefreshTimer(): void {
+  schedulerStopped = true;
+  refreshScheduleToken += 1;
+  if (refreshTimer !== null) {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+}
+
+function scheduleLiveRefresh(): void {
+  stopRefreshTimer();
+  if (!canRefreshLive()) return;
+  schedulerStopped = false;
+  const token = refreshScheduleToken;
+  refreshTimer = window.setTimeout(() => {
+    refreshTimer = null;
+    if (token !== refreshScheduleToken || !canRefreshLive()) return;
+    void refreshAndReschedule();
+  }, live.nextRefreshDelayMs);
+}
+
+async function refreshAndReschedule(force = false): Promise<void> {
+  if (!canRefreshLive()) {
+    stopRefreshTimer();
+    return;
+  }
+  schedulerStopped = false;
+  if (force || live.nextRefreshDelayMs <= 0) await live.refreshLive();
+  if (!schedulerStopped && canRefreshLive()) scheduleLiveRefresh();
+}
+
+function handleVisibilityChange(): void {
+  if (document.hidden) stopRefreshTimer();
+  else void refreshAndReschedule();
+}
+
 async function boot(): Promise<void> {
   live.bindTokenProvider(() => auth.token);
   await auth.restoreSession();
-  await live.refreshLive();
-  if (auth.isAuthenticated) live.connectRealtimeSocket();
+  if (!auth.isAuthenticated) return;
+  // 启动时先完整读取 /api/live，再建立实时连接；连接态后续只做 60s 校准。
+  await refreshAndReschedule(true);
+  live.connectRealtimeSocket();
 }
 
+watch(
+  () => [auth.isAuthenticated, isLoginPage.value, live.realtimeConnected] as const,
+  ([authenticated, loginPage], previous) => {
+    if (!authenticated || loginPage) {
+      stopRefreshTimer();
+      return;
+    }
+    const becameEligible = !previous || !previous[0] || previous[1];
+    const connectionChanged = Boolean(previous && previous[2] !== live.realtimeConnected);
+    if (becameEligible || connectionChanged) void refreshAndReschedule();
+    else scheduleLiveRefresh();
+  }
+);
+
 onMounted(() => {
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   void boot();
-  refreshTimer = window.setInterval(() => {
-    void live.refreshLive();
-  }, HMI_REFRESH_INTERVAL_MS);
   clockTimer = window.setInterval(() => {
     now.value = new Date();
   }, 1000);
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   live.disconnectRealtimeSocket();
-  if (refreshTimer !== null) window.clearInterval(refreshTimer);
+  stopRefreshTimer();
   if (clockTimer !== null) window.clearInterval(clockTimer);
 });
 </script>

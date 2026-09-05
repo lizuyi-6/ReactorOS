@@ -22,7 +22,7 @@ fn bounds() -> OptimizerBounds {
 
 #[test]
 fn recommendation_uses_midpoint_until_enough_batches_exist() {
-    let rec = recommend(&bounds(), &[]);
+    let rec = recommend(&bounds(), &[]).expect("empty bounds leave a safe midpoint");
 
     assert_eq!(rec.target_temperature_c, 87.5);
     assert_eq!(rec.target_stirrer_rpm, 550.0);
@@ -39,7 +39,7 @@ fn recommendation_stays_inside_configured_bounds() {
     ];
 
     for _ in 0..50 {
-        let rec = recommend(&bounds(), &outcomes);
+        let rec = recommend(&bounds(), &outcomes).expect("test bounds leave safe points");
         assert!((35.0..=140.0).contains(&rec.target_temperature_c));
         assert!((100.0..=1000.0).contains(&rec.target_stirrer_rpm));
         assert!((15.0..=240.0).contains(&rec.heating_minutes));
@@ -82,7 +82,8 @@ fn file_memory_reference_batches_can_seed_recommendations_before_real_history() 
     };
 
     for _ in 0..50 {
-        let rec = recommend_with_memory(&bounds(), Some(&memory), &[]);
+        let rec = recommend_with_memory(&bounds(), Some(&memory), &[])
+            .expect("memory bounds leave safe points");
 
         assert!((70.0..=100.0).contains(&rec.target_temperature_c));
         assert!((400.0..=700.0).contains(&rec.target_stirrer_rpm));
@@ -130,7 +131,8 @@ fn file_memory_forbidden_zones_are_avoided() {
         ..AiMemory::default()
     };
 
-    let rec = recommend_with_memory(&bounds(), Some(&memory), &[]);
+    let rec = recommend_with_memory(&bounds(), Some(&memory), &[])
+        .expect("zone does not cover the whole bounds box");
 
     assert!(
         !memory.forbidden_zones[0].contains(
@@ -141,6 +143,112 @@ fn file_memory_forbidden_zones_are_avoided() {
         ),
         "recommendation landed in forbidden zone: {rec:?}"
     );
+}
+
+#[test]
+fn fully_forbidden_bounds_return_no_recommendation_instead_of_an_unsafe_midpoint() {
+    // Regression: when the forbidden zone covers the entire bounds box, the
+    // old fallback returned the (in-zone) midpoint while the rationale claimed
+    // "nearest safe midpoint". The honest result is None — callers surface
+    // "no safe recommendation" instead of writing a target the operator
+    // explicitly forbade.
+    let memory = AiMemory {
+        recommendation: RecommendationMemory {
+            enabled: true,
+            use_reference_batches: true,
+            bounds: MemoryOptimizerBounds {
+                min_temperature_c: Some(80.0),
+                max_temperature_c: Some(120.0),
+                min_stirrer_rpm: Some(300.0),
+                max_stirrer_rpm: Some(600.0),
+                min_heating_minutes: Some(60.0),
+                max_heating_minutes: Some(120.0),
+                min_stirring_minutes: Some(50.0),
+                max_stirring_minutes: Some(100.0),
+            },
+        },
+        forbidden_zones: vec![ForbiddenZone {
+            name: "cover-everything".to_string(),
+            reason: "operator fenced the whole box for this test".to_string(),
+            // 显式覆盖整个 effective bounds 盒：ForbiddenZone::contains 对全 None 的
+            // 维度视为“未配置”，全 None 的区域什么都不命中，必须给出真实边界。
+            min_temperature_c: Some(0.0),
+            max_temperature_c: Some(1000.0),
+            min_stirrer_rpm: Some(0.0),
+            max_stirrer_rpm: Some(10_000.0),
+            min_heating_minutes: Some(0.0),
+            max_heating_minutes: Some(10_000.0),
+            min_stirring_minutes: Some(0.0),
+            max_stirring_minutes: Some(10_000.0),
+        }],
+        ..AiMemory::default()
+    };
+
+    // Data-starved path (0 outcomes, 0 reference batches -> midpoint fallback).
+    let rec = recommend_with_memory(&bounds(), Some(&memory), &[]);
+    assert!(rec.is_none(), "expected None, got {rec:?}");
+
+    // Search path (>= 3 outcomes) must reach the same conclusion.
+    let outcomes = vec![
+        outcome(1, 90.0, 400.0, 80.0, 60.0, 70.0, 0.8),
+        outcome(2, 100.0, 450.0, 90.0, 70.0, 75.0, 0.82),
+        outcome(3, 110.0, 500.0, 100.0, 80.0, 72.0, 0.79),
+    ];
+    let rec = recommend_with_memory(&bounds(), Some(&memory), &outcomes);
+    assert!(rec.is_none(), "expected None, got {rec:?}");
+}
+
+#[test]
+fn data_starved_midpoint_fallback_avoids_forbidden_zone() {
+    // Regression: with < 3 outcomes the old code returned the raw bounds
+    // center without consulting forbidden zones at all. Fence the exact
+    // center and assert the fallback moves to a safe anchor instead.
+    let memory = AiMemory {
+        recommendation: RecommendationMemory {
+            enabled: true,
+            use_reference_batches: false,
+            bounds: MemoryOptimizerBounds {
+                min_temperature_c: Some(80.0),
+                max_temperature_c: Some(120.0),
+                min_stirrer_rpm: Some(300.0),
+                max_stirrer_rpm: Some(600.0),
+                min_heating_minutes: Some(60.0),
+                max_heating_minutes: Some(120.0),
+                min_stirring_minutes: Some(50.0),
+                max_stirring_minutes: Some(100.0),
+            },
+        },
+        forbidden_zones: vec![ForbiddenZone {
+            name: "center".to_string(),
+            reason: "fence the exact bounds center".to_string(),
+            min_temperature_c: Some(95.0),
+            max_temperature_c: Some(105.0),
+            min_stirrer_rpm: Some(440.0),
+            max_stirrer_rpm: Some(460.0),
+            min_heating_minutes: None,
+            max_heating_minutes: None,
+            min_stirring_minutes: None,
+            max_stirring_minutes: None,
+        }],
+        ..AiMemory::default()
+    };
+
+    let rec = recommend_with_memory(&bounds(), Some(&memory), &[])
+        .expect("zone only covers the center; anchors remain safe");
+
+    assert!(
+        !memory.forbidden_zones[0].contains(
+            rec.target_temperature_c,
+            rec.target_stirrer_rpm,
+            rec.heating_minutes,
+            rec.stirring_minutes
+        ),
+        "fallback landed inside the forbidden zone: {rec:?}"
+    );
+    assert!((80.0..=120.0).contains(&rec.target_temperature_c));
+    assert!((300.0..=600.0).contains(&rec.target_stirrer_rpm));
+    assert_eq!(rec.based_on_batch_count, 0);
+    assert!(rec.rationale.contains("forbidden zone"));
 }
 
 fn outcome(

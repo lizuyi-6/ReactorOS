@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::env;
 
 use axum::http::HeaderMap;
@@ -12,6 +13,12 @@ use super::AppError;
 pub(crate) struct LoginRequest {
     pub username: String,
     pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ChangePasswordRequest {
+    pub old_password: String,
+    pub new_password: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,9 +68,12 @@ pub(crate) enum Permission {
     ApplyIntegrationTask,
 }
 
-pub(crate) fn login_response(payload: LoginRequest) -> Result<LoginResponse, AppError> {
+pub(crate) fn login_response(
+    payload: LoginRequest,
+    overrides: &HashMap<String, String>,
+) -> Result<LoginResponse, AppError> {
     let username = payload.username.trim().to_ascii_lowercase();
-    let Some(role) = role_for_login(&username, &payload.password) else {
+    let Some(role) = role_for_login(&username, &payload.password, overrides) else {
         return Err(AppError::unauthorized("invalid username or password"));
     };
     let expires_at = Utc::now() + Duration::hours(12);
@@ -274,7 +284,11 @@ fn auth_user(username: &str, role: AuthRole) -> AuthUser {
     }
 }
 
-fn role_for_login(username: &str, password: &str) -> Option<AuthRole> {
+fn role_for_login(
+    username: &str,
+    password: &str,
+    overrides: &HashMap<String, String>,
+) -> Option<AuthRole> {
     let candidates = [
         (
             "operator",
@@ -294,8 +308,52 @@ fn role_for_login(username: &str, password: &str) -> Option<AuthRole> {
     ];
     candidates
         .into_iter()
-        .find(|(candidate, expected, _)| username == *candidate && password == expected)
+        .find(|(candidate, expected, _)| {
+            if username != *candidate {
+                return false;
+            }
+            // 存在本地覆盖（用户在 UI 改过密码）时只认覆盖哈希，否则回退环境变量/默认口令。
+            if let Some(hash) = overrides.get(username) {
+                return *hash == password_override_hash(username, password);
+            }
+            password == expected
+        })
         .map(|(_, _, role)| role)
+}
+
+/// 密码覆盖存储的加盐哈希：sha256(auth_secret:username:password)。与签名同一 secret，
+/// 属于本地 RBAC 会话同级的轻量保护，不落明文。
+pub(crate) fn password_override_hash(username: &str, password: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(auth_secret().as_bytes());
+    hasher.update(b":");
+    hasher.update(username.as_bytes());
+    hasher.update(b":");
+    hasher.update(password.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// 修改密码请求校验：验证旧口令并检查新口令强度，返回可入库的覆盖哈希。
+pub(crate) fn prepare_password_change(
+    username: &str,
+    payload: &ChangePasswordRequest,
+    overrides: &HashMap<String, String>,
+) -> Result<String, AppError> {
+    if role_for_login(username, &payload.old_password, overrides).is_none() {
+        return Err(AppError::unauthorized("current password is incorrect"));
+    }
+    let new_password = payload.new_password.trim();
+    if new_password.len() < 6 {
+        return Err(AppError::bad_request(
+            "new password must be at least 6 characters",
+        ));
+    }
+    if new_password == payload.old_password {
+        return Err(AppError::bad_request(
+            "new password must differ from the current password",
+        ));
+    }
+    Ok(password_override_hash(username, new_password))
 }
 
 fn role_name(role: AuthRole) -> &'static str {

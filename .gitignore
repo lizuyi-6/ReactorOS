@@ -76,3 +76,11 @@ config/reactor-edge.env
 
 # WorkBuddy local tool memory dir (machine-local, like .claude/)
 /.workbuddy/
+
+# Local agent session artifacts (test logs, plans) — machine-local
+/.zcode/
+# Ad-hoc GUI/visual test screenshots taken during manual verification runs
+/gui-test-screenshots/
+# Scratch dirs created by e2e and QEMU perf runs under data/
+/data/e2e-target/
+/data/lubancat2-qemu/

@@ -382,6 +382,18 @@ html, body, #app {
 .el-message--error { border-color: var(--ind-red) !important; }
 .el-message--warning { border-color: var(--ind-amber) !important; }
 
+/* ElMessageBox 深色覆盖：命令式弹窗，基础样式在 main.ts 显式引入 */
+.el-message-box {
+  background-color: var(--bg-panel-solid) !important;
+  border: 1px solid var(--border-glass) !important;
+  border-radius: var(--radius-lg) !important;
+}
+.el-message-box__title { color: var(--text-primary) !important; }
+.el-message-box__content,
+.el-message-box__message { color: var(--text-secondary) !important; }
+.el-message-box__errormsg { color: var(--ind-red) !important; }
+.el-overlay-message-box { background-color: rgba(4, 12, 24, 0.6); }
+
 .el-button { border-radius: var(--radius-md) !important; font-weight: 600 !important; }
 .el-button--primary { background-color: var(--accent) !important; border-color: var(--accent) !important; }
 .el-button--primary:hover { background-color: #1d7fd6 !important; border-color: #1d7fd6 !important; }

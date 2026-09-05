@@ -28,7 +28,7 @@ tokio-modbus = { version = "0.17.0", default-features = false, features = ["rtu"
 tokio-rustls = "0.26.4"
 tokio-serial = "5.4.5"
 toml = "0.8.19"
-tower-http = { version = "0.6.2", features = ["fs", "trace"] }
+tower-http = { version = "0.6.2", features = ["fs", "set-header", "trace"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 async-trait = "0.1.83"

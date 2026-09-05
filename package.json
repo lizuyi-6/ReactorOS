@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "frontend:dev": "vite --config frontend/vite.config.ts",
-    "frontend:build": "vite build --config frontend/vite.config.ts",
+    "frontend:build": "vite build --config frontend/vite.config.ts && node scripts/compress-vue-dist.mjs",
     "simulate:device": "node scripts/simulate-device.js",
     "simulate:device:once": "node scripts/simulate-device.js --once --strict",
     "qemu:lubancat2": "powershell -ExecutionPolicy Bypass -File scripts\\run-lubancat2-qemu.ps1",

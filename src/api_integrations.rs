@@ -270,7 +270,8 @@ async fn execute_ainas_task(
             let process_id = optional_present_i64(payload.process_id, "process_id")?
                 .ok_or_else(|| AppError::bad_request("process_id is required for start_process"))?;
             let response =
-                start_process_lifecycle(state, process_id, "ainas_process_started", actor).await?;
+                start_process_lifecycle(state, process_id, "ainas_process_started", None, actor)
+                    .await?;
             json_response(response)
         }
         "stop_process" => {

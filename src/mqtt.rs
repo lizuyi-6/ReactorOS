@@ -249,9 +249,7 @@ pub fn start_mqtt_bridge(config: MqttBridgeConfig, state: AppState) {
                         snapshot.connected = false;
                         snapshot.last_error = Some(err.to_string());
                     });
-                    tracing::warn!(
-                        "MQTT bridge failed: {err}; restarting in {restart_delay_s}s"
-                    );
+                    tracing::warn!("MQTT bridge failed: {err}; restarting in {restart_delay_s}s");
                     tokio::time::sleep(Duration::from_secs(restart_delay_s)).await;
                     restart_delay_s = (restart_delay_s * 2).min(60);
                 }
@@ -292,11 +290,18 @@ async fn run_mqtt_bridge(
     alert_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     alert_interval.tick().await;
 
+    // Backoff for poll errors: rumqttc retries the connection on the next
+    // poll with no built-in delay, so a broker that actively refuses would
+    // otherwise produce a tight reconnect loop and a warn! storm. Reset on
+    // any successful event so transient blips still recover fast.
+    let mut poll_backoff_s: u64 = 1;
+
     loop {
         tokio::select! {
             event = eventloop.poll() => {
                 match event {
                     Ok(Event::Incoming(Incoming::Publish(publish))) => {
+                        poll_backoff_s = 1;
                         if publish.topic == config.task_topic {
                             let receipt = execute_mqtt_task_payload(&state, &publish.payload).await;
                             update_status(&status, |snapshot| {
@@ -304,14 +309,16 @@ async fn run_mqtt_bridge(
                                 snapshot.last_error = receipt.error.clone();
                             });
                             let receipt_payload = serde_json::to_vec(&receipt)?;
+                            // try_publish: see the note above publish_status.
+                            // Inside this poll arm an awaiting publish would
+                            // cancel polling entirely while the queue is full.
                             if let Err(err) = client
-                                .publish(
+                                .try_publish(
                                     config.receipt_topic.clone(),
                                     QoS::AtLeastOnce,
                                     false,
                                     receipt_payload,
                                 )
-                                .await
                             {
                                 // The action already executed; latching the
                                 // fault keeps the audit trail honest. The
@@ -323,7 +330,9 @@ async fn run_mqtt_bridge(
                             }
                         }
                     }
-                    Ok(_) => {}
+                    Ok(_) => {
+                        poll_backoff_s = 1;
+                    }
                     Err(err) => {
                         // Transient: rumqttc reconnects automatically as long
                         // as we keep polling. Log and continue instead of
@@ -337,6 +346,8 @@ async fn run_mqtt_bridge(
                         tracing::warn!(
                             "MQTT eventloop error (will keep polling to reconnect): {err}"
                         );
+                        tokio::time::sleep(Duration::from_secs(poll_backoff_s)).await;
+                        poll_backoff_s = (poll_backoff_s * 2).min(30);
                     }
                 }
             }
@@ -432,26 +443,32 @@ fn ensure_positive_usize(field: &str, value: usize) -> Result<()> {
     Ok(())
 }
 
+// All publishes in this bridge use `try_publish` (non-blocking). The
+// alternative, `publish().await`, blocks on rumqttc's bounded request channel
+// (queue_capacity, drained only by eventloop.poll) — and in the select loop
+// below, while one arm awaits, the poll future is cancelled, so nothing drains
+// the queue: with a half-open broker connection the queue fills (~capacity ×
+// alert_interval_s) and the bridge deadlocks permanently, silently stopping
+// task ingestion, receipts and alerts until daemon restart. try_publish fails
+// fast on a full queue and every call site handles the error explicitly.
 async fn publish_status(
     client: &AsyncClient,
     config: &MqttBridgeConfig,
     status: &str,
 ) -> Result<()> {
-    client
-        .publish(
-            config.status_topic.clone(),
-            QoS::AtLeastOnce,
-            true,
-            serde_json::to_vec(&json!({
-                "device_id": "reactor_001",
-                "status": status,
-                "client_id": config.client_id,
-                "task_topic": config.task_topic,
-                "receipt_topic": config.receipt_topic,
-                "updated_at": Utc::now()
-            }))?,
-        )
-        .await?;
+    client.try_publish(
+        config.status_topic.clone(),
+        QoS::AtLeastOnce,
+        true,
+        serde_json::to_vec(&json!({
+            "device_id": "reactor_001",
+            "status": status,
+            "client_id": config.client_id,
+            "task_topic": config.task_topic,
+            "receipt_topic": config.receipt_topic,
+            "updated_at": Utc::now()
+        }))?,
+    )?;
     Ok(())
 }
 
@@ -461,14 +478,12 @@ async fn publish_alert_snapshot(
     state: &AppState,
 ) -> Result<MqttAlertSnapshot> {
     let snapshot = mqtt_alert_snapshot(state).await?;
-    client
-        .publish(
-            config.alert_topic.clone(),
-            QoS::AtLeastOnce,
-            true,
-            serde_json::to_vec(&snapshot)?,
-        )
-        .await?;
+    client.try_publish(
+        config.alert_topic.clone(),
+        QoS::AtLeastOnce,
+        true,
+        serde_json::to_vec(&snapshot)?,
+    )?;
     Ok(snapshot)
 }
 

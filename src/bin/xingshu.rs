@@ -30,6 +30,9 @@ use serde_json::{json, Value};
 
 const DEFAULT_API: &str = "http://127.0.0.1:8000";
 const DEFAULT_DEVICE_ID: &str = "reactor_001";
+/// Covers the daemon's worst-case StepFun path (3 × 20 s + backoff ≈ 61 s)
+/// with headroom; only `ai suggest` / `ai plan` use it.
+const AI_GENERATION_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 #[derive(Debug, Parser)]
 #[command(
@@ -576,7 +579,17 @@ async fn main() {
 
 async fn run() -> i32 {
     let cli = Cli::parse();
-    let client = Client::new();
+    // Bounded client: with no timeout an accepted-but-stalled daemon (back-
+    // pressure, a stuck lock) would hang emergency commands like
+    // `control estop`/`stop` indefinitely with zero feedback, exactly when
+    // the operator needs to know "did it stop or is it stuck?".
+    // Cloud-backed AI generation overrides this per request, see
+    // AI_GENERATION_REQUEST_TIMEOUT.
+    let client = Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| Client::new());
     let env_token = env::var("XINGSHU_TOKEN")
         .ok()
         .filter(|value| !value.trim().is_empty());
@@ -842,22 +855,23 @@ async fn status(client: &Client, api: &str) -> Result<CommandOutput> {
         .and_then(Value::as_u64)
         .unwrap_or(0);
     let runtime = live.as_ref().and_then(|value| value.get("runtime"));
+    // Latch states as Option<bool>: when /api/live is unavailable (external
+    // pipeline mode without samples returns the agreed 503) the latches are
+    // UNKNOWN, not "clear" — reporting false here would tell an agent (or an
+    // operator skimming --json) that no e-stop/manual lock is engaged when we
+    // actually could not read it. serde_json serializes None as null.
     let emergency = runtime
         .and_then(|value| value.get("emergency_stop"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .and_then(Value::as_bool);
     let manual_lock = runtime
         .and_then(|value| value.get("manual_lock"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .and_then(Value::as_bool);
     let control_fault = runtime
         .and_then(|value| value.get("last_control_error"))
-        .map(|value| !value.is_null())
-        .unwrap_or(false);
+        .map(|value| !value.is_null());
     let auto = runtime
         .and_then(|value| value.get("auto_enabled"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+        .and_then(Value::as_bool);
     let active_batch_id = runtime
         .and_then(|value| value.get("active_batch_id"))
         .and_then(Value::as_i64);
@@ -869,6 +883,11 @@ async fn status(client: &Client, api: &str) -> Result<CommandOutput> {
         .unwrap_or("--");
     let live_available = live.is_some();
     let service_up = health.get("ok").and_then(Value::as_bool).unwrap_or(false);
+    let latch = |state: Option<bool>, active: &str, clear: &str| match state {
+        Some(true) => active.to_string(),
+        Some(false) => clear.to_string(),
+        None => "unknown (/api/live unavailable)".to_string(),
+    };
 
     Ok(CommandOutput {
         human: format!(
@@ -877,10 +896,10 @@ async fn status(client: &Client, api: &str) -> Result<CommandOutput> {
                 .get("service")
                 .and_then(Value::as_str)
                 .unwrap_or("reactor-edge-daemon"),
-            if auto { "enabled" } else { "standby" },
-            if manual_lock { "on" } else { "off" },
-            if emergency { "active" } else { "clear" },
-            if control_fault { "latched" } else { "clear" },
+            latch(auto, "enabled", "standby"),
+            latch(manual_lock, "on", "off"),
+            latch(emergency, "active", "clear"),
+            latch(control_fault, "latched", "clear"),
             active_batch_id
                 .map(|id| format!("#{id}"))
                 .unwrap_or_else(|| "none".to_string()),
@@ -891,8 +910,8 @@ async fn status(client: &Client, api: &str) -> Result<CommandOutput> {
             "live": live,
             // Stable top-level summary an AI agent can read in one shot to
             // decide whether it is safe to dispatch control. When /api/live is
-            // unavailable (live == None) the latch booleans fall back to their
-            // conservative defaults and live_available reports false.
+            // unavailable (live == None) the latch fields are null (unknown)
+            // and live_available reports false — never a false "clear".
             "summary": {
                 "service_up": service_up,
                 "live_available": live_available,
@@ -1448,7 +1467,7 @@ async fn ai(
 ) -> Result<CommandOutput> {
     match &args.command {
         AiCommand::Suggest => {
-            let value = request_json(
+            let value = request_json_with_timeout(
                 client,
                 Method::POST,
                 api,
@@ -1456,6 +1475,7 @@ async fn ai(
                 None,
                 None,
                 &[],
+                Some(AI_GENERATION_REQUEST_TIMEOUT),
             )
             .await?;
             let rec = unwrap_data(&value)
@@ -1468,7 +1488,7 @@ async fn ai(
             })
         }
         AiCommand::Plan => {
-            let value = request_json(
+            let value = request_json_with_timeout(
                 client,
                 Method::GET,
                 api,
@@ -1476,6 +1496,7 @@ async fn ai(
                 None,
                 None,
                 &[],
+                Some(AI_GENERATION_REQUEST_TIMEOUT),
             )
             .await?;
             let data = unwrap_data(&value);
@@ -2532,6 +2553,25 @@ async fn request_json(
     body: Option<Value>,
     query: &[(&str, &str)],
 ) -> Result<Value> {
+    request_json_with_timeout(client, method, api, path, token, body, query, None).await
+}
+
+/// Per-request override of the client-wide 15 s budget. Only endpoints whose
+/// daemon-side work legitimately outlives that budget (cloud AI generation:
+/// StepFun 20 s timeout × up to 3 attempts plus backoff) pass `Some(..)`;
+/// emergency/control commands keep the short default so a stalled daemon is
+/// reported instead of silently waited on.
+#[allow(clippy::too_many_arguments)]
+async fn request_json_with_timeout(
+    client: &Client,
+    method: Method,
+    api: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<Value>,
+    query: &[(&str, &str)],
+    timeout: Option<std::time::Duration>,
+) -> Result<Value> {
     let url = endpoint(api, path);
     let mut request = client.request(method, &url).query(query);
     if let Some(token) = token.filter(|value| !value.trim().is_empty()) {
@@ -2540,12 +2580,21 @@ async fn request_json(
     if let Some(body) = body {
         request = request.json(&body);
     }
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
     let response = request.send().await.map_err(|err| CliError::Network {
         message: err.to_string(),
         url: url.clone(),
     })?;
     let status = response.status();
-    let text = response.text().await.unwrap_or_default();
+    // Propagate body-read failures: swallowing them would turn a mid-response
+    // network error into an empty body, and (for JSON callers) an empty 200
+    // body into a fabricated {"status":"ok"}.
+    let text = response.text().await.map_err(|err| CliError::Network {
+        message: err.to_string(),
+        url: url.clone(),
+    })?;
     if !status.is_success() {
         return Err(api_error(status, &url, &text));
     }
@@ -2572,7 +2621,13 @@ async fn request_text(
         url: url.clone(),
     })?;
     let status = response.status();
-    let text = response.text().await.unwrap_or_default();
+    // Propagate body-read failures: swallowing them would turn a mid-response
+    // network error into an empty body, and (for JSON callers) an empty 200
+    // body into a fabricated {"status":"ok"}.
+    let text = response.text().await.map_err(|err| CliError::Network {
+        message: err.to_string(),
+        url: url.clone(),
+    })?;
     if !status.is_success() {
         return Err(api_error(status, &url, &text));
     }

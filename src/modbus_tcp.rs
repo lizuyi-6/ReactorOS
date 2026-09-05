@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -151,6 +151,18 @@ pub fn start_modbus_tcp_server(config: ModbusTcpConfig, state: AppState) {
     });
 }
 
+/// Concurrent Modbus TCP client cap. The board runs one HMI plus a couple of
+/// SCADA pollers; anything beyond this is a misbehaving client and must not be
+/// allowed to spawn unbounded per-connection tasks (memory/fd exhaustion
+/// against the same process hosting the HTTP API and control loop).
+const MAX_MODBUS_TCP_CONNECTIONS: usize = 16;
+/// TLS handshake budget: a client that connects but never completes the
+/// handshake must not hold a connection slot forever.
+const MODBUS_TCP_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Per-read/write budget inside an established connection: a slowloris-style
+/// client that sends partial frames must be dropped, not parked indefinitely.
+const MODBUS_TCP_IO_TIMEOUT: Duration = Duration::from_secs(30);
+
 async fn run_modbus_tcp_server(
     config: ModbusTcpConfig,
     state: AppState,
@@ -174,6 +186,7 @@ async fn run_modbus_tcp_server(
         };
     })
     .await;
+    let connection_slots = Arc::new(tokio::sync::Semaphore::new(MAX_MODBUS_TCP_CONNECTIONS));
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(accepted) => accepted,
@@ -185,13 +198,26 @@ async fn run_modbus_tcp_server(
                 continue;
             }
         };
+        // Wait for a free connection slot before spawning: excess clients sit
+        // in the TCP listen backlog instead of accumulating tasks. The permit
+        // is moved into the connection task and released when it ends.
+        let permit = match connection_slots.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(_) => continue,
+        };
         let state = state.clone();
         let max_pdu_bytes = config.max_pdu_bytes.max(1);
         let expected_unit_id = config.unit_id;
         if let Some(acceptor) = tls_acceptor.clone() {
             tokio::spawn(async move {
+                let _permit = permit;
                 let result = async {
-                    let stream = acceptor.accept(stream).await?;
+                    let stream = tokio::time::timeout(
+                        MODBUS_TCP_HANDSHAKE_TIMEOUT,
+                        acceptor.accept(stream),
+                    )
+                    .await
+                    .map_err(|_| anyhow!("TLS handshake timed out"))??;
                     handle_modbus_tcp_stream(stream, state, max_pdu_bytes, expected_unit_id).await
                 }
                 .await;
@@ -201,6 +227,7 @@ async fn run_modbus_tcp_server(
             });
         } else {
             tokio::spawn(async move {
+                let _permit = permit;
                 if let Err(err) =
                     handle_modbus_tcp_stream(stream, state, max_pdu_bytes, expected_unit_id).await
                 {
@@ -237,8 +264,13 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     loop {
+        // Bound every read and write: a client that stalls mid-frame (or
+        // stops reading responses) must be dropped after MODBUS_TCP_IO_TIMEOUT
+        // instead of holding the connection slot forever.
         let mut header = [0_u8; 7];
-        stream.read_exact(&mut header).await?;
+        tokio::time::timeout(MODBUS_TCP_IO_TIMEOUT, stream.read_exact(&mut header))
+            .await
+            .map_err(|_| anyhow!("timed out waiting for MBAP header"))??;
         let transaction_id = u16::from_be_bytes([header[0], header[1]]);
         let protocol_id = u16::from_be_bytes([header[2], header[3]]);
         let length = u16::from_be_bytes([header[4], header[5]]) as usize;
@@ -246,10 +278,17 @@ where
         if protocol_id != 0 || length == 0 || length - 1 > max_pdu_bytes {
             let response = exception_response(0, 0x03);
             write_mbap_response(&mut stream, transaction_id, unit_id, &response).await?;
-            continue;
+            // A framing error desynchronizes the byte stream: the announced
+            // PDU payload was never consumed, so any further parsing would
+            // misinterpret payload bytes as the next MBAP header. Answer once,
+            // then disconnect (standard practice) instead of `continue`-ing
+            // into a guaranteed desync cascade.
+            break;
         }
         let mut pdu = vec![0_u8; length - 1];
-        stream.read_exact(&mut pdu).await?;
+        tokio::time::timeout(MODBUS_TCP_IO_TIMEOUT, stream.read_exact(&mut pdu))
+            .await
+            .map_err(|_| anyhow!("timed out waiting for MBAP PDU"))??;
         if unit_id != expected_unit_id {
             let function = pdu.first().copied().unwrap_or(0);
             let response = exception_response(function, 0x0B);
@@ -259,6 +298,7 @@ where
         let response = handle_modbus_tcp_pdu(&state, &pdu).await;
         write_mbap_response(&mut stream, transaction_id, unit_id, &response).await?;
     }
+    Ok(())
 }
 
 async fn write_mbap_response(
@@ -273,7 +313,9 @@ async fn write_mbap_response(
     header.extend_from_slice(&((pdu.len() + 1) as u16).to_be_bytes());
     header.push(unit_id);
     header.extend_from_slice(pdu);
-    stream.write_all(&header).await?;
+    tokio::time::timeout(MODBUS_TCP_IO_TIMEOUT, stream.write_all(&header))
+        .await
+        .map_err(|_| anyhow!("timed out writing MBAP response"))??;
     Ok(())
 }
 
@@ -331,7 +373,17 @@ async fn read_holding_registers(state: &AppState, pdu: &[u8]) -> Result<Vec<u8>,
     let mut response = Vec::with_capacity(2 + quantity as usize * 2);
     response.push(0x03);
     response.push((quantity * 2) as u8);
-    for address in start..start + quantity {
+    // Address arithmetic is widened to u32: `start + quantity` in u16 would
+    // overflow when start is near 0xFFFF (e.g. start=0xFFFF, quantity=1),
+    // which panics under overflow-checks and aborts the whole daemon
+    // (panic=abort in release) from a single remote frame. A read past the
+    // 0x10000 address space is an illegal data address, same as an unmapped
+    // register inside it.
+    let end = start as u32 + quantity as u32;
+    if end > 0x1_0000 {
+        return Err(exception(pdu[0], 0x02));
+    }
+    for address in (start as u32..end).map(|address| address as u16) {
         let Some(raw) = values.get(&address) else {
             return Err(exception(pdu[0], 0x02));
         };
@@ -381,8 +433,16 @@ fn read_bool_points(pdu: &[u8], values: BTreeMap<u16, bool>) -> Result<Vec<u8>, 
     }
     let byte_count = ((quantity as usize) + 7) / 8;
     let mut bytes = vec![0_u8; byte_count];
+    // Same u16-overflow widening as read_holding_registers: `start + index`
+    // overflows near 0xFFFF. Today the values map only holds low addresses so
+    // the loop exits at index 0 first, but that protection is data-dependent —
+    // widen the arithmetic so it is structural.
+    let end = start as u32 + quantity as u32;
+    if end > 0x1_0000 {
+        return Err(exception(pdu[0], 0x02));
+    }
     for index in 0..quantity {
-        let address = start + index;
+        let address = (start as u32 + index as u32) as u16;
         let Some(value) = values.get(&address) else {
             return Err(exception(pdu[0], 0x02));
         };

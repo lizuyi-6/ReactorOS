@@ -4,11 +4,11 @@
 // 真实可写项只有语言偏好（自动持久化）；其余控制均为只读展示或"暂不支持"回弹。
 
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import PanelCard from "../components/PanelCard.vue";
 import SparkLine from "../components/SparkLine.vue";
 import AppIcon from "../components/AppIcon.vue";
-import { auditApi } from "../api";
+import { auditApi, authApi } from "../api";
 import { downloadBlob } from "../api/http";
 import { errorMessage } from "../api/errors";
 import { usePlantStore } from "../stores/plant";
@@ -177,18 +177,43 @@ async function exportAuditLogs(): Promise<void> {
   }
 }
 
-function rebootSystem(): void {
-  ElMessageBox.confirm(
-    tr("确定要重启系统吗？重启期间控制与监控将中断。", "Reboot the system now? Control and monitoring will be interrupted."),
-    tr("重启系统", "Reboot System"),
-    {
-      type: "warning",
-      confirmButtonText: tr("重启", "Reboot"),
-      cancelButtonText: tr("取消", "Cancel")
-    }
-  )
-    .then(() => ElMessage.info(tr("该操作后端暂不支持", "Not supported by backend")))
-    .catch(() => undefined);
+// ---------- 修改密码 ----------
+const pwdVisible = ref(false);
+const pwdOld = ref("");
+const pwdNew = ref("");
+const pwdConfirm = ref("");
+const pwdBusy = ref(false);
+
+function openPwdDialog(): void {
+  pwdOld.value = "";
+  pwdNew.value = "";
+  pwdConfirm.value = "";
+  pwdVisible.value = true;
+}
+
+async function submitChangePassword(): Promise<void> {
+  if (!pwdOld.value || !pwdNew.value) {
+    ElMessage.warning(tr("请填写当前密码与新密码", "Enter current and new password"));
+    return;
+  }
+  if (pwdNew.value.length < 6) {
+    ElMessage.warning(tr("新密码长度至少 6 位", "New password must be at least 6 characters"));
+    return;
+  }
+  if (pwdNew.value !== pwdConfirm.value) {
+    ElMessage.warning(tr("两次输入的新密码不一致", "New passwords do not match"));
+    return;
+  }
+  pwdBusy.value = true;
+  try {
+    await authApi.changePassword(pwdOld.value, pwdNew.value);
+    ElMessage.success(tr("密码已修改，下次登录生效", "Password changed; takes effect on next sign-in"));
+    pwdVisible.value = false;
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    pwdBusy.value = false;
+  }
 }
 
 // ---------- 生命周期 ----------
@@ -254,8 +279,8 @@ onUnmounted(() => {
                 <el-option v-for="tz in timezoneOptions" :key="tz" :value="tz" :label="tz" />
               </el-select>
             </label>
-            <button type="button" class="link-row" @click="notSupported()">
-              <span>{{ tr("更多设置", "More Settings") }}</span><span class="arrow">›</span>
+            <button type="button" class="link-row" disabled>
+              <span>{{ tr("更多设置", "More Settings") }}</span><span class="soon-tag">{{ tr("暂不支持", "N/A") }}</span>
             </button>
           </div>
         </PanelCard>
@@ -288,8 +313,8 @@ onUnmounted(() => {
               <span class="k">{{ tr("最后同步", "Last Sync") }}</span>
               <span class="v mono">--</span>
             </div>
-            <button type="button" class="link-row" @click="notSupported()">
-              <span>{{ tr("管理集成", "Manage Integrations") }}</span><span class="arrow">›</span>
+            <button type="button" class="link-row" disabled>
+              <span>{{ tr("管理集成", "Manage Integrations") }}</span><span class="soon-tag">{{ tr("暂不支持", "N/A") }}</span>
             </button>
           </div>
         </PanelCard>
@@ -329,8 +354,8 @@ onUnmounted(() => {
                 <span v-else class="mono">--</span>
               </span>
             </div>
-            <button type="button" class="link-row" @click="notSupported()">
-              <span>{{ tr("测试连接", "Test Connection") }}</span><span class="arrow">›</span>
+            <button type="button" class="link-row" disabled>
+              <span>{{ tr("测试连接", "Test Connection") }}</span><span class="soon-tag">{{ tr("暂不支持", "N/A") }}</span>
             </button>
           </div>
         </PanelCard>
@@ -353,8 +378,8 @@ onUnmounted(() => {
               <span class="k">{{ tr("搅拌转速上限", "Max Stirrer RPM") }}</span>
               <span class="big-val blue">{{ fixed(maxStirrerRpm, 0, "") }}<small>rpm</small></span>
             </div>
-            <button type="button" class="link-row" @click="notSupported()">
-              <span>{{ tr("编辑阈值", "Edit Thresholds") }}</span><span class="arrow">›</span>
+            <button type="button" class="link-row" disabled>
+              <span>{{ tr("编辑阈值", "Edit Thresholds") }}</span><span class="soon-tag">{{ tr("暂不支持", "N/A") }}</span>
             </button>
           </div>
         </PanelCard>
@@ -385,8 +410,11 @@ onUnmounted(() => {
               </tbody>
             </table>
             <div v-else class="empty-hint">{{ tr("暂无权限数据", "No permission data") }}</div>
-            <button type="button" class="link-row" @click="notSupported()">
-              <span>{{ tr("用户管理", "Manage Users") }}</span><span class="arrow">›</span>
+            <button type="button" class="link-row" disabled>
+              <span>{{ tr("用户管理", "Manage Users") }}</span><span class="soon-tag">{{ tr("暂不支持", "N/A") }}</span>
+            </button>
+            <button type="button" class="link-row" @click="openPwdDialog">
+              <span>{{ tr("修改密码", "Change Password") }}</span><span class="arrow">›</span>
             </button>
           </div>
         </PanelCard>
@@ -633,12 +661,36 @@ onUnmounted(() => {
               <el-switch :model-value="false" size="small" disabled />
             </div>
             <div class="danger-zone">
-              <el-button type="danger" plain class="full-w" @click="rebootSystem">{{ tr("重启系统", "Reboot System") }}</el-button>
+              <el-button type="danger" plain class="full-w" disabled>
+                {{ tr("重启系统", "Reboot System") }}<span class="soon-tag in-btn">{{ tr("暂不支持", "N/A") }}</span>
+              </el-button>
             </div>
           </div>
         </PanelCard>
       </div>
     </div>
+
+    <!-- 修改密码对话框 -->
+    <el-dialog v-model="pwdVisible" :title="tr('修改密码', 'Change Password')" width="420px">
+      <div class="pwd-form">
+        <label class="pwd-field">
+          <span class="k">{{ tr("当前密码", "Current Password") }}</span>
+          <el-input v-model="pwdOld" type="password" show-password :placeholder="tr('输入当前密码', 'Enter current password')" />
+        </label>
+        <label class="pwd-field">
+          <span class="k">{{ tr("新密码", "New Password") }}</span>
+          <el-input v-model="pwdNew" type="password" show-password :placeholder="tr('至少 6 位', 'At least 6 characters')" />
+        </label>
+        <label class="pwd-field">
+          <span class="k">{{ tr("确认新密码", "Confirm New Password") }}</span>
+          <el-input v-model="pwdConfirm" type="password" show-password :placeholder="tr('再次输入新密码', 'Re-enter new password')" @keyup.enter="submitChangePassword" />
+        </label>
+      </div>
+      <template #footer>
+        <el-button @click="pwdVisible = false">{{ tr("取消", "Cancel") }}</el-button>
+        <el-button type="primary" :loading="pwdBusy" @click="submitChangePassword">{{ tr("确认修改", "Change") }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1082,4 +1134,21 @@ onUnmounted(() => {
   /* V32：边缘节点双列改单列 */
   .edge-layout { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* 暂不支持占位入口：置灰 + 标签，不再弹"后端暂不支持" */
+.link-row[disabled] { opacity: 0.45; cursor: not-allowed; }
+.soon-tag {
+  font-size: 10px;
+  color: var(--text-dim, #5a6b85);
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.soon-tag.in-btn { margin-left: 6px; }
+
+/* 修改密码表单 */
+.pwd-form { display: flex; flex-direction: column; gap: 12px; }
+.pwd-field { display: flex; flex-direction: column; gap: 6px; }
+.pwd-field .k { font-size: 12px; color: var(--text-secondary); }
 </style>

@@ -1,33 +1,38 @@
 <script setup lang="ts">
 // 迷你趋势线（无坐标轴），用于参数卡底部。
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
-import * as echarts from "echarts";
+import echarts from "../lib/echarts";
+import type { EChartsType } from "../lib/echarts";
 
 const props = withDefaults(
   defineProps<{
     points: number[];
     color?: string;
+    /** 像素高度；传 0 表示由父布局（flex）决定，随卡片剩余空间伸缩 */
     height?: number;
   }>(),
   { color: "#2f9bff", height: 30 }
 );
 
 const el = ref<HTMLDivElement | null>(null);
-let chart: echarts.ECharts | null = null;
+let chart: EChartsType | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let renderPending = false;
+let needsVisibleRender = false;
 
 function render(): void {
   if (!chart) return;
+  if (document.hidden) {
+    needsVisibleRender = true;
+    return;
+  }
+  needsVisibleRender = false;
   chart.setOption({
-    grid: { left: 0, right: 0, top: 2, bottom: 2 },
-    xAxis: { type: "category", show: false, data: props.points.map((_, i) => i) },
-    yAxis: { type: "value", show: false, min: "dataMin", max: "dataMax" },
+    xAxis: { data: props.points.map((_, index) => index) },
     series: [
       {
-        type: "line",
+        id: "sparkline",
         data: props.points,
-        smooth: true,
-        symbol: "none",
         lineStyle: { width: 1.6, color: props.color },
         areaStyle: {
           color: {
@@ -39,20 +44,63 @@ function render(): void {
           }
         }
       }
-    ],
-    animation: false
+    ]
   });
+}
+
+function initializeChart(): void {
+  if (!chart && el.value && el.value.clientWidth > 0 && el.value.clientHeight > 0) {
+    chart = echarts.init(el.value);
+    chart.setOption({
+      grid: { left: 0, right: 0, top: 2, bottom: 2 },
+      xAxis: { type: "category", show: false, data: [] },
+      yAxis: { type: "value", show: false, min: "dataMin", max: "dataMax" },
+      series: [
+        {
+          id: "sparkline",
+          type: "line",
+          smooth: true,
+          symbol: "none"
+        }
+      ],
+      animation: false
+    });
+    render();
+  }
+}
+
+function queueRender(): void {
+  if (renderPending) return;
+  renderPending = true;
+  queueMicrotask(() => {
+    renderPending = false;
+    render();
+  });
+}
+
+function handleVisibilityChange(): void {
+  if (!document.hidden && needsVisibleRender) {
+    initializeChart();
+    chart?.resize();
+    queueRender();
+  }
 }
 
 onMounted(() => {
   if (!el.value) return;
-  chart = echarts.init(el.value);
-  render();
-  resizeObserver = new ResizeObserver(() => chart?.resize());
+  // 卡片偏矮时容器高度会被 flex 压到 0：等有实际尺寸再初始化。
+  initializeChart();
+  resizeObserver = new ResizeObserver(() => {
+    initializeChart();
+    if (!document.hidden) chart?.resize();
+  });
   resizeObserver.observe(el.value);
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 });
-watch(() => [props.points, props.color], render, { deep: true });
+watch(() => props.points, queueRender);
+watch(() => props.color, queueRender);
 onBeforeUnmount(() => {
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   resizeObserver?.disconnect();
   chart?.dispose();
   chart = null;
@@ -60,7 +108,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="el" class="sparkline" :style="{ height: height + 'px' }"></div>
+  <div ref="el" class="sparkline" :style="height > 0 ? { height: height + 'px' } : undefined"></div>
 </template>
 
 <style scoped>

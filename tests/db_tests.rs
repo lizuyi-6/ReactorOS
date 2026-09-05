@@ -92,7 +92,8 @@ fn batch_result_and_recommendation_round_trip() {
             max_stirring_minutes: 240.0,
         },
         &outcomes,
-    );
+    )
+    .expect("test bounds leave safe points");
     db.insert_recommendation(&rec).unwrap();
 
     let latest = db.latest_recommendation().unwrap().unwrap();
@@ -211,7 +212,8 @@ fn skips_legacy_invalid_product_results_when_reading_outcomes() {
             max_stirring_minutes: 240.0,
         },
         &outcomes,
-    );
+    )
+    .expect("test bounds leave safe points");
     assert_eq!(rec.based_on_batch_count, 1);
 }
 
@@ -1071,7 +1073,7 @@ fn audit_chain_status_uses_bounded_window_without_claiming_full_validity() {
             &format!("event {index}"),
             &AuditActor::system(),
         )
-            .unwrap();
+        .unwrap();
     }
 
     let status = db.audit_chain_status().unwrap();
@@ -1202,7 +1204,7 @@ async fn async_file_database_audit_events_use_sqlx_pool() {
             &format!("event {index}"),
             &AuditActor::system(),
         )
-            .unwrap();
+        .unwrap();
     }
 
     let first_page = db.audit_events_sqlx(2, 0, None).await.unwrap();
@@ -1331,7 +1333,7 @@ async fn async_file_database_audit_chain_status_uses_sqlx_pool() {
             &format!("event {index}"),
             &AuditActor::system(),
         )
-            .unwrap();
+        .unwrap();
     }
 
     let status = db.audit_chain_status_sqlx().await.unwrap();
@@ -1934,7 +1936,8 @@ async fn async_file_database_all_batch_outcomes_use_sqlx_pool() {
             max_stirring_minutes: 240.0,
         },
         &outcomes,
-    );
+    )
+    .expect("test bounds leave safe points");
     assert_eq!(rec.based_on_batch_count, 3);
 }
 

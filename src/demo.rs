@@ -155,7 +155,14 @@ pub fn seed_demo_context(db: &Db, safety: &SafetyConfig, memory: &AiMemory) -> R
     }
 
     let outcomes = db.batch_outcomes()?;
-    let mut recommendation = recommend_with_memory(&safety.optimizer, Some(memory), &outcomes);
+    let Some(mut recommendation) =
+        recommend_with_memory(&safety.optimizer, Some(memory), &outcomes)
+    else {
+        // Demo bounds always leave a safe midpoint; if a future demo config
+        // covers the box with forbidden zones, fail the seed loudly rather
+        // than fabricating an in-zone "recommendation".
+        anyhow::bail!("demo optimizer bounds fully covered by forbidden zones");
+    };
     recommendation.rationale = format!(
         "DEMO: AI 识别到高搅拌/长保温在安全范围内但产率下降；建议靠近温和优化区域。{}",
         recommendation.rationale

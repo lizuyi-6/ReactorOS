@@ -23,6 +23,7 @@ function readPositiveInt(value: unknown, fallback: number, min: number, max: num
 }
 
 export const HMI_REFRESH_INTERVAL_MS = readPositiveInt(import.meta.env.XINGSHU_VITE_REFRESH_MS, 15_000, 5_000, 60_000);
+export const LIVE_CALIBRATION_INTERVAL_MS = 60_000;
 export const LIVE_SAMPLE_LIMIT = readPositiveInt(import.meta.env.XINGSHU_VITE_LIVE_SAMPLE_LIMIT, 24, 1, 120);
 
 export const useLiveStore = defineStore("live", () => {
@@ -31,10 +32,12 @@ export const useLiveStore = defineStore("live", () => {
   const runtimeFallback = ref<RuntimeState | null>(null);
   const liveStatus = ref<"fresh" | "unavailable">("unavailable");
   const liveLastUpdated = ref<string | null>(null);
+  const liveLastRefreshAt = ref<number | null>(null);
   const realtimeConnected = ref(false);
 
   let socket: WebSocket | null = null;
   let reconnectTimer: number | null = null;
+  let refreshPromise: Promise<void> | null = null;
   let getToken: () => string | null = () => null;
 
   const runtime = computed<RuntimeState | null>(() => live.value?.runtime ?? runtimeFallback.value);
@@ -47,6 +50,13 @@ export const useLiveStore = defineStore("live", () => {
     () => live.value?.latest_recommendation ?? null
   );
   const primaryDevice = computed<DeviceStatusItem | null>(() => live.value?.device_status?.devices?.[0] ?? null);
+  const refreshIntervalMs = computed(() =>
+    realtimeConnected.value ? LIVE_CALIBRATION_INTERVAL_MS : HMI_REFRESH_INTERVAL_MS
+  );
+  const nextRefreshDelayMs = computed(() => {
+    const last = liveLastRefreshAt.value;
+    return last === null ? 0 : Math.max(0, last + refreshIntervalMs.value - Date.now());
+  });
 
   function markUnavailable(): void {
     liveStatus.value = "unavailable";
@@ -63,14 +73,21 @@ export const useLiveStore = defineStore("live", () => {
     }
   }
 
-  async function refreshLive(): Promise<void> {
-    try {
-      const payload = await systemApi.live(LIVE_SAMPLE_LIMIT);
-      applyLive(payload);
-    } catch {
-      // 503（样本缺失/过期）是常态降级，静默进入 unavailable。
-      applyLive(null);
-    }
+  function refreshLive(): Promise<void> {
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      try {
+        const payload = await systemApi.live(LIVE_SAMPLE_LIMIT);
+        applyLive(payload);
+      } catch {
+        // 503（样本缺失/过期）是常态降级，静默进入 unavailable。
+        applyLive(null);
+      } finally {
+        liveLastRefreshAt.value = Date.now();
+        refreshPromise = null;
+      }
+    })();
+    return refreshPromise;
   }
 
   function realtimeSampleFromPayload(payload: RealtimePayload, previous: SensorSample | null): SensorSample | null {
@@ -217,7 +234,10 @@ export const useLiveStore = defineStore("live", () => {
     primaryDevice,
     liveStatus,
     liveLastUpdated,
+    liveLastRefreshAt,
     realtimeConnected,
+    refreshIntervalMs,
+    nextRefreshDelayMs,
     refreshLive,
     applyLive,
     connectRealtimeSocket,

@@ -56,8 +56,8 @@
           <div v-for="col in setpointCols" :key="col.key" class="sp-col" :class="{ readonly: !col.writable }">
             <div class="sp-head">
               <div class="sp-title">
-                <span class="en">{{ col.en }} <em class="unit">{{ col.unit }}</em></span>
-                <span class="zh">{{ col.zh }}</span>
+                <span class="en">{{ col.en }}</span>
+                <span class="zh">{{ col.zh }} <em class="unit">{{ col.unit }}</em></span>
               </div>
               <span v-if="!col.writable" class="ro-tag">{{ tr("只读", "Read-only") }}</span>
             </div>
@@ -83,7 +83,9 @@
               >▼</button>
             </div>
 
-            <!-- V30：只读列不渲染滑杆（disabled runway 实测溢出） -->
+            <div class="sp-pv">PV <b class="mono">{{ col.pvText }}</b></div>
+
+            <!-- 滑杆置于 PV 之后：极端矮屏裁切时先裁滑杆（仍有步进按钮），保住 PV 实测值 -->
             <el-slider
               v-if="col.writable"
               :model-value="col.model"
@@ -95,8 +97,6 @@
               class="sp-slider"
               @update:model-value="col.set"
             />
-
-            <div class="sp-pv">PV <b class="mono">{{ col.pvText }}</b></div>
           </div>
         </div>
       </PanelCard>
@@ -126,7 +126,7 @@
             @click="doToggleLock"
           >
             <AppIcon name="shield" :size="18" />
-            <span class="lbl"><span class="en">MANUAL LOCK</span><span class="zh">{{ tr("手动锁定", "Manual Lock") }}</span></span>
+            <span class="lbl"><span class="en">{{ runtime?.manual_lock ? "UNLOCK" : "MANUAL LOCK" }}</span><span class="zh">{{ runtime?.manual_lock ? tr("解除锁定", "Release Lock") : tr("手动锁定", "Manual Lock") }}</span></span>
           </button>
           <button type="button" class="big-btn blue" :disabled="busy" @click="doSetAuto(false)">
             <AppIcon name="pause" :size="18" />
@@ -137,6 +137,11 @@
             <span class="lbl"><span class="en">RESET</span><span class="zh">{{ tr("复位", "Reset") }}</span></span>
           </button>
         </div>
+        <!-- 自动控制状态明示：停用/启用只切换自动回路，批次计时不会暂停 -->
+        <div class="mode-status">
+          <span class="dot" :class="autoStateChip.cls"></span>
+          <span>{{ autoStateChip.label }}</span>
+        </div>
       </PanelCard>
 
       <PanelCard en="Quick Actions" zh="快捷操作" icon="play">
@@ -145,13 +150,13 @@
             <AppIcon name="play" :size="18" />
             <span class="lbl"><span class="en">START BATCH</span><span class="zh">{{ tr("开始批次", "Start Batch") }}</span></span>
           </button>
-          <button type="button" class="big-btn amber" :disabled="busy" @click="doSetAuto(false)">
+          <button type="button" class="big-btn amber" :disabled="busy || !runtime?.auto_enabled" @click="doSetAuto(false)">
             <AppIcon name="pause" :size="18" />
-            <span class="lbl"><span class="en">PAUSE</span><span class="zh">{{ tr("暂停", "Pause") }}</span></span>
+            <span class="lbl"><span class="en">AUTO OFF</span><span class="zh">{{ tr("停用自动", "Disable Auto") }}</span></span>
           </button>
-          <button type="button" class="big-btn green" :disabled="busy" @click="doSetAuto(true)">
+          <button type="button" class="big-btn green" :disabled="busy || !!runtime?.auto_enabled" @click="doSetAuto(true)">
             <AppIcon name="check" :size="18" />
-            <span class="lbl"><span class="en">RESUME</span><span class="zh">{{ tr("继续", "Resume") }}</span></span>
+            <span class="lbl"><span class="en">AUTO ON</span><span class="zh">{{ tr("启用自动", "Enable Auto") }}</span></span>
           </button>
           <button type="button" class="big-btn red" :disabled="busy" @click="doStopProcess">
             <AppIcon name="stop" :size="18" />
@@ -405,6 +410,24 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 全部组件总览对话框（只读全量视图；开关操作仍在组件控制卡内） -->
+    <el-dialog v-model="componentsOverviewVisible" :title="tr('全部组件总览', 'All Components Overview')" width="520px">
+      <div v-if="primaryComponents.items.length" class="comp-list scrollable overview-list">
+        <div v-for="c in primaryComponents.items" :key="compId(c)" class="comp-row">
+          <span class="comp-icon"><AppIcon :name="compIcon(c)" :size="17" /></span>
+          <div class="comp-main">
+            <span class="comp-name">{{ text(c.label ?? compId(c)) }}</span>
+            <span class="comp-state" :class="compStateClass(c.state)">{{ compStateLabel(c.state) }}</span>
+          </div>
+          <span class="comp-actions-count">{{ tr("可用动作", "Actions") }} {{ c.actions?.length ?? 0 }}</span>
+        </div>
+      </div>
+      <div v-else class="empty-state comp-empty">
+        <AppIcon name="valve" :size="28" />
+        <span>{{ tr("无组件数据", "No components") }}</span>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -413,7 +436,7 @@
 // 布局：三行 grid（批次状态+设定值+急停 / 控制模式+快捷操作 / 配方+活动过程+组件+安全事件）。
 // 压力显示统一 bar（后端 MPa × 10）；压力/流量目标后端不可写，仅做只读展示。
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeRouteLeave } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import PanelCard from "../components/PanelCard.vue";
 import TrendChart from "../components/TrendChart.vue";
@@ -421,7 +444,7 @@ import AppIcon from "../components/AppIcon.vue";
 import EmergencyStopPanel from "../components/EmergencyStopPanel.vue";
 import { useLiveStore } from "../stores/live";
 import { usePlantStore } from "../stores/plant";
-import { batchApi, controlApi, DEVICE_ID, deviceApi, processApi } from "../api";
+import { controlApi, DEVICE_ID, deviceApi, processApi } from "../api";
 import { errorMessage } from "../api/errors";
 import { useLanguage } from "../i18n";
 import { fixed, formatTime, formatTimestamp, text } from "../utils/format";
@@ -429,7 +452,6 @@ import type { ComponentAction, ControlEvent, DeviceComponentItem, ProcessStep, S
 
 const live = useLiveStore();
 const plant = usePlantStore();
-const router = useRouter();
 const { tr, language } = useLanguage();
 
 const runtime = computed(() => live.runtime);
@@ -655,7 +677,7 @@ const setpointCols = computed<SpCol[]>(() => {
   return [
     {
       key: "temperature",
-      en: "Target Temperature",
+      en: "Temperature",
       zh: tr("目标温度", "Target Temperature"),
       unit: "°C",
       writable: true,
@@ -673,7 +695,7 @@ const setpointCols = computed<SpCol[]>(() => {
     },
     {
       key: "pressure",
-      en: "Target Pressure",
+      en: "Pressure",
       zh: tr("目标压力", "Target Pressure"),
       unit: "bar",
       writable: false,
@@ -688,7 +710,7 @@ const setpointCols = computed<SpCol[]>(() => {
     },
     {
       key: "stirrer",
-      en: "Target Stirrer",
+      en: "Stirrer",
       zh: tr("搅拌转速", "Stirrer RPM"),
       unit: "RPM",
       writable: true,
@@ -706,7 +728,7 @@ const setpointCols = computed<SpCol[]>(() => {
     },
     {
       key: "shake",
-      en: "Target Shake Speed",
+      en: "Shake Speed",
       zh: tr("振荡速度", "Shake Speed"),
       unit: "rpm",
       writable: true,
@@ -724,7 +746,7 @@ const setpointCols = computed<SpCol[]>(() => {
     },
     {
       key: "flow",
-      en: "Target Flow Rate",
+      en: "Flow Rate",
       zh: tr("目标流量", "Flow Rate"),
       unit: "L/min",
       writable: false,
@@ -854,7 +876,8 @@ function doComponentControl(c: DeviceComponentItem, wantOn: boolean): void {
 }
 
 function goComponentsOverview(): void {
-  void router.push("/monitor");
+  // 打开本页组件总览弹窗（数据即本页组件控制列表的全量视图），不再跳到没有组件列表的监控页。
+  componentsOverviewVisible.value = true;
 }
 
 // ---------------------------------------------------------------- 安全边界
@@ -953,7 +976,18 @@ function eventValueLabel(ev: ControlEvent): string {
   return parts.join(" · ");
 }
 
-const recentEvents = computed<ControlEvent[]>(() => (plant.audit?.events ?? []).slice(0, 9));
+// 连续 device_write（自动控制每 2 秒一条）只保留最新一条，避免刷屏淹没重要事件。
+const recentEvents = computed<ControlEvent[]>(() => {
+  const rows = plant.audit?.events ?? [];
+  const collapsed: ControlEvent[] = [];
+  for (const ev of rows) {
+    const isWrite = ev.event_type === "device_write";
+    if (isWrite && collapsed.length && collapsed[collapsed.length - 1].event_type === "device_write") continue;
+    collapsed.push(ev);
+    if (collapsed.length >= 9) break;
+  }
+  return collapsed;
+});
 
 // ---------------------------------------------------------------- 写操作
 async function runAction(label: string, fn: () => Promise<unknown>): Promise<void> {
@@ -976,10 +1010,20 @@ async function runAction(label: string, fn: () => Promise<unknown>): Promise<voi
 
 function doSetAuto(enabled: boolean): void {
   void runAction(
-    enabled ? tr("启用自动控制", "Enable auto control") : tr("暂停自动控制", "Disable auto control"),
+    enabled ? tr("启用自动控制", "Enable auto control") : tr("停用自动控制", "Disable auto control"),
     () => controlApi.setAuto(enabled)
   );
 }
+
+// 自动控制状态明示：AUTO OFF/ON 只切换自动回路开关，批次计时不会因此暂停。
+const autoStateChip = computed(() => {
+  if (runtime.value?.manual_lock) {
+    return { cls: "amber", label: tr("自动控制：手动锁定中", "Auto control: manual lock engaged") };
+  }
+  return runtime.value?.auto_enabled
+    ? { cls: "green", label: tr("自动控制：已启用", "Auto control: enabled") }
+    : { cls: "", label: tr("自动控制：已停用", "Auto control: disabled") };
+});
 
 function doToggleLock(): void {
   const locked = !!runtime.value?.manual_lock;
@@ -1020,6 +1064,9 @@ const startVisible = ref(false);
 const startProcessId = ref<number | null>(null);
 const startBatchName = ref("");
 
+// 组件总览弹窗
+const componentsOverviewVisible = ref(false);
+
 function openStartDialog(): void {
   startProcessId.value = recipeProcessId.value;
   startBatchName.value = "";
@@ -1030,13 +1077,7 @@ function doStartBatch(): void {
   const pid = startProcessId.value;
   if (pid === null) return;
   const name = startBatchName.value.trim();
-  void runAction(tr("开始批次", "Start batch"), async () => {
-    if (name) {
-      await batchApi.start({ name, process_id: pid });
-    } else {
-      await processApi.start(pid);
-    }
-  });
+  void runAction(tr("开始批次", "Start batch"), () => processApi.start(pid, name || undefined));
   startVisible.value = false;
 }
 
@@ -1057,6 +1098,25 @@ async function doStopProcess(): Promise<void> {
   }
   void runAction(tr("停止工艺", "Stop process"), () => processApi.stopCurrent());
 }
+
+// 有未应用的目标修改时，离开页面前弹确认，避免静默丢弃。
+onBeforeRouteLeave(async () => {
+  if (!targetsDirty.value) return true;
+  try {
+    await ElMessageBox.confirm(
+      tr("有未应用的目标修改，离开后将被丢弃。确认离开？", "You have unapplied target changes that will be discarded. Leave anyway?"),
+      tr("未应用的修改", "Unapplied Changes"),
+      {
+        confirmButtonText: tr("离开", "Leave"),
+        cancelButtonText: tr("取消", "Cancel"),
+        type: "warning"
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+});
 
 // ---------------------------------------------------------------- 生命周期
 onMounted(() => {
@@ -1086,7 +1146,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(170px, 30fr) minmax(124px, 13fr) minmax(230px, 57fr);
+  grid-template-rows: minmax(186px, 30fr) minmax(124px, 13fr) minmax(230px, 57fr);
   gap: var(--spacing);
   overflow: hidden;
 }
@@ -1275,11 +1335,14 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
   padding: 10px 12px;
+  /* 高度不足时裁掉底部，绝不允许内部区块收缩后互相叠印 */
+  overflow: hidden;
 }
 
 .sp-col.readonly { opacity: 0.88; }
 
 .sp-head {
+  flex: none;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -1299,21 +1362,20 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: var(--text-primary);
   white-space: normal;
-  /* V30：长英文标签可断行，不再溢出小卡 */
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.sp-title .en .unit {
-  font-style: normal;
-  font-size: var(--fs-xs);
-  color: var(--accent-cyan);
-  margin-left: 3px;
+  /* 词边界断行；只在单词本身超宽时才断词（避免 "Pressu re"） */
+  overflow-wrap: break-word;
 }
 
 .sp-title .zh {
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
+}
+
+.sp-title .zh .unit {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--accent-cyan);
+  margin-left: 2px;
 }
 
 .ro-tag {
@@ -1327,6 +1389,7 @@ onBeforeUnmount(() => {
 }
 
 .sp-stepper {
+  flex: none;
   display: flex;
   align-items: center;
   /* V30：紧凑化，给数值留足宽度 */
@@ -1379,6 +1442,7 @@ onBeforeUnmount(() => {
 .sp-slider { margin: 0 2px; }
 
 .sp-pv {
+  flex: none;
   text-align: center;
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
@@ -2005,6 +2069,20 @@ onBeforeUnmount(() => {
   .sp-value { font-size: var(--fs-xl); }
 }
 
+/* 矮视口压实：720p/768px 高度下设定值卡内容超出顶行高度，收缩防裁 */
+@media (max-height: 820px) {
+  .sp-col { padding: 7px 9px; gap: 4px; }
+  .sp-head { min-height: 0; }
+  .sp-btn { height: 30px; }
+  .sp-slider :deep(.el-slider__runway) { margin: 4px 0; }
+}
+
+/* 空间受限时（窄屏或矮屏）只读标签让位：去掉 ro-tag，标题拿满卡片宽度，
+   避免标题被挤到 40px 出现 "Pressur e" 断词；只读态本身无步进/滑杆可辨识 */
+@media (max-width: 1360px), (max-height: 820px) {
+  .ro-tag { display: none; }
+}
+
 /* ============ V32 修复：移动端单列堆叠、允许整页滚动 ============ */
 @media (max-width: 900px) {
   .control-page {
@@ -2028,4 +2106,17 @@ onBeforeUnmount(() => {
   .sp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
   .quick-row, .mode-row { display: flex; flex-wrap: wrap; }
 }
+.mode-status {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mode-status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim, #5a6b85); }
+.mode-status .dot.green { background: var(--ind-green, #22c55e); }
+.mode-status .dot.amber { background: var(--ind-amber, #f59e0b); }
+.overview-list { max-height: 420px; }
+.comp-actions-count { font-size: 11px; color: var(--text-dim, #5a6b85); white-space: nowrap; }
 </style>

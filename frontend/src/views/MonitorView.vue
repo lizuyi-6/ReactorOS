@@ -143,7 +143,8 @@
               <span v-if="card.unit" class="unit">{{ card.unit }}</span>
             </div>
             <div class="param-sp mono">{{ card.sp }}</div>
-            <SparkLine :points="card.spark" :color="card.color" :height="22" />
+            <!-- height=0：由 flex 吃掉卡片剩余高度，卡片偏矮时收缩而不是被 overflow 裁掉 -->
+            <SparkLine :points="card.spark" :color="card.color" :height="0" />
           </div>
         </div>
       </PanelCard>
@@ -191,7 +192,7 @@
         <template #actions>
           <span class="panel-note">{{ tr("最近 2 小时", "Last 2h") }}</span>
         </template>
-        <div class="chart-wrap">
+        <div class="chart-wrap" data-testid="monitor-main-trend">
           <TrendChart :series="trendSeries" height="100%" />
         </div>
       </PanelCard>
@@ -258,7 +259,9 @@
         <template #actions>
           <span v-if="aiModel" class="ai-model mono">{{ aiModel }}</span>
         </template>
-        <div v-if="hasRecommendation" class="ai-body">
+        <div v-if="hasRecommendation" class="ai-body clickable" role="button" tabindex="0"
+          :title="tr('前往 AI 决策页', 'Go to AI Decision')"
+          @click="router.push('/ai')" @keydown.enter="router.push('/ai')">
           <p class="ai-basis">
             {{ tr("基于当前工艺状态与历史数据分析", "Based on current process state and historical data") }}
           </p>
@@ -285,10 +288,14 @@
           <div v-if="hasScore" class="ai-score mono">
             {{ tr("预期得分", "Expected score") }} {{ fixed(recommendation?.expected_score, 1) }}
           </div>
+          <span class="ai-go">{{ tr("前往 AI 决策", "Go to AI Decision") }} →</span>
         </div>
-        <div v-else class="empty-state">
+        <div v-else class="empty-state clickable" role="button" tabindex="0"
+          :title="tr('前往 AI 决策页', 'Go to AI Decision')"
+          @click="router.push('/ai')" @keydown.enter="router.push('/ai')">
           <AppIcon name="ai" :size="34" />
           <span>{{ tr("暂无推荐", "No recommendation yet") }}</span>
+          <span class="ai-go">{{ tr("前往 AI 决策", "Go to AI Decision") }} →</span>
         </div>
       </PanelCard>
 
@@ -314,7 +321,7 @@ import { useLiveStore } from "../stores/live";
 import { usePlantStore } from "../stores/plant";
 import { useLanguage } from "../i18n";
 import { fixed, formatTime, formatTimestamp } from "../utils/format";
-import type { Batch, ProcessStep, SensorSample } from "../api/types";
+import type { Batch, ProcessStep } from "../api/types";
 
 interface TrendSeries {
   name: string;
@@ -324,6 +331,7 @@ interface TrendSeries {
   yAxisIndex?: number;
   smooth?: boolean;
   dashed?: boolean;
+  id?: string;
 }
 
 const router = useRouter();
@@ -375,18 +383,62 @@ const runState = computed(() => {
   return { cls: "idle", label: tr("待机 · 数据不可用", "Standby · No data") };
 });
 
+function finiteOrNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+interface SampleColumns {
+  temp: number[];
+  press: number[];
+  rpm: number[];
+  shake: number[];
+  flow: number[];
+  conc: number[];
+  ph: number[];
+  trendTemp: Array<[number, number | null]>;
+  trendPress: Array<[number, number | null]>;
+  trendRpm: Array<[number, number | null]>;
+  trendPh: Array<[number, number | null]>;
+}
+
+// recentSamples 只遍历一次：7 个 sparkline 列与 4 个主趋势列共享同一批派生结果。
+const sampleColumns = computed<SampleColumns>(() => {
+  const columns: SampleColumns = {
+    temp: [], press: [], rpm: [], shake: [], flow: [], conc: [], ph: [],
+    trendTemp: [], trendPress: [], trendRpm: [], trendPh: []
+  };
+  for (const sample of recentSamples.value) {
+    const temp = finiteOrNull(sample.temperature_c);
+    const pressureMpa = finiteOrNull(sample.pressure_mpa);
+    const press = pressureMpa === null ? null : pressureMpa * 10;
+    const rpm = finiteOrNull(sample.stirrer_rpm);
+    const shake = finiteOrNull(sample.shake_speed_cpm);
+    const flow = finiteOrNull(sample.flow_rate_l_min);
+    const conc = finiteOrNull(sample.product_concentration_percent);
+    const ph = finiteOrNull(sample.ph);
+    if (temp !== null) columns.temp.push(temp);
+    if (press !== null) columns.press.push(press);
+    if (rpm !== null) columns.rpm.push(rpm);
+    if (shake !== null) columns.shake.push(shake);
+    if (flow !== null) columns.flow.push(flow);
+    if (conc !== null) columns.conc.push(conc);
+    if (ph !== null) columns.ph.push(ph);
+
+    const time = tsMs(sample.captured_at);
+    if (time === null) continue;
+    columns.trendTemp.push([time, temp]);
+    columns.trendPress.push([time, press]);
+    columns.trendRpm.push([time, rpm]);
+    columns.trendPh.push([time, ph]);
+  }
+  return columns;
+});
+
 // ---- 参数卡（7 张，蓝/绿/黄/紫/青/粉紫/红轮换；仅温度/转速/振荡有 SP） ----
 const paramCards = computed(() => {
   const s = latestSample.value;
   const t = runtime.value?.targets ?? null;
-  const spark = (pick: (x: SensorSample) => number | null | undefined, scale = 1): number[] => {
-    const out: number[] = [];
-    for (const x of recentSamples.value) {
-      const v = pick(x);
-      if (typeof v === "number" && Number.isFinite(v)) out.push(v * scale);
-    }
-    return out;
-  };
+  const columns = sampleColumns.value;
   const pv = (v: number | null | undefined, d: number): string =>
     typeof v === "number" && Number.isFinite(v) ? v.toFixed(d) : "--";
   const num = (v: unknown): number | null =>
@@ -396,36 +448,35 @@ const paramCards = computed(() => {
       key: "temp", en: "Temperature", zh: "温度", unit: "°C", color: "#2f9bff",
       value: pv(s?.temperature_c, 1),
       sp: num(t?.temperature_c) !== null ? `SP ${num(t?.temperature_c)!.toFixed(1)}` : "",
-      spark: spark((x) => x.temperature_c)
+      spark: columns.temp
     },
     {
       key: "press", en: "Pressure", zh: "压力", unit: "bar", color: "#2fd47b",
-      value: pv(pressureBar.value, 2), sp: "", spark: spark((x) => x.pressure_mpa, 10)
+      value: pv(pressureBar.value, 2), sp: "", spark: columns.press
     },
     {
       key: "rpm", en: "Stirrer RPM", zh: "搅拌转速", unit: "rpm", color: "#f5a623",
       value: pv(s?.stirrer_rpm, 0),
       sp: num(t?.stirrer_rpm) !== null ? `SP ${Math.round(num(t?.stirrer_rpm)!)}` : "",
-      spark: spark((x) => x.stirrer_rpm)
+      spark: columns.rpm
     },
     {
       key: "shake", en: "Shake Speed", zh: "振荡速度", unit: "cpm", color: "#b068f0",
       value: pv(s?.shake_speed_cpm, 0),
       sp: num(t?.shake_speed_cpm) !== null ? `SP ${Math.round(num(t?.shake_speed_cpm)!)}` : "",
-      spark: spark((x) => x.shake_speed_cpm)
+      spark: columns.shake
     },
     {
       key: "flow", en: "Flow Rate", zh: "流量", unit: "L/min", color: "#38c8f2",
-      value: pv(s?.flow_rate_l_min, 2), sp: "", spark: spark((x) => x.flow_rate_l_min)
+      value: pv(s?.flow_rate_l_min, 2), sp: "", spark: columns.flow
     },
     {
       key: "conc", en: "Product Conc.", zh: "产品浓度", unit: "%", color: "#e06bd8",
-      value: pv(s?.product_concentration_percent, 1), sp: "",
-      spark: spark((x) => x.product_concentration_percent)
+      value: pv(s?.product_concentration_percent, 1), sp: "", spark: columns.conc
     },
     {
       key: "ph", en: "pH", zh: "酸碱度", unit: "", color: "#ff5252",
-      value: pv(s?.ph, 2), sp: "", spark: spark((x) => x.ph), wide: true
+      value: pv(s?.ph, 2), sp: "", spark: columns.ph, wide: true
     }
   ];
 });
@@ -556,32 +607,12 @@ function tsMs(v: unknown): number | null {
   return Number.isFinite(t) ? t : null;
 }
 const trendSeries = computed<TrendSeries[]>(() => {
-  const rows = recentSamples.value;
-  const mk = (
-    name: string,
-    unit: string,
-    color: string,
-    pick: (s: SensorSample) => number | null,
-    axis = 0
-  ): TrendSeries => {
-    const data: Array<[number, number | null]> = [];
-    for (const s of rows) {
-      const t = tsMs(s.captured_at);
-      if (t === null) continue;
-      data.push([t, pick(s)]);
-    }
-    return { name, unit, color, yAxisIndex: axis, data };
-  };
-  const numOrNull = (v: number | null | undefined): number | null =>
-    typeof v === "number" && Number.isFinite(v) ? v : null;
+  const columns = sampleColumns.value;
   return [
-    mk(tr("温度", "Temp"), "°C", "#2f9bff", (s) => numOrNull(s.temperature_c)),
-    mk(tr("压力", "Pressure"), "bar", "#2fd47b", (s) => {
-      const p = numOrNull(s.pressure_mpa);
-      return p === null ? null : p * 10;
-    }),
-    mk(tr("搅拌转速", "Stirrer"), "rpm", "#f5a623", (s) => numOrNull(s.stirrer_rpm), 1),
-    mk(tr("pH", "pH"), "", "#b068f0", (s) => numOrNull(s.ph))
+    { id: "temp", name: tr("温度", "Temp"), unit: "°C", color: "#2f9bff", yAxisIndex: 0, data: columns.trendTemp },
+    { id: "pressure", name: tr("压力", "Pressure"), unit: "bar", color: "#2fd47b", yAxisIndex: 0, data: columns.trendPress },
+    { id: "stirrer", name: tr("搅拌转速", "Stirrer"), unit: "rpm", color: "#f5a623", yAxisIndex: 1, data: columns.trendRpm },
+    { id: "ph", name: tr("pH", "pH"), unit: "", color: "#b068f0", yAxisIndex: 0, data: columns.trendPh }
   ];
 });
 
@@ -816,9 +847,10 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 2px;
-  padding: 7px 9px 5px 13px;
+  /* 顶部顺排，剩余空间由底部 sparkline 吸收；矮卡自动让位给 SP 行 */
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 5px 9px 4px 13px;
   background: var(--bg-inset);
   border: 1px solid var(--border-glass);
   border-radius: var(--radius-md);
@@ -844,6 +876,7 @@ onUnmounted(() => {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+  line-height: 1.15;
 }
 .param-head .en {
   font-size: var(--fs-xs);
@@ -865,7 +898,7 @@ onUnmounted(() => {
   min-width: 0;
 }
 .param-value .pv {
-  font-size: clamp(15px, 1.45vw, 21px);
+  font-size: clamp(14px, 1.3vw, 19px);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.1;
@@ -875,12 +908,15 @@ onUnmounted(() => {
   color: var(--text-tertiary);
 }
 .param-sp {
-  min-height: 13px;
+  min-height: 12px;
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
-  line-height: 13px;
+  line-height: 12px;
 }
 .param-card :deep(.sparkline) {
+  flex: 1 1 auto;
+  /* 高度不够时整条让位（优先保住 SP 行），空间充裕再展开 */
+  min-height: 0;
   opacity: 0.9;
 }
 
@@ -1211,5 +1247,11 @@ onUnmounted(() => {
   .monitor-page { display: flex; flex-direction: column; height: auto; overflow: visible; }
   .upper, .lower { display: flex; flex-direction: column; min-height: 0; }
   .upper > *, .lower > * { flex: none; }
+  /* 移动端卡片按内容定高，没有剩余空间可吸收，sparkline 需要固定高度 */
+  .param-card :deep(.sparkline) { flex: none; height: 22px; }
 }
+/* AI 推荐卡整体可点，跳 AI 决策页 */
+.ai-body.clickable, .empty-state.clickable { cursor: pointer; }
+.ai-body.clickable:hover, .empty-state.clickable:hover { filter: brightness(1.15); }
+.ai-go { display: inline-block; margin-top: 6px; font-size: 11px; color: var(--ind-blue, #2f9bff); }
 </style>
