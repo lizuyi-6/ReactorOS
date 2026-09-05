@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { createPinia, setActivePinia } from 'pinia';
 
 const dir = await mkdtemp(resolve('.legacy-audit-tests-'));
-await build({ entryPoints: ['frontend/src/api/http.ts', 'frontend/src/stores/live.ts'],
+await build({ entryPoints: ['frontend/src/api/http.ts', 'frontend/src/stores/live.ts', 'frontend/src/api/index.ts'],
   outdir: dir, bundle: true, platform: 'node', format: 'esm', packages: 'external',
   define: { 'import.meta.env': '{}' }, outExtension: { '.js': '.mjs' }, logLevel: 'silent' });
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
@@ -117,4 +117,23 @@ test('WebSocket updates safety flags and does not duplicate the same sample', ()
     assert.equal(store.runtime.emergency_stop, true); assert.equal(store.runtime.auto_enabled, false);
     assert.equal(store.runtime.last_control_error, 'fault'); assert.equal(store.recentSamples.length, 1);
   } finally { store.disconnectRealtimeSocket(); }
+});
+
+test('AI operations retain a finite provider-compatible budget; telemetry remains short', async () => {
+  const { aiApi, batchApi, systemApi, AI_REQUEST_TIMEOUT_MS } = await import(pathToFileURL(join(dir, 'api/index.mjs')).href);
+  const originalTimer = globalThis.setTimeout;
+  const budgets = [];
+  let calls = 0;
+  globalThis.setTimeout = (fn, delay, ...args) => { budgets.push(delay); return originalTimer(fn, delay, ...args); };
+  globalThis.fetch = async () => { calls++; return response({ code: 200, data: {} }); };
+  try {
+    await aiApi.regenerateRecommendation();
+    await aiApi.control({ dry_run: true });
+    await aiApi.experimentPlan();
+    await batchApi.saveProductResult({ batch_id: 1, yield_percent: 80, product_ratio: 0.8 });
+    await systemApi.live();
+    assert.equal(AI_REQUEST_TIMEOUT_MS, 90_000);
+    assert.deepEqual(budgets, [90_000, 90_000, 90_000, 90_000, 15_000]);
+    assert.equal(calls, 5);
+  } finally { globalThis.setTimeout = originalTimer; }
 });

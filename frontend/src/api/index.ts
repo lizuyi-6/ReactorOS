@@ -31,6 +31,8 @@ import type {
 } from "./types";
 
 export const DEVICE_ID = "reactor_001";
+// Covers the default provider budget (3 x 20s plus backoff); no client retries.
+export const AI_REQUEST_TIMEOUT_MS = 90_000;
 
 // ---------- auth ----------
 export const authApi = {
@@ -169,7 +171,7 @@ export const batchApi = {
     return request<void>(`/api/batches/${id}/finish`, { method: "POST" });
   },
   saveProductResult(body: { batch_id: number; yield_percent: number; product_ratio: number; notes?: string }) {
-    return request<AiRecommendationEnvelope>("/api/product-results", { method: "POST", body });
+    return request<AiRecommendationEnvelope>("/api/product-results", { method: "POST", body, timeoutMs: AI_REQUEST_TIMEOUT_MS });
   },
   exportCsv() {
     return requestBlob("/api/batches/export.csv", { accept: "text/csv" });
@@ -207,7 +209,7 @@ export const aiApi = {
     return request<AiRecommendationEnvelope | null>("/api/recommendations/latest", { auth: false, allowFailure: true });
   },
   regenerateRecommendation() {
-    return request<AiRecommendationEnvelope>("/api/recommendations/latest", { method: "POST" });
+    return request<AiRecommendationEnvelope>("/api/recommendations/latest", { method: "POST", timeoutMs: AI_REQUEST_TIMEOUT_MS });
   },
   control(body: {
     intent?: string;
@@ -217,10 +219,10 @@ export const aiApi = {
     allow_component_control?: boolean;
     allow_target_adjustment?: boolean;
   }) {
-    return request<AiControlResponse>("/api/ai/control", { method: "POST", body });
+    return request<AiControlResponse>("/api/ai/control", { method: "POST", body, timeoutMs: AI_REQUEST_TIMEOUT_MS });
   },
   experimentPlan() {
-    return request<ExperimentPlanResponse>("/api/ai/experiment-plan", { auth: false });
+    return request<ExperimentPlanResponse>("/api/ai/experiment-plan", { auth: false, timeoutMs: AI_REQUEST_TIMEOUT_MS });
   }
 };
 
